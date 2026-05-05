@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+/* Override ReactFlow default styles for dark theme */
+.react-flow__controls-button {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  fill: #94a3b8 !important;
+}
+
+.react-flow__controls-button:hover {
+  background: #1e293b !important;
+  fill: #f8fafc !important;
+}
