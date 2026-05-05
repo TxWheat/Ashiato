@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import ReactFlow, {
   Node,
   Edge,
+  NodeChange,
   Background,
   Controls,
   MiniMap,
@@ -91,6 +92,9 @@ export default function TraceGraph({
   followedEdgeIds = new Set(),
   onNodeClick,
 }: Props) {
+  // Tracks positions the user has manually dragged — persists across re-layouts
+  const pinnedPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
+
   const rawNodes: Node[] = useMemo(
     () =>
       nodeData.map(n => ({
@@ -125,7 +129,6 @@ export default function TraceGraph({
             labelBgStyle: { fill: '#0f172a', fillOpacity: 0.95 },
             labelBgPadding: [6, 8] as [number, number],
             labelBgBorderRadius: 4,
-            // Animate: followed edges always, origin edges if not change
             animated: isFollowed || (!e.isChange && isOriginEdge),
             markerEnd: {
               type: MarkerType.ArrowClosed,
@@ -150,15 +153,27 @@ export default function TraceGraph({
   const [edges, setEdges, onEdgesChange] = useEdgesState(rawEdges)
 
   useEffect(() => {
-    setNodes(prev => {
-      const existingPos = new Map(prev.map(n => [n.id, n.position]))
-      return layoutGraph(rawNodes, rawEdges).map(n => ({
-        ...n,
-        position: existingPos.get(n.id) ?? n.position,
-      }))
+    // Apply dagre layout, but restore any positions the user has pinned by dragging
+    const laid = layoutGraph(rawNodes, rawEdges).map(n => {
+      const pinned = pinnedPositions.current.get(n.id)
+      return pinned ? { ...n, position: pinned } : n
     })
+    setNodes(laid)
     setEdges(rawEdges)
   }, [rawNodes, rawEdges, setNodes, setEdges])
+
+  // Capture node positions after a drag finishes so they survive re-layouts
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      for (const c of changes) {
+        if (c.type === 'position' && c.dragging === false && c.position) {
+          pinnedPositions.current.set(c.id, c.position)
+        }
+      }
+      onNodesChange(changes)
+    },
+    [onNodesChange]
+  )
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => onNodeClick(node.data as NodeData),
@@ -170,7 +185,7 @@ export default function TraceGraph({
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
         nodeTypes={nodeTypes}
