@@ -77,7 +77,7 @@ function TracePageInner() {
     })
     setAllEdges(prev => {
       const next = new Map(prev)
-      result.edges.forEach(e => next.set(e.id, e))
+      result.edges.forEach(e => { if (!next.has(e.id)) next.set(e.id, e) })
       return next
     })
     setRawTxsByAddr(prev => new Map(prev).set(result.address, result.rawTxs))
@@ -177,7 +177,7 @@ function TracePageInner() {
       // Add edges and mark them as followed (animated cyan)
       setAllEdges(prev => {
         const next = new Map(prev)
-        data.edges.forEach(e => next.set(e.id, e))
+        data.edges.forEach(e => { if (!next.has(e.id)) next.set(e.id, e) })
         return next
       })
       setFollowedEdgeIds(prev => {

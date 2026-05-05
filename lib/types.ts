@@ -26,6 +26,7 @@ export interface EdgeData {
   timestamp: number
   chain: Chain
   isChange?: boolean
+  txCount?: number
 }
 
 export interface TxOutput {

@@ -178,13 +178,31 @@ export async function traceBtcAddress(address: string): Promise<TraceResult> {
     }
   }
 
+  // Aggregate per-tx edges into one edge per source→target pair
+  const pairMap = new Map<string, EdgeData>()
+  for (const edge of edgeMap.values()) {
+    const key = `${edge.source}--${edge.target}`
+    const ex = pairMap.get(key)
+    if (!ex) {
+      pairMap.set(key, { ...edge, id: key, txCount: 1 })
+    } else {
+      pairMap.set(key, {
+        ...ex,
+        amount: ex.amount + edge.amount,
+        timestamp: Math.max(ex.timestamp ?? 0, edge.timestamp ?? 0),
+        txCount: (ex.txCount ?? 1) + 1,
+        isChange: ex.isChange && edge.isChange,
+      })
+    }
+  }
+
   return {
     address,
     chain: 'btc',
     balance,
     txCount,
     nodes: Array.from(nodeMap.values()),
-    edges: Array.from(edgeMap.values()),
+    edges: Array.from(pairMap.values()),
     entity: getLabel(address),
     rawTxs,
   }

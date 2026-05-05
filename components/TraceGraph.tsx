@@ -26,7 +26,7 @@ const NODE_H = 72
 function layoutGraph(nodes: Node[], edges: Edge[]) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 160 })
+  g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 220 })
 
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
   edges.forEach(e => {
@@ -47,18 +47,19 @@ function fmtEdgeLabel(
   prices: { btc: number; eth: number }
 ): string {
   const parts: string[] = []
+  const multi = e.txCount && e.txCount > 1 ? ` (${e.txCount} txs)` : ''
 
   if (e.chain === 'btc') {
     const btc = e.amount / 1e8
     if (btc > 0) {
-      parts.push(`${btc.toFixed(4)} BTC`)
+      parts.push(`${btc.toFixed(4)} BTC${multi}`)
       if (prices.btc > 0) parts.push(`$${Math.round(btc * prices.btc).toLocaleString('en-NZ')} NZD`)
     }
   } else {
     const eth = e.amount / 1e18
     if (eth > 0) {
-      const label = eth < 0.0001 ? '<0.0001 ETH' : `${eth.toFixed(4)} ETH`
-      parts.push(label)
+      const amt = eth < 0.0001 ? '<0.0001 ETH' : `${eth.toFixed(4)} ETH${multi}`
+      parts.push(amt)
       if (prices.eth > 0) parts.push(`$${Math.round(eth * prices.eth).toLocaleString('en-NZ')} NZD`)
     }
   }
@@ -71,7 +72,7 @@ function fmtEdgeLabel(
   return parts.join(' · ')
 }
 
-const FIT_OPTIONS: FitViewOptions = { padding: 0.25 }
+const FIT_OPTIONS: FitViewOptions = { padding: 0.4 }
 
 interface Props {
   nodes: NodeData[]
@@ -117,12 +118,12 @@ export default function TraceGraph({
             target: e.target,
             label: fmtEdgeLabel(e, prices),
             labelStyle: {
-              fill: e.isChange ? '#713f12' : isFollowed ? '#22d3ee' : '#64748b',
-              fontSize: 10,
-              fontWeight: isFollowed ? 600 : 400,
+              fill: e.isChange ? '#a16207' : isFollowed ? '#22d3ee' : '#cbd5e1',
+              fontSize: 11,
+              fontWeight: isFollowed ? 700 : 500,
             },
-            labelBgStyle: { fill: '#0a0f1e', fillOpacity: 0.9 },
-            labelBgPadding: [5, 7] as [number, number],
+            labelBgStyle: { fill: '#0f172a', fillOpacity: 0.95 },
+            labelBgPadding: [6, 8] as [number, number],
             labelBgBorderRadius: 4,
             // Animate: followed edges always, origin edges if not change
             animated: isFollowed || (!e.isChange && isOriginEdge),
@@ -149,7 +150,13 @@ export default function TraceGraph({
   const [edges, setEdges, onEdgesChange] = useEdgesState(rawEdges)
 
   useEffect(() => {
-    setNodes(layoutGraph(rawNodes, rawEdges))
+    setNodes(prev => {
+      const existingPos = new Map(prev.map(n => [n.id, n.position]))
+      return layoutGraph(rawNodes, rawEdges).map(n => ({
+        ...n,
+        position: existingPos.get(n.id) ?? n.position,
+      }))
+    })
     setEdges(rawEdges)
   }, [rawNodes, rawEdges, setNodes, setEdges])
 
