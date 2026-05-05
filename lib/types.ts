@@ -14,6 +14,7 @@ export interface NodeData {
   balance: number
   txCount: number
   isOrigin: boolean
+  isExpanded?: boolean
 }
 
 export interface EdgeData {
@@ -23,6 +24,21 @@ export interface EdgeData {
   amount: number
   txid: string
   timestamp: number
+  chain: Chain
+  isChange?: boolean
+}
+
+export interface TxOutput {
+  address: string
+  amount: number
+  isChange?: boolean
+}
+
+export interface RawTransaction {
+  txid: string
+  timestamp: number
+  fromAddresses: string[]
+  outputs: TxOutput[]
   chain: Chain
 }
 
@@ -34,4 +50,5 @@ export interface TraceResult {
   nodes: NodeData[]
   edges: EdgeData[]
   entity?: EntityLabel
+  rawTxs: RawTransaction[]
 }

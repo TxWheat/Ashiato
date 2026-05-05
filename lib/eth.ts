@@ -1,4 +1,4 @@
-import { TraceResult, NodeData, EdgeData } from './types'
+import { TraceResult, NodeData, EdgeData, RawTransaction } from './types'
 import { getLabel } from './labels'
 
 interface EtherscanTx {
@@ -23,17 +23,16 @@ export async function traceEthAddress(address: string): Promise<TraceResult> {
     ).then(r => r.json()),
   ])
 
-  if (balRes.status === '0' || txRes.status === '0') {
-    if (txRes.message !== 'No transactions found') {
-      throw new Error(txRes.result ?? 'Etherscan API error')
-    }
+  if (txRes.status === '0' && txRes.message !== 'No transactions found') {
+    throw new Error(txRes.result ?? 'Etherscan API error')
   }
 
   const balance = parseInt(balRes.result ?? '0')
   const txs: EtherscanTx[] = Array.isArray(txRes.result) ? txRes.result : []
 
   const nodeMap = new Map<string, NodeData>()
-  const edges: EdgeData[] = []
+  const edgeMap = new Map<string, EdgeData>()
+  const rawTxs: RawTransaction[] = []
 
   nodeMap.set(addr, {
     address: addr,
@@ -50,6 +49,8 @@ export async function traceEthAddress(address: string): Promise<TraceResult> {
     const to = tx.to?.toLowerCase()
     if (!to) continue
 
+    const amount = parseInt(tx.value)
+
     for (const a of [from, to]) {
       if (!nodeMap.has(a)) {
         nodeMap.set(a, {
@@ -63,13 +64,24 @@ export async function traceEthAddress(address: string): Promise<TraceResult> {
       }
     }
 
-    edges.push({
-      id: tx.hash,
-      source: from,
-      target: to,
-      amount: parseInt(tx.value),
+    const edgeId = tx.hash
+    if (!edgeMap.has(edgeId)) {
+      edgeMap.set(edgeId, {
+        id: edgeId,
+        source: from,
+        target: to,
+        amount,
+        txid: tx.hash,
+        timestamp: parseInt(tx.timeStamp),
+        chain: 'eth',
+      })
+    }
+
+    rawTxs.push({
       txid: tx.hash,
       timestamp: parseInt(tx.timeStamp),
+      fromAddresses: [from],
+      outputs: [{ address: to, amount }],
       chain: 'eth',
     })
   }
@@ -80,17 +92,8 @@ export async function traceEthAddress(address: string): Promise<TraceResult> {
     balance,
     txCount: txs.length,
     nodes: Array.from(nodeMap.values()),
-    edges: dedupeEdges(edges),
+    edges: Array.from(edgeMap.values()),
     entity: getLabel(addr),
+    rawTxs,
   }
-}
-
-function dedupeEdges(edges: EdgeData[]): EdgeData[] {
-  const seen = new Set<string>()
-  return edges.filter(e => {
-    const key = `${e.source}-${e.target}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
 }

@@ -1,10 +1,9 @@
-import { TraceResult, NodeData, EdgeData } from './types'
+import { TraceResult, NodeData, EdgeData, RawTransaction, TxOutput } from './types'
 import { getLabel } from './labels'
 
 const BASE = 'https://blockstream.info/api'
 
 interface BlockstreamAddress {
-  address: string
   chain_stats: {
     funded_txo_sum: number
     spent_txo_sum: number
@@ -28,10 +27,36 @@ interface BlockstreamTx {
   txid: string
   vin: BlockstreamVin[]
   vout: BlockstreamVout[]
-  status: {
-    confirmed: boolean
-    block_time?: number
-  }
+  status: { confirmed: boolean; block_time?: number }
+}
+
+function addrType(addr: string): string {
+  if (/^1/.test(addr)) return 'p2pkh'
+  if (/^3/.test(addr)) return 'p2sh'
+  if (/^bc1q/.test(addr)) return 'p2wpkh'
+  if (/^bc1p/.test(addr)) return 'p2tr'
+  return 'unknown'
+}
+
+// Heuristic: in a 2-output tx where we are the sender, identify which output is change.
+// Rule 1: output with same script type as sender → likely change.
+// Rule 2: if both same type, the smaller amount is likely change.
+function detectChange(
+  senderAddr: string,
+  outputs: { addr: string; value: number }[]
+): boolean[] {
+  if (outputs.length !== 2) return outputs.map(() => false)
+
+  const senderType = addrType(senderAddr)
+  const [o0, o1] = outputs
+  const t0 = addrType(o0.addr)
+  const t1 = addrType(o1.addr)
+
+  if (t0 === senderType && t1 !== senderType) return [true, false]
+  if (t1 === senderType && t0 !== senderType) return [false, true]
+
+  // Both same type — smaller value is likely change
+  return o0.value <= o1.value ? [true, false] : [false, true]
 }
 
 export async function traceBtcAddress(address: string): Promise<TraceResult> {
@@ -51,7 +76,8 @@ export async function traceBtcAddress(address: string): Promise<TraceResult> {
   const txCount = addrData.chain_stats.tx_count
 
   const nodeMap = new Map<string, NodeData>()
-  const edges: EdgeData[] = []
+  const edgeMap = new Map<string, EdgeData>()
+  const rawTxs: RawTransaction[] = []
 
   nodeMap.set(address, {
     address,
@@ -74,6 +100,24 @@ export async function traceBtcAddress(address: string): Promise<TraceResult> {
     const isReceiver = outputs.some(o => o.addr === address)
     const isSender = inputAddrs.includes(address)
 
+    const changeFlags = isSender ? detectChange(address, outputs) : outputs.map(() => false)
+
+    // Build raw transaction record
+    const txOutputs: TxOutput[] = outputs.map((o, i) => ({
+      address: o.addr,
+      amount: o.value,
+      isChange: changeFlags[i],
+    }))
+
+    rawTxs.push({
+      txid: tx.txid,
+      timestamp: tx.status.block_time ?? 0,
+      fromAddresses: inputAddrs,
+      outputs: txOutputs,
+      chain: 'btc',
+    })
+
+    // Build graph edges
     if (isReceiver) {
       for (const inputAddr of inputAddrs) {
         if (inputAddr === address) continue
@@ -88,20 +132,24 @@ export async function traceBtcAddress(address: string): Promise<TraceResult> {
           })
         }
         const received = outputs.find(o => o.addr === address)?.value ?? 0
-        edges.push({
-          id: `${tx.txid}-${inputAddr}-${address}`,
-          source: inputAddr,
-          target: address,
-          amount: received,
-          txid: tx.txid,
-          timestamp: tx.status.block_time ?? 0,
-          chain: 'btc',
-        })
+        const edgeId = `${tx.txid}-${inputAddr}-${address}`
+        if (!edgeMap.has(edgeId)) {
+          edgeMap.set(edgeId, {
+            id: edgeId,
+            source: inputAddr,
+            target: address,
+            amount: received,
+            txid: tx.txid,
+            timestamp: tx.status.block_time ?? 0,
+            chain: 'btc',
+          })
+        }
       }
     }
 
     if (isSender) {
-      for (const out of outputs) {
+      for (let i = 0; i < outputs.length; i++) {
+        const out = outputs[i]
         if (out.addr === address) continue
         if (!nodeMap.has(out.addr)) {
           nodeMap.set(out.addr, {
@@ -113,15 +161,19 @@ export async function traceBtcAddress(address: string): Promise<TraceResult> {
             isOrigin: false,
           })
         }
-        edges.push({
-          id: `${tx.txid}-${address}-${out.addr}`,
-          source: address,
-          target: out.addr,
-          amount: out.value,
-          txid: tx.txid,
-          timestamp: tx.status.block_time ?? 0,
-          chain: 'btc',
-        })
+        const edgeId = `${tx.txid}-${address}-${out.addr}`
+        if (!edgeMap.has(edgeId)) {
+          edgeMap.set(edgeId, {
+            id: edgeId,
+            source: address,
+            target: out.addr,
+            amount: out.value,
+            txid: tx.txid,
+            timestamp: tx.status.block_time ?? 0,
+            chain: 'btc',
+            isChange: changeFlags[i],
+          })
+        }
       }
     }
   }
@@ -132,17 +184,8 @@ export async function traceBtcAddress(address: string): Promise<TraceResult> {
     balance,
     txCount,
     nodes: Array.from(nodeMap.values()),
-    edges: dedupeEdges(edges),
+    edges: Array.from(edgeMap.values()),
     entity: getLabel(address),
+    rawTxs,
   }
-}
-
-function dedupeEdges(edges: EdgeData[]): EdgeData[] {
-  const seen = new Set<string>()
-  return edges.filter(e => {
-    const key = `${e.source}-${e.target}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
 }

@@ -15,7 +15,7 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import dagre from 'dagre'
-import { TraceResult, NodeData } from '@/lib/types'
+import { NodeData, EdgeData } from '@/lib/types'
 import AddressNode from './AddressNode'
 
 const nodeTypes = { addressNode: AddressNode }
@@ -26,7 +26,7 @@ const NODE_H = 72
 function layoutGraph(nodes: Node[], edges: Edge[]) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'LR', nodesep: 70, ranksep: 130 })
+  g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 150 })
 
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
   edges.forEach(e => {
@@ -39,54 +39,70 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
 
   return nodes.map(n => {
     const pos = g.node(n.id)
-    if (!pos) return n
+    if (!pos) return { ...n, position: { x: 0, y: 0 } }
     return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } }
   })
 }
 
 function fmtAmount(amount: number, chain: 'btc' | 'eth'): string {
-  if (chain === 'btc') return `${(amount / 1e8).toFixed(4)} BTC`
-  const eth = amount / 1e18
-  if (eth === 0) return '0 ETH'
-  if (eth < 0.0001) return '<0.0001 ETH'
-  return `${eth.toFixed(4)} ETH`
+  if (chain === 'btc') {
+    const b = amount / 1e8
+    if (b === 0) return '0 BTC'
+    return `${b.toFixed(4)} BTC`
+  }
+  const e = amount / 1e18
+  if (e === 0) return '0 ETH'
+  if (e < 0.0001) return '<0.0001 ETH'
+  return `${e.toFixed(4)} ETH`
 }
 
 const FIT_OPTIONS: FitViewOptions = { padding: 0.25 }
 
 interface Props {
-  result: TraceResult
+  nodes: NodeData[]
+  edges: EdgeData[]
+  originAddress: string
   onNodeClick: (node: NodeData) => void
 }
 
-export default function TraceGraph({ result, onNodeClick }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, originAddress, onNodeClick }: Props) {
   const rawNodes: Node[] = useMemo(
     () =>
-      result.nodes.map(n => ({
+      nodeData.map(n => ({
         id: n.address,
         type: 'addressNode',
         position: { x: 0, y: 0 },
         data: n,
       })),
-    [result.nodes]
+    [nodeData]
   )
 
   const rawEdges: Edge[] = useMemo(
     () =>
-      result.edges.map(e => ({
+      edgeData.map(e => ({
         id: e.id,
         source: e.source,
         target: e.target,
         label: fmtAmount(e.amount, e.chain),
-        labelStyle: { fill: '#94a3b8', fontSize: 10 },
+        labelStyle: { fill: e.isChange ? '#854d0e' : '#94a3b8', fontSize: 10 },
         labelBgStyle: { fill: '#0f172a', fillOpacity: 0.85 },
         labelBgPadding: [4, 6] as [number, number],
         labelBgBorderRadius: 4,
-        animated: e.source === result.address || e.target === result.address,
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#475569', width: 16, height: 16 },
-        style: { stroke: '#475569', strokeWidth: 1.5 },
+        animated: !e.isChange && (e.source === originAddress || e.target === originAddress),
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: e.isChange ? '#422006' : '#475569',
+          width: 16,
+          height: 16,
+        },
+        style: {
+          stroke: e.isChange ? '#422006' : '#475569',
+          strokeWidth: e.isChange ? 1 : 1.5,
+          strokeDasharray: e.isChange ? '5 4' : undefined,
+          opacity: e.isChange ? 0.4 : 1,
+        },
       })),
-    [result.edges, result.address]
+    [edgeData, originAddress]
   )
 
   const layoutedNodes = useMemo(() => layoutGraph(rawNodes, rawEdges), [rawNodes, rawEdges])
@@ -95,9 +111,9 @@ export default function TraceGraph({ result, onNodeClick }: Props) {
   const [edges, setEdges, onEdgesChange] = useEdgesState(rawEdges)
 
   useEffect(() => {
-    setNodes(layoutedNodes)
+    setNodes(layoutGraph(rawNodes, rawEdges))
     setEdges(rawEdges)
-  }, [layoutedNodes, rawEdges, setNodes, setEdges])
+  }, [rawNodes, rawEdges, setNodes, setEdges])
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {

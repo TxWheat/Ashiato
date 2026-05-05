@@ -1,22 +1,23 @@
 'use client'
 
-import { NodeData } from '@/lib/types'
-import { X, ExternalLink, Copy, GitBranch } from 'lucide-react'
+import { NodeData, Chain } from '@/lib/types'
+import { X, ExternalLink, Copy, GitBranch, List } from 'lucide-react'
 import { clsx } from 'clsx'
 import { truncate } from '@/lib/detect-chain'
 
-function fmtBalance(balance: number, chain: 'btc' | 'eth'): string {
+function fmtBalance(balance: number, chain: Chain): string {
   if (chain === 'btc') {
-    const btc = balance / 1e8
-    return btc === 0 ? '0 BTC' : `${btc.toFixed(8)} BTC`
+    const b = balance / 1e8
+    return b === 0 ? '0 BTC' : `${b.toFixed(8)} BTC`
   }
-  const eth = balance / 1e18
-  return eth === 0 ? '0 ETH' : `${eth.toFixed(6)} ETH`
+  const e = balance / 1e18
+  return e === 0 ? '0 ETH' : `${e.toFixed(6)} ETH`
 }
 
-function explorerUrl(address: string, chain: 'btc' | 'eth'): string {
-  if (chain === 'btc') return `https://blockstream.info/address/${address}`
-  return `https://etherscan.io/address/${address}`
+function explorerUrl(address: string, chain: Chain): string {
+  return chain === 'btc'
+    ? `https://blockstream.info/address/${address}`
+    : `https://etherscan.io/address/${address}`
 }
 
 const typeBadge: Record<string, string> = {
@@ -30,11 +31,13 @@ const typeBadge: Record<string, string> = {
 
 interface Props {
   node: NodeData
+  isExpanding: boolean
   onClose: () => void
-  onExpand: (address: string, chain: 'btc' | 'eth') => void
+  onExpand: (address: string, chain: Chain) => void
+  onShowTxs: () => void
 }
 
-export default function NodeDetail({ node, onClose, onExpand }: Props) {
+export default function NodeDetail({ node, isExpanding, onClose, onExpand, onShowTxs }: Props) {
   const copy = () => navigator.clipboard.writeText(node.address)
   const type = node.label?.type ?? 'unknown'
 
@@ -54,11 +57,7 @@ export default function NodeDetail({ node, onClose, onExpand }: Props) {
             <code className="text-[11px] text-cyan-400 font-mono break-all leading-relaxed flex-1">
               {node.address}
             </code>
-            <button
-              onClick={copy}
-              title="Copy address"
-              className="text-slate-600 hover:text-slate-300 transition-colors mt-0.5 flex-shrink-0"
-            >
+            <button onClick={copy} title="Copy" className="text-slate-600 hover:text-slate-300 transition-colors mt-0.5 flex-shrink-0">
               <Copy size={13} />
             </button>
           </div>
@@ -80,24 +79,21 @@ export default function NodeDetail({ node, onClose, onExpand }: Props) {
           </div>
         </div>
 
-        {node.label ? (
-          <div>
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Entity</div>
+        <div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Entity</div>
+          {node.label ? (
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-white">{node.label.name}</span>
               <span className={clsx('text-[10px] px-1.5 py-0.5 rounded capitalize font-medium', typeBadge[type])}>
                 {type}
               </span>
             </div>
-          </div>
-        ) : (
-          <div>
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Entity</div>
+          ) : (
             <span className={clsx('text-[10px] px-1.5 py-0.5 rounded capitalize font-medium', typeBadge['unknown'])}>
               Unknown
             </span>
-          </div>
-        )}
+          )}
+        </div>
 
         {node.txCount > 0 && (
           <div>
@@ -109,19 +105,37 @@ export default function NodeDetail({ node, onClose, onExpand }: Props) {
         <div className="flex gap-2 pt-1">
           <button
             onClick={() => onExpand(node.address, node.chain)}
-            className="flex items-center gap-1.5 flex-1 justify-center text-[11px] bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold py-2 rounded-lg transition-colors"
+            disabled={isExpanding || node.isExpanded}
+            className={clsx(
+              'flex items-center gap-1.5 flex-1 justify-center text-[11px] font-bold py-2 rounded-lg transition-colors',
+              isExpanding
+                ? 'bg-slate-700 text-slate-500 cursor-wait'
+                : node.isExpanded
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black'
+            )}
           >
             <GitBranch size={12} />
-            Expand Node
+            {isExpanding ? 'Expanding…' : node.isExpanded ? 'Expanded' : 'Expand'}
           </button>
+
+          <button
+            onClick={onShowTxs}
+            className="flex items-center gap-1.5 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-3 rounded-lg transition-colors"
+            title="Show transactions"
+          >
+            <List size={12} />
+            Txs
+          </button>
+
           <a
             href={explorerUrl(node.address, node.chain)}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-3 rounded-lg transition-colors"
+            className="flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-3 rounded-lg transition-colors"
+            title="View on explorer"
           >
             <ExternalLink size={11} />
-            Explorer
           </a>
         </div>
       </div>
