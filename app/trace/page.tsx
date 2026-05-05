@@ -50,6 +50,7 @@ function TracePageInner() {
   // Selected node for detail panel + tx table
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null)
   const [showTxPanel, setShowTxPanel] = useState(false)
+  const [txPanelLoading, setTxPanelLoading] = useState(false)
 
   const mergeResult = useCallback((result: TraceResult) => {
     setAllNodes(prev => {
@@ -130,9 +131,28 @@ function TracePageInner() {
     setShowTxPanel(false)
   }, [])
 
-  const handleShowTxs = useCallback(() => {
+  // Auto-fetch rawTxs for a node if we don't have them yet, then open the panel
+  const handleShowTxs = useCallback(async (node: NodeData) => {
     setShowTxPanel(true)
-  }, [])
+    if (rawTxsByAddr.has(node.address)) return
+    setTxPanelLoading(true)
+    try {
+      const res = await fetch(`/api/${node.chain}/${encodeURIComponent(node.address)}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data: TraceResult = await res.json()
+      mergeResult(data)
+      setAllNodes(prev => {
+        const next = new Map(prev)
+        const n = next.get(node.address)
+        if (n) next.set(node.address, { ...n, balance: data.balance, txCount: data.txCount })
+        return next
+      })
+    } catch {
+      // leave panel open with empty state
+    } finally {
+      setTxPanelLoading(false)
+    }
+  }, [rawTxsByAddr, mergeResult])
 
   const copyAddress = () => navigator.clipboard.writeText(originAddress)
 
@@ -306,7 +326,7 @@ function TracePageInner() {
                 isExpanding={expandingAddrs.has(selectedNode.address)}
                 onClose={() => { setSelectedNode(null); setShowTxPanel(false) }}
                 onExpand={expandNode}
-                onShowTxs={handleShowTxs}
+                onShowTxs={() => handleShowTxs(selectedNode)}
               />
             )}
           </div>
@@ -317,6 +337,7 @@ function TracePageInner() {
               address={selectedNode.address}
               chain={selectedChain}
               txs={selectedTxs}
+              loading={txPanelLoading}
               expandingAddrs={expandingAddrs}
               onExpand={expandNode}
               onClose={() => setShowTxPanel(false)}

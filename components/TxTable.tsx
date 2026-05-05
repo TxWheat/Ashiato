@@ -33,12 +33,13 @@ interface Props {
   address: string
   chain: Chain
   txs: RawTransaction[]
+  loading?: boolean
   expandingAddrs: Set<string>
   onExpand: (address: string, chain: Chain) => void
   onClose: () => void
 }
 
-export default function TxTable({ address, chain, txs, expandingAddrs, onExpand, onClose }: Props) {
+export default function TxTable({ address, chain, txs, loading, expandingAddrs, onExpand, onClose }: Props) {
   return (
     <div className="border-t border-slate-800 bg-[#020817] flex flex-col flex-shrink-0" style={{ height: 260 }}>
       {/* Header */}
@@ -60,7 +61,12 @@ export default function TxTable({ address, chain, txs, expandingAddrs, onExpand,
 
       {/* Table */}
       <div className="overflow-auto flex-1">
-        {txs.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center h-full gap-2 text-slate-500 text-sm">
+            <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+            Loading transactions…
+          </div>
+        ) : txs.length === 0 ? (
           <div className="flex items-center justify-center h-full text-slate-600 text-sm">
             No transactions found
           </div>
