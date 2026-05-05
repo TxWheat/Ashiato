@@ -1,7 +1,7 @@
 'use client'
 
 import { NodeData, Chain } from '@/lib/types'
-import { X, ExternalLink, Copy, GitBranch, List } from 'lucide-react'
+import { X, ExternalLink, Copy, ChevronDown, Trash2 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { truncate } from '@/lib/detect-chain'
 
@@ -31,13 +31,14 @@ const typeBadge: Record<string, string> = {
 
 interface Props {
   node: NodeData
-  isExpanding: boolean
+  isLoading: boolean
+  canRemove: boolean
   onClose: () => void
-  onExpand: (address: string, chain: Chain) => void
-  onShowTxs: () => void
+  onExpand: () => void
+  onRemove: () => void
 }
 
-export default function NodeDetail({ node, isExpanding, onClose, onExpand, onShowTxs }: Props) {
+export default function NodeDetail({ node, isLoading, canRemove, onClose, onExpand, onRemove }: Props) {
   const copy = () => navigator.clipboard.writeText(node.address)
   const type = node.label?.type ?? 'unknown'
 
@@ -102,30 +103,21 @@ export default function NodeDetail({ node, isExpanding, onClose, onExpand, onSho
           </div>
         )}
 
+        {/* Action buttons */}
         <div className="flex gap-2 pt-1">
+          {/* Expand = load txs + show panel */}
           <button
-            onClick={() => onExpand(node.address, node.chain)}
-            disabled={isExpanding || node.isExpanded}
+            onClick={onExpand}
+            disabled={isLoading}
             className={clsx(
               'flex items-center gap-1.5 flex-1 justify-center text-[11px] font-bold py-2 rounded-lg transition-colors',
-              isExpanding
+              isLoading
                 ? 'bg-slate-700 text-slate-500 cursor-wait'
-                : node.isExpanded
-                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  : 'bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black'
+                : 'bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black'
             )}
           >
-            <GitBranch size={12} />
-            {isExpanding ? 'Expanding…' : node.isExpanded ? 'Expanded' : 'Expand'}
-          </button>
-
-          <button
-            onClick={onShowTxs}
-            className="flex items-center gap-1.5 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-3 rounded-lg transition-colors"
-            title="Show transactions"
-          >
-            <List size={12} />
-            Txs
+            <ChevronDown size={12} />
+            {isLoading ? 'Loading…' : 'Expand'}
           </button>
 
           <a
@@ -137,6 +129,16 @@ export default function NodeDetail({ node, isExpanding, onClose, onExpand, onSho
           >
             <ExternalLink size={11} />
           </a>
+
+          {canRemove && (
+            <button
+              onClick={onRemove}
+              className="flex items-center gap-1 text-[11px] bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2 px-3 rounded-lg transition-colors border border-red-500/20"
+              title="Remove from graph"
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
         </div>
       </div>
     </div>

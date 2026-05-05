@@ -26,13 +26,11 @@ const NODE_H = 72
 function layoutGraph(nodes: Node[], edges: Edge[]) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 150 })
+  g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 160 })
 
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
   edges.forEach(e => {
-    if (g.hasNode(e.source) && g.hasNode(e.target)) {
-      g.setEdge(e.source, e.target)
-    }
+    if (g.hasNode(e.source) && g.hasNode(e.target)) g.setEdge(e.source, e.target)
   })
 
   dagre.layout(g)
@@ -44,16 +42,33 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
   })
 }
 
-function fmtAmount(amount: number, chain: 'btc' | 'eth'): string {
-  if (chain === 'btc') {
-    const b = amount / 1e8
-    if (b === 0) return '0 BTC'
-    return `${b.toFixed(4)} BTC`
+function fmtEdgeLabel(
+  e: EdgeData,
+  prices: { btc: number; eth: number }
+): string {
+  const parts: string[] = []
+
+  if (e.chain === 'btc') {
+    const btc = e.amount / 1e8
+    if (btc > 0) {
+      parts.push(`${btc.toFixed(4)} BTC`)
+      if (prices.btc > 0) parts.push(`$${Math.round(btc * prices.btc).toLocaleString('en-NZ')} NZD`)
+    }
+  } else {
+    const eth = e.amount / 1e18
+    if (eth > 0) {
+      const label = eth < 0.0001 ? '<0.0001 ETH' : `${eth.toFixed(4)} ETH`
+      parts.push(label)
+      if (prices.eth > 0) parts.push(`$${Math.round(eth * prices.eth).toLocaleString('en-NZ')} NZD`)
+    }
   }
-  const e = amount / 1e18
-  if (e === 0) return '0 ETH'
-  if (e < 0.0001) return '<0.0001 ETH'
-  return `${e.toFixed(4)} ETH`
+
+  if (e.timestamp) {
+    const d = new Date(e.timestamp * 1000)
+    parts.push(d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }))
+  }
+
+  return parts.join(' · ')
 }
 
 const FIT_OPTIONS: FitViewOptions = { padding: 0.25 }
@@ -62,10 +77,19 @@ interface Props {
   nodes: NodeData[]
   edges: EdgeData[]
   originAddress: string
+  prices: { btc: number; eth: number }
+  followedEdgeIds?: Set<string>
   onNodeClick: (node: NodeData) => void
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, originAddress, onNodeClick }: Props) {
+export default function TraceGraph({
+  nodes: nodeData,
+  edges: edgeData,
+  originAddress,
+  prices,
+  followedEdgeIds = new Set(),
+  onNodeClick,
+}: Props) {
   const rawNodes: Node[] = useMemo(
     () =>
       nodeData.map(n => ({
@@ -77,32 +101,46 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, originAdd
     [nodeData]
   )
 
+  const nodeIdSet = useMemo(() => new Set(nodeData.map(n => n.address)), [nodeData])
+
   const rawEdges: Edge[] = useMemo(
     () =>
-      edgeData.map(e => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: fmtAmount(e.amount, e.chain),
-        labelStyle: { fill: e.isChange ? '#854d0e' : '#94a3b8', fontSize: 10 },
-        labelBgStyle: { fill: '#0f172a', fillOpacity: 0.85 },
-        labelBgPadding: [4, 6] as [number, number],
-        labelBgBorderRadius: 4,
-        animated: !e.isChange && (e.source === originAddress || e.target === originAddress),
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: e.isChange ? '#422006' : '#475569',
-          width: 16,
-          height: 16,
-        },
-        style: {
-          stroke: e.isChange ? '#422006' : '#475569',
-          strokeWidth: e.isChange ? 1 : 1.5,
-          strokeDasharray: e.isChange ? '5 4' : undefined,
-          opacity: e.isChange ? 0.4 : 1,
-        },
-      })),
-    [edgeData, originAddress]
+      edgeData
+        .filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
+        .map(e => {
+          const isFollowed = followedEdgeIds.has(e.id)
+          const isOriginEdge = e.source === originAddress || e.target === originAddress
+
+          return {
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            label: fmtEdgeLabel(e, prices),
+            labelStyle: {
+              fill: e.isChange ? '#713f12' : isFollowed ? '#22d3ee' : '#64748b',
+              fontSize: 10,
+              fontWeight: isFollowed ? 600 : 400,
+            },
+            labelBgStyle: { fill: '#0a0f1e', fillOpacity: 0.9 },
+            labelBgPadding: [5, 7] as [number, number],
+            labelBgBorderRadius: 4,
+            // Animate: followed edges always, origin edges if not change
+            animated: isFollowed || (!e.isChange && isOriginEdge),
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: e.isChange ? '#422006' : isFollowed ? '#22d3ee' : '#475569',
+              width: 16,
+              height: 16,
+            },
+            style: {
+              stroke: e.isChange ? '#422006' : isFollowed ? '#22d3ee' : '#475569',
+              strokeWidth: isFollowed ? 2 : e.isChange ? 1 : 1.5,
+              strokeDasharray: e.isChange ? '5 4' : undefined,
+              opacity: e.isChange ? 0.35 : 1,
+            },
+          }
+        }),
+    [edgeData, nodeIdSet, originAddress, prices, followedEdgeIds]
   )
 
   const layoutedNodes = useMemo(() => layoutGraph(rawNodes, rawEdges), [rawNodes, rawEdges])
@@ -116,9 +154,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, originAdd
   }, [rawNodes, rawEdges, setNodes, setEdges])
 
   const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      onNodeClick(node.data as NodeData)
-    },
+    (_: React.MouseEvent, node: Node) => onNodeClick(node.data as NodeData),
     [onNodeClick]
   )
 

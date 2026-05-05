@@ -18,9 +18,9 @@ function fmtAmount(amount: number, chain: Chain): string {
 
 function fmtDate(ts: number): string {
   if (!ts) return '—'
-  const d = new Date(ts * 1000)
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(ts * 1000).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  }) + ' ' + new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function explorerTxUrl(txid: string, chain: Chain): string {
@@ -34,12 +34,12 @@ interface Props {
   chain: Chain
   txs: RawTransaction[]
   loading?: boolean
-  expandingAddrs: Set<string>
-  onExpand: (address: string, chain: Chain) => void
+  followingAddrs: Set<string>
+  onFollow: (address: string, chain: Chain) => void
   onClose: () => void
 }
 
-export default function TxTable({ address, chain, txs, loading, expandingAddrs, onExpand, onClose }: Props) {
+export default function TxTable({ address, chain, txs, loading, followingAddrs, onFollow, onClose }: Props) {
   return (
     <div className="border-t border-slate-800 bg-[#020817] flex flex-col flex-shrink-0" style={{ height: 260 }}>
       {/* Header */}
@@ -49,7 +49,9 @@ export default function TxTable({ address, chain, txs, loading, expandingAddrs, 
           <code className="text-[10px] text-cyan-400 font-mono bg-cyan-500/10 px-2 py-0.5 rounded">
             {truncate(address, 8)}
           </code>
-          <span className="text-[10px] text-slate-600">{txs.length} shown · click Follow to expand into graph</span>
+          <span className="text-[10px] text-slate-600">
+            {loading ? 'Fetching…' : `${txs.length} shown · Follow adds address to graph`}
+          </span>
         </div>
         <button
           onClick={onClose}
@@ -89,22 +91,16 @@ export default function TxTable({ address, chain, txs, loading, expandingAddrs, 
                     key={`${tx.txid}-${j}`}
                     className={clsx(
                       'hover:bg-slate-900/40 transition-colors text-[11px]',
-                      out.isChange && 'opacity-40'
+                      out.isChange && 'opacity-35'
                     )}
                   >
                     {j === 0 && (
-                      <td
-                        className="px-4 py-2 text-slate-500 whitespace-nowrap align-top"
-                        rowSpan={tx.outputs.length}
-                      >
+                      <td className="px-4 py-2 text-slate-500 whitespace-nowrap align-top" rowSpan={tx.outputs.length}>
                         {fmtDate(tx.timestamp)}
                       </td>
                     )}
                     {j === 0 && (
-                      <td
-                        className="px-4 py-2 font-mono text-slate-400 align-top"
-                        rowSpan={tx.outputs.length}
-                      >
+                      <td className="px-4 py-2 font-mono text-slate-400 align-top" rowSpan={tx.outputs.length}>
                         <div className="flex items-center gap-1">
                           {tx.fromAddresses.length === 1
                             ? truncate(tx.fromAddresses[0])
@@ -115,13 +111,11 @@ export default function TxTable({ address, chain, txs, loading, expandingAddrs, 
                     )}
                     <td className="px-4 py-2 font-mono">
                       <div className="flex items-center gap-1.5">
-                        <span className={clsx(
-                          out.address === address ? 'text-cyan-400' : 'text-slate-300'
-                        )}>
+                        <span className={out.address === address ? 'text-cyan-400' : 'text-slate-300'}>
                           {truncate(out.address)}
                         </span>
                         {out.isChange && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 whitespace-nowrap">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600 border border-yellow-500/20 whitespace-nowrap">
                             change
                           </span>
                         )}
@@ -131,15 +125,12 @@ export default function TxTable({ address, chain, txs, loading, expandingAddrs, 
                       {fmtAmount(out.amount, chain)}
                     </td>
                     {j === 0 && (
-                      <td
-                        className="px-4 py-2 font-mono align-top"
-                        rowSpan={tx.outputs.length}
-                      >
+                      <td className="px-4 py-2 font-mono align-top" rowSpan={tx.outputs.length}>
                         <a
                           href={explorerTxUrl(tx.txid, chain)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-cyan-600 hover:text-cyan-400 transition-colors whitespace-nowrap"
+                          className="flex items-center gap-1 text-cyan-700 hover:text-cyan-400 transition-colors whitespace-nowrap"
                         >
                           {truncate(tx.txid, 5)}
                           <ExternalLink size={9} />
@@ -149,17 +140,17 @@ export default function TxTable({ address, chain, txs, loading, expandingAddrs, 
                     <td className="px-4 py-2 whitespace-nowrap">
                       {out.address !== address && !out.isChange && (
                         <button
-                          onClick={() => onExpand(out.address, chain)}
-                          disabled={expandingAddrs.has(out.address)}
+                          onClick={() => onFollow(out.address, chain)}
+                          disabled={followingAddrs.has(out.address)}
                           className={clsx(
-                            'flex items-center gap-1 text-[10px] transition-colors',
-                            expandingAddrs.has(out.address)
+                            'flex items-center gap-1 text-[10px] font-medium transition-colors px-2 py-1 rounded',
+                            followingAddrs.has(out.address)
                               ? 'text-slate-600 cursor-wait'
-                              : 'text-slate-500 hover:text-cyan-400'
+                              : 'text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10'
                           )}
                         >
                           <GitBranch size={10} />
-                          {expandingAddrs.has(out.address) ? 'Loading…' : 'Follow'}
+                          {followingAddrs.has(out.address) ? 'Adding…' : 'Follow'}
                         </button>
                       )}
                     </td>
