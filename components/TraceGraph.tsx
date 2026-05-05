@@ -23,6 +23,7 @@ const nodeTypes = { addressNode: AddressNode }
 
 const NODE_W = 185
 const NODE_H = 72
+const FIT_OPTS: FitViewOptions = { padding: 0.4 }
 
 function layoutGraph(nodes: Node[], edges: Edge[]) {
   const g = new dagre.graphlib.Graph()
@@ -43,10 +44,7 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
   })
 }
 
-function fmtEdgeLabel(
-  e: EdgeData,
-  prices: { btc: number; eth: number }
-): string {
+function fmtEdgeLabel(e: EdgeData, prices: { btc: number; eth: number }): string {
   const parts: string[] = []
   const multi = e.txCount && e.txCount > 1 ? ` (${e.txCount} txs)` : ''
 
@@ -73,8 +71,6 @@ function fmtEdgeLabel(
   return parts.join(' · ')
 }
 
-const FIT_OPTIONS: FitViewOptions = { padding: 0.4 }
-
 interface Props {
   nodes: NodeData[]
   edges: EdgeData[]
@@ -92,8 +88,12 @@ export default function TraceGraph({
   followedEdgeIds = new Set(),
   onNodeClick,
 }: Props) {
-  // Tracks positions the user has manually dragged — persists across re-layouts
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rfRef = useRef<any>(null)
+  // Positions pinned by the user dragging — survive re-layouts
   const pinnedPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
+  // Only auto-fit once per mount (when first data arrives)
+  const hasFit = useRef(false)
 
   const rawNodes: Node[] = useMemo(
     () =>
@@ -147,22 +147,27 @@ export default function TraceGraph({
     [edgeData, nodeIdSet, originAddress, prices, followedEdgeIds]
   )
 
-  const layoutedNodes = useMemo(() => layoutGraph(rawNodes, rawEdges), [rawNodes, rawEdges])
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(rawEdges)
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
   useEffect(() => {
-    // Apply dagre layout, but restore any positions the user has pinned by dragging
+    if (rawNodes.length === 0) return
+
     const laid = layoutGraph(rawNodes, rawEdges).map(n => {
       const pinned = pinnedPositions.current.get(n.id)
       return pinned ? { ...n, position: pinned } : n
     })
     setNodes(laid)
     setEdges(rawEdges)
+
+    // Fit view the first time real data arrives, and whenever a new node is added
+    if (!hasFit.current) {
+      hasFit.current = true
+      setTimeout(() => rfRef.current?.fitView(FIT_OPTS), 50)
+    }
   }, [rawNodes, rawEdges, setNodes, setEdges])
 
-  // Capture node positions after a drag finishes so they survive re-layouts
+  // Capture node positions when the user finishes dragging
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const c of changes) {
@@ -188,9 +193,8 @@ export default function TraceGraph({
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onInit={inst => { rfRef.current = inst }}
         nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={FIT_OPTIONS}
         minZoom={0.05}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
