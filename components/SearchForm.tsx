@@ -2,22 +2,50 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowUpRight, AlertCircle } from 'lucide-react'
-import { detectChain } from '@/lib/detect-chain'
+import { ArrowUpRight, AlertCircle, Search } from 'lucide-react'
+import { clsx } from 'clsx'
+import { detectInput, searchUrl } from '@/lib/detect-chain'
 
-export default function SearchForm() {
-  const [address, setAddress] = useState('')
+/** Address or transaction search. `compact` is the version used in the trace page header. */
+export default function SearchForm({ compact = false }: { compact?: boolean }) {
+  const [value, setValue] = useState('')
   const [error, setError] = useState('')
   const router = useRouter()
-  const chain = detectChain(address)
+  const target = detectInput(value)
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!chain) {
-      setError('Enter a valid Bitcoin or Ethereum address')
+    if (!target) {
+      setError('Enter a Bitcoin or Ethereum address, or a transaction hash')
       return
     }
-    router.push(`/trace?address=${encodeURIComponent(address.trim())}&chain=${chain}`)
+    setValue('')
+    router.push(searchUrl(target))
+  }
+
+  const badge = target && (
+    <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted pointer-events-none">
+      <span className={`w-1.5 h-1.5 rounded-full ${target.chain === 'btc' ? 'bg-orange-500' : 'bg-violet-500'}`} />
+      {target.chain} {target.kind === 'tx' ? 'transaction' : 'address'}
+    </span>
+  )
+
+  if (compact) {
+    return (
+      <form onSubmit={submit} className="relative w-full max-w-md" title={error || undefined}>
+        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
+        <input
+          value={value}
+          onChange={e => { setValue(e.target.value); setError('') }}
+          placeholder="Search address or transaction…"
+          aria-label="Search address or transaction"
+          spellCheck={false}
+          autoComplete="off"
+          className={clsx('w-full h-8 bg-panel border pl-8 pr-36 font-mono text-xs text-fg placeholder:text-faint outline-none', error ? 'border-red-500' : 'border-line focus:border-accent')}
+        />
+        {badge}
+      </form>
+    )
   }
 
   return (
@@ -26,24 +54,16 @@ export default function SearchForm() {
         <div className="relative flex-1">
           <input
             type="text"
-            value={address}
-            onChange={e => {
-              setAddress(e.target.value)
-              setError('')
-            }}
-            placeholder="bc1q… / 1… / 3… / 0x…"
-            aria-label="Address to trace"
-            className="w-full h-12 bg-panel border border-line focus:border-accent px-4 pr-24 font-mono text-sm text-fg placeholder:text-faint outline-none transition-colors"
+            value={value}
+            onChange={e => { setValue(e.target.value); setError('') }}
+            placeholder="Address or transaction hash"
+            aria-label="Address or transaction to trace"
+            className="w-full h-12 bg-panel border border-line focus:border-accent px-4 pr-36 font-mono text-sm text-fg placeholder:text-faint outline-none transition-colors"
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"
           />
-          {chain && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
-              <span className={`w-1.5 h-1.5 rounded-full ${chain === 'btc' ? 'bg-orange-500' : 'bg-violet-500'}`} />
-              {chain}
-            </span>
-          )}
+          {badge}
         </div>
         <button
           type="submit"

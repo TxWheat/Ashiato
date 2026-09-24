@@ -38,12 +38,16 @@ Open http://localhost:3000. Bitcoin works without any key.
 
 ## How to use it
 
-1. Paste a BTC or ETH address. The chain is auto-detected.
-2. The graph starts with the largest senders and recipients; the rest sit behind **+N more**.
-3. Click an **address** to open its transactions (and label, risk and findings). On any transaction, **Trace →** follows that payment onward and **← Source** walks it back. **Follow** adds a single address.
-4. Click a **line** to see the payments behind it and trace any of them. **Trace only / Everything** in the top bar switches between just the money trail and the full graph.
-5. On the address that received the stolen funds, click **Taint from here**, then choose Haircut / FIFO / Poison in the sidebar.
-6. **Report** opens a printable summary (Print → Save as PDF). **Save case** stores the investigation on your computer.
+1. Paste a BTC/ETH **address** or a **transaction hash** (BTC txid, or ETH `0x…` hash) into the search box.
+2. **Address:** the graph starts with just that address. The right-hand panel lists its **Counterparties** (who it paid and was paid by, largest first). Press **+** to add one to the graph, or **Add top 5**.
+3. **Transaction:** it appears as its own node with its inputs and outputs. Every input has **← Source**, every output **Trace →**.
+4. Click any address to inspect it (Counterparties · Transactions · Details). On a transaction, **Trace →** follows that payment onward and **← Source** walks it back. Click any **line** to see the payments behind it.
+5. After a trace, **Trail / All** in the top bar switches between just the money trail and the full graph. The left **Case** panel shows where the funds ended up, taint analysis and clusters.
+6. **Export** (top bar): printable report, case file save/open, PNG, CSV, GraphML.
+
+### Rate limits
+
+The free Etherscan tier allows about 3 calls per second. The app spaces its calls and retries when Etherscan says the limit was hit. If you upgrade your Etherscan plan, set `ETHERSCAN_RPS` in `.env.local` (e.g. `ETHERSCAN_RPS=10`). ENS names and single-transaction lookups use a free public Ethereum node (`ETH_RPC_URL`), not your Etherscan quota.
 
 ## Development
 
@@ -74,7 +78,7 @@ lib/risk.ts        0–100 risk score
 lib/labels.ts      label lookup (server only)
 app/api/[chain]/[address]          trace one page of an address
 app/api/screen/[chain]/[address]   JSON risk screening
-app/api/tx/btc/[txid]              one BTC tx + who spent each output
+app/api/tx/[chain]/[txid]          one tx: BTC with who spent each output, ETH with every transfer inside it
 lib/follow.ts      follow-the-funds engine
 lib/ens.ts         verified ENS names (ETH_RPC_URL)
 ```

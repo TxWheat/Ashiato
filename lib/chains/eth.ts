@@ -12,7 +12,7 @@ const PAGE_SIZE = 50
 
 // Real contracts for commonly spoofed tokens. Scam airdrops mint look-alike
 // "USDT" tokens; a symbol from any other contract is shown as e.g. "USDT*".
-const KNOWN_TOKENS: Record<string, string> = {
+export const KNOWN_TOKENS: Record<string, string> = {
   USDT: '0xdac17f958d2ee523a2206206994597c13d831ec7',
   USDC: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
   DAI: '0x6b175474e89094c44da98b954eedeac495271d0f',
@@ -66,8 +66,12 @@ function url(params: Record<string, string | number>): string {
   return `${BASE}?${qs}`
 }
 
-async function etherscan<T>(params: Record<string, string | number>, ttl = 60): Promise<T[]> {
-  const body = await fetchJson<EtherscanResponse<T>>(url(params), ttl)
+/** Etherscan reports rate limiting as a normal 200 response */
+const rateLimited = (b: { status?: string; result?: unknown }) =>
+  b?.status === '0' && typeof b.result === 'string' && /rate limit|max calls/i.test(b.result)
+
+async function etherscan<T>(params: Record<string, string | number>, ttl = 120): Promise<T[]> {
+  const body = await fetchJson<EtherscanResponse<T>>(url(params), ttl, 4, rateLimited)
   if (body.status === '1' && Array.isArray(body.result)) return body.result
   if (/no transactions found|no records found/i.test(body.message) || (Array.isArray(body.result) && body.result.length === 0)) return []
   throw new Error(`Etherscan: ${typeof body.result === 'string' ? body.result : body.message}`)
@@ -152,8 +156,19 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
 async function fetchBalance(addr: string): Promise<number> {
   const body = await fetchJson<{ status: string; message: string; result: string }>(
     url({ module: 'account', action: 'balance', address: addr, tag: 'latest' }),
-    60
+    60,
+    4,
+    rateLimited
   )
   if (body.status !== '1') throw new Error(`Etherscan: ${body.result || body.message}`)
   return toUnits(body.result, 18)
+}
+
+/** Internal ETH transfers made by one transaction (needs an Etherscan key) */
+export async function internalTransfersByHash(hash: string): Promise<{ from: string; to: string; value: number; traceId?: string }[]> {
+  const rows = await etherscan<InternalTx>({ module: 'account', action: 'txlistinternal', txhash: hash }, 600)
+  return rows
+    .filter(r => r.isError !== '1' && (r.to || r.contractAddress))
+    .map(r => ({ from: r.from.toLowerCase(), to: (r.to || r.contractAddress || '').toLowerCase(), value: toUnits(r.value, 18), traceId: r.traceId }))
+    .filter(r => r.value > 0)
 }

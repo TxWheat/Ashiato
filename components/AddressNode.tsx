@@ -78,20 +78,22 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
   )
 }
 
-export interface MoreNodeData {
-  count: number
-  side: 'in' | 'out'
-  anchor: string
+export interface TxHubData {
+  txid: string
+  chain: 'btc' | 'eth'
+  label: string
+  inputs: { address: string; amount: number; asset: string }[]
+  outputs: { address: string; amount: number; asset: string }[]
 }
 
-/** "+N more senders / recipients" placeholder that keeps the graph readable */
-export function MoreNode({ data }: { data: MoreNodeData }) {
+/** A transaction drawn as its own node: inputs flow in, outputs flow out */
+export function TxNode({ data, selected }: { data: TxHubData; selected?: boolean }) {
   return (
-    <div className="w-[150px] border border-dashed border-line bg-bg px-3 py-2 text-center cursor-pointer hover:border-accent transition-colors">
-      <Handle type="target" position={Position.Left} className="!opacity-0" />
-      <div className="text-sm font-medium text-fg">+{data.count}</div>
-      <div className="text-[10px] text-faint">more {data.side === 'in' ? 'senders' : 'recipients'} · click to list</div>
-      <Handle type="source" position={Position.Right} className="!opacity-0" />
+    <div className={clsx('w-[150px] border-2 border-dashed bg-bg px-3 py-2 text-center cursor-pointer transition-colors', selected ? 'border-accent' : 'border-line hover:border-accent')}>
+      <Handle type="target" position={Position.Left} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
+      <div className="text-[9px] font-medium uppercase tracking-wider text-faint">{data.chain} transaction</div>
+      <div className="text-[12px] font-mono text-fg truncate">{data.label}</div>
+      <Handle type="source" position={Position.Right} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
     </div>
   )
 }

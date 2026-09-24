@@ -36,15 +36,15 @@ export default function EdgeDetail(p: Props) {
   )
 
   return (
-    <div className="absolute right-3 top-3 bottom-3 z-20 w-96 max-w-[calc(100%-1.5rem)] flex flex-col bg-panel border border-line shadow-2xl">
-      <div className="flex items-center justify-between h-11 px-4 border-b border-line flex-shrink-0">
-        <span className="text-sm font-medium text-fg">Flow</span>
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex items-center justify-between h-10 px-4 border-b border-line flex-shrink-0">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-faint">Flow between two addresses</span>
         <button onClick={p.onClose} className="text-faint hover:text-fg p-1" aria-label="Close">
-          <X size={15} />
+          <X size={14} />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto divide-y divide-line">
+      <div className="flex-1 overflow-y-auto min-h-0 divide-y divide-line">
         <section className="p-4 space-y-3">
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
             <Addr a={p.from} />

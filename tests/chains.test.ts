@@ -119,6 +119,26 @@ describe('traceEthAddress', () => {
     expect(r.edges.find(e => e.asset === 'USDC')?.amount).toBe(2)
   })
 
+  it('retries Etherscan rate-limit replies and never caches them', async () => {
+    process.env.ETHERSCAN_API_KEY = 'k'
+    const RL = '0x7676767676767676767676767676767676767676'
+    let balanceCalls = 0
+    vi.stubGlobal('fetch', async (u: string) => {
+      calls.push(u)
+      if (/action=balance/.test(u)) {
+        balanceCalls++
+        const body = balanceCalls === 1
+          ? { status: '0', message: 'NOTOK', result: 'Max calls per sec rate limit reached (3/sec)' }
+          : { status: '1', message: 'OK', result: '2000000000000000000' }
+        return new Response(JSON.stringify(body))
+      }
+      return new Response(JSON.stringify({ status: '0', message: 'No transactions found', result: [] }))
+    })
+    const r = await traceEthAddress(RL)
+    expect(balanceCalls).toBe(2)
+    expect(r.balance).toBe(2)
+  }, 15000)
+
   it('surfaces Etherscan errors', async () => {
     process.env.ETHERSCAN_API_KEY = 'k'
     mockFetch([

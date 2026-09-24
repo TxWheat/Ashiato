@@ -1,12 +1,12 @@
 import 'server-only'
 import { keccak256 } from './keccak'
+import { ethCall, rpcBatch } from './rpc'
 
 // ENS primary-name lookup over plain JSON-RPC (batched, 4 round trips for any
 // number of addresses). Every name is forward-verified: anyone can set their
 // reverse record to "binance.eth", so a name only counts if it resolves back
 // to the same address.
 
-const RPC_URL = process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com'
 const REGISTRY = '0x00000000000c2e074ec69a0dfb2997ba6c7d2e1e'
 const SEL = { resolver: '0178b8bf', name: '691f3431', addr: '3b3b57de' }
 const TTL_MS = 60 * 60 * 1000
@@ -59,22 +59,8 @@ function decodeString(result: string | undefined): string | null {
   return new TextDecoder().decode(fromHex(dataHex))
 }
 
-interface RpcCall { to: string; data: string }
-
-async function batchCall(calls: RpcCall[]): Promise<(string | undefined)[]> {
-  if (!calls.length) return []
-  const body = calls.map((c, id) => ({ jsonrpc: '2.0', id, method: 'eth_call', params: [{ to: c.to, data: c.data }, 'latest'] }))
-  const res = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
-  })
-  if (!res.ok) throw new Error(`RPC ${res.status}`)
-  const json = (await res.json()) as { id: number; result?: string }[]
-  const out: (string | undefined)[] = new Array(calls.length)
-  for (const r of Array.isArray(json) ? json : []) out[r.id] = r.result
-  return out
+function batchCall(calls: { to: string; data: string }[]): Promise<(string | undefined)[]> {
+  return rpcBatch<string>(calls.map(c => ethCall(c.to, c.data)))
 }
 
 /** Only plain lowercase ASCII names; anything needing ENSIP-15 normalisation is skipped */

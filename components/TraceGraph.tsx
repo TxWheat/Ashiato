@@ -22,13 +22,13 @@ import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
 import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
-import AddressNode, { AddressNodeData, MoreNode, MoreNodeData } from './AddressNode'
+import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
 
-const nodeTypes = { addressNode: AddressNode, more: MoreNode }
+const nodeTypes = { addressNode: AddressNode, tx: TxNode }
 
 const NODE_W = 196
 const NODE_H = 78
-const FIT = { padding: 0.3 }
+const FIT = { padding: 0.3, maxZoom: 1.1 }
 const TAINT = '#ef4444'
 
 function layoutGraph(nodes: Node[], edges: Edge[]) {
@@ -61,13 +61,14 @@ interface Props {
   edges: EdgeData[]
   followedPairs: Set<string>
   traced: TracedFlow[]
-  more: MoreNodeData[]
+  hubs: TxHubData[]
   taintByEdge?: Map<string, number>
   selected?: string | null
   selectedEdge?: string | null
+  selectedHub?: string | null
   onNodeClick: (address: string) => void
   onEdgeClick: (from: string, to: string) => void
-  onMoreClick: (anchor: string) => void
+  onHubClick: (txid: string) => void
   onReady?: (api: GraphApi) => void
 }
 
@@ -75,7 +76,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, more, taintByEdge, selected, selectedEdge, onNodeClick, onEdgeClick, onMoreClick, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   const pinned = useRef<Map<string, { x: number; y: number }>>(new Map())
   const nodeCount = useRef(0)
@@ -83,9 +84,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   const rawNodes: Node[] = useMemo(
     () => [
       ...nodeData.map(n => ({ id: n.address, type: 'addressNode', position: { x: 0, y: 0 }, data: n, selected: n.address === selected })),
-      ...more.map(m => ({ id: `more:${m.side}:${m.anchor}`, type: 'more', position: { x: 0, y: 0 }, data: m })),
+      ...hubs.map(h => ({ id: `tx:${h.txid}`, type: 'tx', position: { x: 0, y: 0 }, data: h, selected: h.txid === selectedHub })),
     ],
-    [nodeData, more, selected]
+    [nodeData, hubs, selected, selectedHub]
   )
 
   const rawEdges: Edge[] = useMemo(() => {
@@ -146,17 +147,26 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       }
     })
 
-    for (const m of more) {
-      const id = `more:${m.side}:${m.anchor}`
-      out.push({
-        id,
-        source: m.side === 'in' ? id : m.anchor,
-        target: m.side === 'in' ? m.anchor : id,
-        style: { stroke: 'rgb(var(--line))', strokeDasharray: '3 4' },
-      })
+    // Searched transactions: inputs → tx node → outputs (only for addresses on the graph)
+    for (const h of hubs) {
+      const id = `tx:${h.txid}`
+      const draw = (from: string, to: string, amount: number, asset: string, k: string) =>
+        out.push({
+          id: `${id}:${k}`,
+          source: from,
+          target: to,
+          label: fmtAmount(amount, asset),
+          labelStyle: { fill: 'rgb(var(--fg))', fontSize: 11, fontWeight: 500 },
+          labelBgStyle: { fill: 'rgb(var(--panel))', fillOpacity: 0.95 },
+          labelBgPadding: [6, 4] as [number, number],
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--muted))', width: 14, height: 14 },
+          style: { stroke: 'rgb(var(--muted))', strokeWidth: 1.5, strokeDasharray: '6 3' },
+        })
+      h.inputs.forEach((i, k) => ids.has(i.address) && draw(i.address, id, i.amount, i.asset, `in${k}`))
+      h.outputs.forEach((o, k) => ids.has(o.address) && draw(id, o.address, o.amount, o.asset, `out${k}`))
     }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, more, taintByEdge, selectedEdge])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, taintByEdge, selectedEdge])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -212,9 +222,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         edges={edges}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeClick={(_, n) => (n.type === 'more' ? onMoreClick((n.data as MoreNodeData).anchor) : onNodeClick(n.id))}
+        onNodeClick={(_, n) => (n.type === 'tx' ? onHubClick((n.data as TxHubData).txid) : onNodeClick(n.id))}
         onEdgeClick={(_, e) => {
-          if (!e.id.startsWith('more:')) onEdgeClick(e.source, e.target)
+          if (!e.id.startsWith('tx:')) onEdgeClick(e.source, e.target)
         }}
         onInit={inst => {
           rf.current = inst
@@ -230,7 +240,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         <MiniMap
           nodeColor={n => {
             const d = n.data as AddressNodeData
-            if (n.type === 'more') return 'rgb(var(--line))'
+            if (n.type === 'tx') return 'rgb(var(--faint))'
             return d.isOrigin ? 'rgb(var(--accent))' : ENTITY_STYLE[d.label?.type ?? 'unknown'].hex
           }}
           maskColor="rgb(var(--bg) / 0.7)"

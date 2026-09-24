@@ -4,10 +4,11 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, Copy, RefreshCw, Undo2, X } from 'lucide-react'
-import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, transferKey } from '@/lib/types'
+import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick } from 'lucide-react'
+import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, TxIO, TxLookup, transferKey } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
+import { counterparties as findCounterparties } from '@/lib/counterparties'
 import { clusterAddresses } from '@/lib/heuristics/cluster'
 import { tornadoLinks as findTornadoLinks } from '@/lib/heuristics/eth/tornado'
 import { runTaint, TaintMethod } from '@/lib/taint'
@@ -15,17 +16,20 @@ import { BtcTxInfo, Direction, followFunds, Lot, seedsFromTx, backSeedsFromTx, T
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
 import { ENTITY_STYLE, nativeAsset } from '@/lib/format'
-import NodeDetail from '@/components/NodeDetail'
+import AddressInspector, { AddressTab } from '@/components/AddressInspector'
+import TxInspector from '@/components/TxInspector'
 import EdgeDetail from '@/components/EdgeDetail'
-import TxTable from '@/components/TxTable'
-import Sidebar from '@/components/Sidebar'
+import CasePanel from '@/components/CasePanel'
+import ExportMenu from '@/components/ExportMenu'
+import SearchForm from '@/components/SearchForm'
 import ThemeToggle from '@/components/ThemeToggle'
 import type { GraphApi } from '@/components/TraceGraph'
-import type { AddressNodeData, MoreNodeData } from '@/components/AddressNode'
+import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
 const TraceGraph = dynamic(() => import('@/components/TraceGraph'), { ssr: false })
 
 type TaintCfg = { seed: string; method: TaintMethod; asset: string }
+type Selection = { kind: 'address'; id: string } | { kind: 'flow'; from: string; to: string } | { kind: 'tx'; id: string } | null
 
 interface Snapshot {
   visible: Set<string>
@@ -34,60 +38,73 @@ interface Snapshot {
   traceEnds: TraceEnd[]
 }
 
-/** On first load, show only the largest counterparties on each side plus labelled entities */
-const INITIAL_PER_SIDE = 4
-const INITIAL_LABELLED = 4
 /** Trails end at cash-out points and mixers */
 const STOP_AT: EntityType[] = ['exchange', 'deposit', 'mixer', 'coinjoin', 'sanctioned', 'defi']
 /** Older pages loaded per address while following funds */
 const MAX_EXTRA_PAGES = 5
+/** Participants of a searched transaction put on the graph straight away (per side) */
+const TX_PARTICIPANTS = 6
 
 function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-async function fetchTrace(address: string, chain: Chain, cursor?: string): Promise<TraceResult> {
-  const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
-  const res = await fetch(`/api/${chain}/${encodeURIComponent(address)}${q}`)
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url)
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-  return body as TraceResult
+  return body as T
 }
 
-/** Largest counterparties on each side, ranked by share of each asset's flow */
-function pickInitial(result: TraceResult): string[] {
-  const rank = (edges: EdgeData[], other: (e: EdgeData) => string) => {
-    const total = new Map<string, number>()
-    for (const e of edges) total.set(e.asset, (total.get(e.asset) ?? 0) + e.amount)
-    const score = new Map<string, number>()
-    for (const e of edges) {
-      const a = other(e)
-      score.set(a, Math.max(score.get(a) ?? 0, e.amount / (total.get(e.asset) || 1)))
-    }
-    return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a)
+const fetchTrace = (address: string, chain: Chain, cursor?: string) =>
+  getJson<TraceResult>(`/api/${chain}/${encodeURIComponent(address)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`)
+
+/** Normalises the BTC and ETH transaction endpoints into one shape */
+async function fetchTxLookup(txid: string, chain: Chain): Promise<TxLookup> {
+  if (chain === 'eth') return getJson<TxLookup>(`/api/tx/eth/${txid}`)
+  const info = await getJson<BtcTxInfo>(`/api/tx/btc/${txid}`)
+  return { chain: 'btc', txid: info.tx.txid, timestamp: info.tx.timestamp, transfers: [info.tx], labels: info.labels, ens: {}, spentBy: info.spentBy }
+}
+
+/** Senders and recipients of a looked-up transaction, largest first */
+function txParticipants(l: TxLookup) {
+  const ins = new Map<string, number>()
+  const outs = new Map<string, number>()
+  for (const t of l.transfers) {
+    const inTotal = t.inputs.reduce((s, i) => s + i.amount, 0)
+    for (const i of t.inputs) ins.set(i.address, (ins.get(i.address) ?? 0) + (inTotal ? i.amount : t.outputs[0]?.amount ?? 0))
+    for (const o of t.outputs) outs.set(o.address, (outs.get(o.address) ?? 0) + o.amount)
   }
-  const me = result.address
-  const ins = rank(result.edges.filter(e => e.target === me), e => e.source).slice(0, INITIAL_PER_SIDE)
-  const outs = rank(result.edges.filter(e => e.source === me && !e.isChange), e => e.target).slice(0, INITIAL_PER_SIDE)
-  const labelled = result.nodes
-    .filter(n => n.address !== me && n.label && n.label.type !== 'unknown')
-    .map(n => n.address)
-    .slice(0, INITIAL_LABELLED)
-  return [...new Set([...ins, ...outs, ...labelled])]
+  const top = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a)
+  return { inputs: top(ins), outputs: top(outs) }
+}
+
+function toHub(l: TxLookup): TxHubData {
+  const inputs: TxHubData['inputs'] = []
+  const outputs: TxHubData['outputs'] = []
+  for (const t of l.transfers) {
+    const inTotal = t.inputs.reduce((s, i) => s + i.amount, 0)
+    for (const i of t.inputs) inputs.push({ address: i.address, amount: inTotal ? i.amount : t.outputs[0]?.amount ?? 0, asset: t.asset })
+    for (const o of t.outputs) outputs.push({ address: o.address, amount: o.amount, asset: t.asset })
+  }
+  return { txid: l.txid, chain: l.chain, label: `${l.txid.replace(/^0x/, '').slice(0, 6)}…${l.txid.slice(-4)}`, inputs, outputs }
 }
 
 function TracePageInner() {
   const params = useSearchParams()
   const router = useRouter()
   const rawAddress = params.get('address') ?? ''
+  const originTx = (params.get('tx') ?? '').toLowerCase()
   const chainParam = params.get('chain') as Chain | null
-  const originChain: Chain | null = chainParam === 'btc' || chainParam === 'eth' ? chainParam : detectChain(rawAddress)
-  const originAddress = originChain ? normaliseAddress(rawAddress, originChain) : rawAddress
+  const originChain: Chain | null = chainParam === 'btc' || chainParam === 'eth' ? chainParam : originTx ? (originTx.startsWith('0x') ? 'eth' : 'btc') : detectChain(rawAddress)
+  const originAddress = !originTx && originChain ? normaliseAddress(rawAddress, originChain) : ''
+  const originKey = originTx || originAddress
 
-  // Everything we know about each address (labels, risk, notes), and which are on the graph
+  // What we know about each address, and which ones the user has put on the graph
   const [known, setKnown] = useState<Map<string, NodeData>>(new Map())
   const [visible, setVisible] = useState<Set<string>>(new Set())
   const [pages, setPages] = useState<Map<string, LoadedPage>>(new Map())
+  const [hubs, setHubs] = useState<Map<string, TxLookup>>(new Map())
   const [followedPairs, setFollowedPairs] = useState<Set<string>>(new Set())
   const [traced, setTraced] = useState<TracedFlow[]>([])
   const [traceEnds, setTraceEnds] = useState<TraceEnd[]>([])
@@ -99,14 +116,13 @@ function TracePageInner() {
   const [loadingAddrs, setLoadingAddrs] = useState<Set<string>>(new Set())
   const [loadingMore, setLoadingMore] = useState(false)
 
-  const [selected, setSelected] = useState<string | null>(null)
-  const [selectedEdge, setSelectedEdge] = useState<{ from: string; to: string } | null>(null)
-  const [showTx, setShowTx] = useState(false)
+  const [selection, setSelection] = useState<Selection>(null)
+  const [tab, setTab] = useState<AddressTab>('counterparties')
+  const [caseCollapsed, setCaseCollapsed] = useState(false)
 
   const [taint, setTaint] = useState<TaintCfg | null>(null)
   const [follow, setFollow] = useState({ hops: 6, branches: 3 })
   const [traceStatus, setTraceStatus] = useState<string | null>(null)
-  /** Show only the traced money trail (plus the origin) */
   const [focusTrace, setFocusTrace] = useState(false)
   const traceCancel = useRef(false)
   const restoring = useRef(false)
@@ -118,7 +134,6 @@ function TracePageInner() {
   const btcTxCache = useRef(new Map<string, BtcTxInfo>())
   const btcLabels = useRef(new Map<string, EntityLabel>())
 
-  // Live NZD prices (fail silently; the flow panel just omits fiat)
   const [prices, setPrices] = useState<Record<string, number>>({})
   useEffect(() => {
     fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=nzd')
@@ -132,12 +147,16 @@ function TracePageInner() {
     setTimeout(() => setToast(''), 5000)
   }, [])
 
+  const setKnownNow = (next: Map<string, NodeData>) => {
+    knownRef.current = next
+    setKnown(next)
+  }
+
   /**
    * Merges a page into state. `add` = addresses to put on the graph. Background loads pass []
    * so an address the user removed while its page was loading stays removed.
    */
   const absorb = useCallback((result: TraceResult, add: string[], append = false) => {
-    // Update the ref synchronously so an in-flight trace sees new labels immediately
     const next = new Map(knownRef.current)
     for (const n of result.nodes) {
       const ex = next.get(n.address)
@@ -159,10 +178,8 @@ function TracePageInner() {
         next.set(n.address, { ...ex, label: ex.label ?? n.label, ens: ex.ens ?? n.ens })
       }
     }
-    knownRef.current = next
-    setKnown(next)
+    setKnownNow(next)
     const ex = pagesRef.current.get(result.address)
-    // Pages can overlap when new activity shifts pagination; keep each transfer once
     const seen = new Set<string>()
     const rawTxs = (append && ex ? [...ex.rawTxs, ...result.rawTxs] : result.rawTxs).filter(t => {
       const k = transferKey(t)
@@ -170,36 +187,47 @@ function TracePageInner() {
       seen.add(k)
       return true
     })
-    const page: LoadedPage = {
-      rawTxs,
-      nextCursor: result.nextCursor,
-      warnings: result.warnings,
-    }
-    pagesRef.current = new Map(pagesRef.current).set(result.address, page)
+    pagesRef.current = new Map(pagesRef.current).set(result.address, { rawTxs, nextCursor: result.nextCursor, warnings: result.warnings })
     setPages(pagesRef.current)
     if (add.length) setVisible(prev => new Set([...prev, ...add]))
   }, [originAddress])
 
+  /** Registers a looked-up transaction: its participants become known (with labels / ENS) */
+  const absorbTx = useCallback((l: TxLookup) => {
+    const next = new Map(knownRef.current)
+    for (const t of l.transfers) {
+      for (const io of [...t.inputs, ...t.outputs]) {
+        if (!io.address) continue
+        const ex = next.get(io.address)
+        const label = ex?.label ?? l.labels[io.address]
+        const ens = ex?.ens ?? l.ens[io.address]
+        if (!ex) next.set(io.address, { address: io.address, chain: l.chain, label, ens, balance: 0, txCount: 0, isOrigin: false })
+        else if (label !== ex.label || ens !== ex.ens) next.set(io.address, { ...ex, label, ens })
+      }
+    }
+    for (const [a, lab] of Object.entries(l.labels)) btcLabels.current.set(a, lab)
+    setKnownNow(next)
+    setHubs(prev => new Map(prev).set(l.txid, l))
+  }, [])
+
   const resetState = () => {
-    knownRef.current = new Map()
-    setKnown(knownRef.current)
+    setKnownNow(new Map())
     setVisible(new Set())
     pagesRef.current = new Map()
     setPages(pagesRef.current)
+    setHubs(new Map())
     setFollowedPairs(new Set())
     setTraced([])
     setTraceEnds([])
     setFocusTrace(false)
     setHistory([])
-    setSelected(null)
-    setSelectedEdge(null)
-    setShowTx(false)
+    setSelection(null)
     setTaint(null)
   }
 
   const loadOrigin = useCallback(async () => {
-    if (!originChain) {
-      setError('Not a valid BTC or ETH address')
+    if (!originChain || (!originTx && !originAddress)) {
+      setError('Not a valid Bitcoin or Ethereum address or transaction')
       setInitialLoading(false)
       return
     }
@@ -207,14 +235,26 @@ function TracePageInner() {
     setError('')
     resetState()
     try {
-      const r = await fetchTrace(originAddress, originChain)
-      absorb(r, [r.address, ...pickInitial(r)])
+      if (originTx) {
+        const l = await fetchTxLookup(originTx, originChain)
+        absorbTx(l)
+        const { inputs, outputs } = txParticipants(l)
+        setVisible(new Set([...inputs.slice(0, TX_PARTICIPANTS), ...outputs.slice(0, TX_PARTICIPANTS)]))
+        setSelection({ kind: 'tx', id: l.txid })
+      } else {
+        const r = await fetchTrace(originAddress, originChain)
+        // Start with just the address; the user adds counterparties from the panel
+        absorb(r, [r.address])
+        setSelection({ kind: 'address', id: r.address })
+        setTab('counterparties')
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to trace address')
+      setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
       setInitialLoading(false)
     }
-  }, [originAddress, originChain, absorb])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originAddress, originTx, originChain, absorb, absorbTx])
 
   useEffect(() => {
     if (restoring.current) {
@@ -223,7 +263,7 @@ function TracePageInner() {
     }
     loadOrigin()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originAddress, originChain])
+  }, [originKey, originChain])
 
   const setBusy = (addr: string, busy: boolean) =>
     setLoadingAddrs(prev => {
@@ -258,8 +298,7 @@ function TracePageInner() {
     if (missing.length) {
       const next = new Map(knownRef.current)
       for (const a of missing) next.set(a, { address: a, chain, label: btcLabels.current.get(a), balance: 0, txCount: 0, isOrigin: false })
-      knownRef.current = next
-      setKnown(next)
+      setKnownNow(next)
     }
     setVisible(prev => new Set([...prev, ...addrs]))
   }, [originChain])
@@ -276,37 +315,39 @@ function TracePageInner() {
     setTraced(last.traced)
     setTraceEnds(last.traceEnds)
     setHistory(history.slice(0, -1))
-    if (selected && !last.visible.has(selected)) setSelected(null)
   }
 
+  /** Select an address (adding it to the graph if needed) and load its activity */
   const openAddress = (addr: string) => {
-    setSelected(addr)
-    setSelectedEdge(null)
-    setShowTx(true)
+    if (!visible.has(addr)) {
+      snapshot()
+      showOnGraph([addr])
+    }
+    setSelection({ kind: 'address', id: addr })
     ensurePage(addr)
   }
 
+  const addToGraph = (addrs: string[]) => {
+    const fresh = addrs.filter(a => !visible.has(a))
+    if (!fresh.length) return
+    snapshot()
+    showOnGraph(fresh)
+    if (selection?.kind === 'address') setFollowedPairs(prev => new Set([...prev, ...fresh.map(a => pairKey(selection.id, a))]))
+  }
+
   const loadMore = async () => {
-    if (!selected) return
-    const cursor = pagesRef.current.get(selected)?.nextCursor
+    if (selection?.kind !== 'address') return
+    const addr = selection.id
+    const cursor = pagesRef.current.get(addr)?.nextCursor
     if (!cursor) return
     setLoadingMore(true)
     try {
-      absorb(await fetchTrace(selected, chainOf(selected), cursor), [], true)
+      absorb(await fetchTrace(addr, chainOf(addr), cursor), [], true)
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Failed to load more')
     } finally {
       setLoadingMore(false)
     }
-  }
-
-  /** Put `to` on the graph, linked from `from`, and load its activity */
-  const followAddress = async (from: string, to: string) => {
-    if (visible.has(to)) return
-    snapshot()
-    showOnGraph([to])
-    setFollowedPairs(prev => new Set(prev).add(pairKey(from, to)))
-    await ensurePage(to)
   }
 
   const removeNode = (addr: string) => {
@@ -316,8 +357,7 @@ function TracePageInner() {
       n.delete(addr)
       return n
     })
-    setSelected(null)
-    setShowTx(false)
+    setSelection(originAddress && addr !== originAddress ? { kind: 'address', id: originAddress } : originTx ? { kind: 'tx', id: originTx } : null)
   }
 
   // ── Follow the funds ─────────────────────────────────────────────────────
@@ -338,10 +378,7 @@ function TracePageInner() {
   const btcTx = useCallback(async (txid: string): Promise<BtcTxInfo> => {
     const hit = btcTxCache.current.get(txid)
     if (hit) return hit
-    const res = await fetch(`/api/tx/btc/${txid}`)
-    const body = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-    const info = body as BtcTxInfo
+    const info = await getJson<BtcTxInfo>(`/api/tx/btc/${txid}`)
     for (const [a, l] of Object.entries(info.labels)) btcLabels.current.set(a, l)
     btcTxCache.current.set(txid, info)
     return info
@@ -354,11 +391,11 @@ function TracePageInner() {
     }
     snapshot()
     traceCancel.current = false
-    setSelectedEdge(null)
     const before = traced
     const show = (flows: TracedFlow[]) => {
-      setTraced([...before, ...flows])
-      showOnGraph([...new Set(flows.flatMap(f => [f.from, f.to]))])
+      const real = flows.filter(f => f.from && f.to)
+      setTraced([...before, ...real])
+      showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
     }
     show(seed.flows)
     setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
@@ -373,8 +410,10 @@ function TracePageInner() {
         },
         () => traceCancel.current
       )
-      const flows = [...seed.flows, ...res.flows]
+      const flows = [...seed.flows, ...res.flows].filter(f => f.from && f.to)
       show(flows)
+      // Addresses the trail stopped at (with no outgoing hop yet) still belong on the graph
+      showOnGraph(res.ends.map(e => e.address))
       setTraceEnds(prev => [...prev, ...res.ends])
       if (flows.length) setFocusTrace(true)
       const cashOut = res.ends.filter(e => e.reason === 'entity').length
@@ -386,40 +425,48 @@ function TracePageInner() {
     }
   }
 
-  /** Node-level: the address's largest outgoing (or incoming) transactions as starting points */
-  const traceFromNode = async (addr: string, direction: Direction) => {
+  /** Address-level: its largest outgoing (or incoming) transactions are the starting points */
+  const traceFromAddress = async (addr: string, direction: Direction) => {
     const page = await ensurePage(addr)
     if (!page) return
     const merged = { lots: [] as Lot[], flows: [] as TracedFlow[] }
-    if (direction === 'forward') {
-      const outs = page.rawTxs
-        .filter(t => t.inputs.some(i => i.address === addr))
-        .map(t => ({ t, v: t.outputs.filter(o => o.address !== addr && !o.isChange).reduce((s, o) => s + o.amount, 0) }))
-        .filter(x => x.v > 0)
-        .sort((a, b) => b.v - a.v)
-        .slice(0, follow.branches)
-      for (const { t } of outs) {
-        const s = seedsFromTx(t, addr)
-        merged.lots.push(...s.lots)
-        merged.flows.push(...s.flows)
-      }
-    } else {
-      const ins = page.rawTxs
-        .filter(t => t.outputs.some(o => o.address === addr) && !t.inputs.some(i => i.address === addr))
-        .map(t => ({ t, v: t.outputs.filter(o => o.address === addr).reduce((s, o) => s + o.amount, 0) }))
-        .sort((a, b) => b.v - a.v)
-        .slice(0, follow.branches)
-      for (const { t } of ins) {
-        const s = backSeedsFromTx(t, addr)
-        merged.lots.push(...s.lots)
-        merged.flows.push(...s.flows)
-      }
+    const pick = direction === 'forward'
+      ? page.rawTxs
+          .filter(t => t.inputs.some(i => i.address === addr))
+          .map(t => ({ t, v: t.outputs.filter(o => o.address !== addr && !o.isChange).reduce((s, o) => s + o.amount, 0) }))
+      : page.rawTxs
+          .filter(t => t.outputs.some(o => o.address === addr) && !t.inputs.some(i => i.address === addr))
+          .map(t => ({ t, v: t.outputs.filter(o => o.address === addr).reduce((s, o) => s + o.amount, 0) }))
+    for (const { t } of pick.filter(x => x.v > 0).sort((a, b) => b.v - a.v).slice(0, follow.branches)) {
+      const s = direction === 'forward' ? seedsFromTx(t, addr) : backSeedsFromTx(t, addr)
+      merged.lots.push(...s.lots)
+      merged.flows.push(...s.flows)
     }
     await runFollow(direction, merged)
   }
 
+  /** Transaction-level: follow one output (or all) onward */
+  const traceTxOut = (tx: RawTransaction, to?: string) => {
+    const from = tx.chain === 'eth' ? tx.inputs[0]?.address ?? '' : ''
+    runFollow('forward', seedsFromTx(tx, from, to))
+  }
+
+  /** Transaction-level: walk one input (or all) back to its source */
+  const traceTxIn = (tx: RawTransaction, input?: TxIO) => {
+    if (tx.chain === 'eth') {
+      runFollow('backward', backSeedsFromTx(tx, tx.outputs[0].address, input?.address))
+      return
+    }
+    const lots: Lot[] = (input ? [input] : tx.inputs).map(i => {
+      const [ptx, pvout] = (i.prev ?? '').split(':')
+      return { chain: 'btc', address: i.address, asset: 'BTC', amount: i.amount, time: tx.timestamp, via: ptx || undefined, vout: pvout ? +pvout : undefined, hop: 0 }
+    })
+    runFollow('backward', { lots, flows: [] })
+  }
+
   // ── Derived data ─────────────────────────────────────────────────────────
-  const allTxs = useMemo(() => [...pages.values()].flatMap(p => p.rawTxs), [pages])
+  const hubTxs = useMemo(() => [...hubs.values()].flatMap(h => h.transfers), [hubs])
+  const allTxs = useMemo(() => [...[...pages.values()].flatMap(p => p.rawTxs), ...hubTxs], [pages, hubTxs])
 
   const perTx = useMemo(
     () => [...pages.entries()].flatMap(([addr, p]) => txEdges(addr, chainOf(addr), p.rawTxs)),
@@ -443,9 +490,13 @@ function TracePageInner() {
 
   const traceSet = useMemo(() => new Set(traced.flatMap(f => [f.from, f.to])), [traced])
   const showTraceOnly = focusTrace && traced.length > 0
+  const selectedAddress = selection?.kind === 'address' ? selection.id : null
 
   const graphNodes: AddressNodeData[] = useMemo(() => {
-    const shown = showTraceOnly ? [...visible].filter(a => traceSet.has(a) || a === originAddress || a === selected) : [...visible]
+    const endSet = new Set(traceEnds.map(e => e.address))
+    const shown = showTraceOnly
+      ? [...visible].filter(a => traceSet.has(a) || endSet.has(a) || a === originAddress || a === selectedAddress)
+      : [...visible]
     return shown.flatMap(a => {
       const n = known.get(a)
       if (!n) return []
@@ -464,68 +515,54 @@ function TracePageInner() {
         },
       }]
     })
-  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, showTraceOnly, traceSet, selected])
+  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, showTraceOnly, traceSet, traceEnds, selectedAddress])
 
   const graphEdges = useMemo(() => {
     const ids = new Set(graphNodes.map(n => n.address))
     return allEdges.filter(e => ids.has(e.source) && ids.has(e.target))
   }, [allEdges, graphNodes])
 
-  // "+N more" placeholders for counterparties not on the graph (origin and the selected address)
-  const moreNodes: MoreNodeData[] = useMemo(() => {
-    const out: MoreNodeData[] = []
-    if (showTraceOnly) return out
-    for (const anchor of new Set([originAddress, selected].filter(Boolean) as string[])) {
-      if (!visible.has(anchor) || !pages.has(anchor)) continue
-      const hiddenIn = new Set<string>()
-      const hiddenOut = new Set<string>()
-      for (const e of allEdges) {
-        if (e.target === anchor && !visible.has(e.source)) hiddenIn.add(e.source)
-        if (e.source === anchor && !visible.has(e.target) && !e.isChange) hiddenOut.add(e.target)
-      }
-      if (hiddenIn.size) out.push({ anchor, side: 'in', count: hiddenIn.size })
-      if (hiddenOut.size) out.push({ anchor, side: 'out', count: hiddenOut.size })
-    }
-    return out
-  }, [originAddress, selected, visible, pages, allEdges, showTraceOnly])
+  // The searched transaction stays visible in Trail view: it is where the trail starts
+  const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
 
   const legendTypes = useMemo(() => {
     const present = new Set(graphNodes.map(n => n.label?.type).filter(Boolean) as EntityType[])
     return (Object.keys(ENTITY_STYLE) as EntityType[]).filter(t => present.has(t) || ['exchange', 'deposit', 'mixer', 'sanctioned', 'scam', 'unknown'].includes(t))
   }, [graphNodes])
 
-  const selectedNode = selected ? graphNodes.find(n => n.address === selected) ?? known.get(selected) : undefined
-  const selectedPage = selected ? pages.get(selected) : undefined
-  const origin = graphNodes.find(n => n.address === originAddress)
   const nodeMap = useMemo(() => new Map(graphNodes.map(n => [n.address, n as NodeData])), [graphNodes])
   const nameOf = useCallback((a: string) => nodeMap.get(a)?.label?.name ?? labelOf(a)?.name ?? ensOf(a), [nodeMap, labelOf, ensOf])
 
+  const selectedNode = selectedAddress ? graphNodes.find(n => n.address === selectedAddress) ?? known.get(selectedAddress) : undefined
+  const selectedCounterparties = useMemo(() => (selectedAddress ? findCounterparties(selectedAddress, allEdges) : []), [selectedAddress, allEdges])
+
   const edgeRows = useMemo(() => {
-    if (!selectedEdge) return []
+    if (selection?.kind !== 'flow') return []
     const seen = new Set<string>()
     return perTx.filter(e => {
-      if (e.source !== selectedEdge.from || e.target !== selectedEdge.to || seen.has(e.id)) return false
+      if (e.source !== selection.from || e.target !== selection.to || seen.has(e.id)) return false
       seen.add(e.id)
       return true
     })
-  }, [perTx, selectedEdge])
+  }, [perTx, selection])
 
-  /** The raw transaction behind one per-tx edge */
   const txForRow = (row: EdgeData): RawTransaction | undefined =>
     allTxs.find(t => t.txid === row.txid && t.asset === row.asset && t.inputs.some(i => i.address === row.source) && t.outputs.some(o => o.address === row.target))
 
   // ── Case files & exports ─────────────────────────────────────────────────
-  const fileBase = `trace-${originChain}-${originAddress.slice(0, 10)}`
+  const fileBase = `trace-${originChain}-${originKey.replace(/^0x/, '').slice(0, 10)}`
 
   const saveCase = () => {
     if (!originChain) return
     const c: CaseFile = {
       version: CASE_VERSION,
       savedAt: new Date().toISOString(),
-      origin: { address: originAddress, chain: originChain },
+      origin: { address: originKey, chain: originChain },
+      originKind: originTx ? 'tx' : 'address',
       known: [...known.values()],
       visible: [...visible],
       pages: Object.fromEntries(pages),
+      hubs: [...hubs.values()],
       followedPairs: [...followedPairs],
       traced,
       traceEnds,
@@ -537,24 +574,23 @@ function TracePageInner() {
   const loadCase = async (file: File) => {
     try {
       const c = parseCase(await file.text())
-      knownRef.current = new Map(c.known.map(n => [n.address, n]))
-      setKnown(knownRef.current)
+      setKnownNow(new Map(c.known.map(n => [n.address, n])))
       setVisible(new Set(c.visible))
       pagesRef.current = new Map(Object.entries(c.pages))
       setPages(pagesRef.current)
+      setHubs(new Map((c.hubs ?? []).map(h => [h.txid, h])))
       setFollowedPairs(new Set(c.followedPairs))
       setTraced(c.traced ?? [])
       setTraceEnds(c.traceEnds ?? [])
       setTaint(c.taint ?? null)
       setHistory([])
-      setSelected(null)
-      setSelectedEdge(null)
-      setShowTx(false)
       setError('')
       setInitialLoading(false)
-      if (c.origin.address !== originAddress) {
+      const isTx = c.originKind === 'tx'
+      setSelection(isTx ? { kind: 'tx', id: c.origin.address } : { kind: 'address', id: c.origin.address })
+      if (c.origin.address !== originKey) {
         restoring.current = true
-        router.replace(`/trace?address=${encodeURIComponent(c.origin.address)}&chain=${c.origin.chain}`)
+        router.replace(isTx ? `/trace?tx=${c.origin.address}&chain=${c.origin.chain}` : `/trace?address=${encodeURIComponent(c.origin.address)}&chain=${c.origin.chain}`)
       }
       flash(`Opened case saved ${new Date(c.savedAt).toLocaleString()}`)
     } catch (e) {
@@ -564,7 +600,7 @@ function TracePageInner() {
 
   const openReport = () => {
     if (!originChain) return
-    const html = buildReport({ origin: originAddress, chain: originChain, nodes: nodeMap, edges: graphEdges, taint: taintResult, traced, traceEnds, nameOf })
+    const html = buildReport({ origin: originKey, chain: originChain, nodes: nodeMap, edges: graphEdges, taint: taintResult, traced, traceEnds, nameOf })
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank', 'noopener')
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -576,84 +612,153 @@ function TracePageInner() {
     else flash('Could not render the graph image')
   }
 
-  const copyAddress = () => {
-    navigator.clipboard.writeText(originAddress)
-    flash('Address copied')
-  }
-
-  const selectFromSidebar = (a: string) => {
-    if (!visible.has(a)) {
-      snapshot()
-      showOnGraph([a])
+  // ── Inspector ────────────────────────────────────────────────────────────
+  const inspector = (() => {
+    if (selection?.kind === 'address' && selectedNode) {
+      const a = selectedNode.address
+      return (
+        <AddressInspector
+          node={selectedNode}
+          page={pages.get(a)}
+          loading={loadingAddrs.has(a)}
+          loadingMore={loadingMore}
+          counterparties={selectedCounterparties}
+          onGraph={visible}
+          tab={tab}
+          canRemove={a !== originAddress}
+          tracing={!!traceStatus}
+          cluster={clusters.byAddress.get(a)}
+          taint={taint ? { amount: taintResult?.byAddress.get(a)?.received ?? 0, asset: taint.asset, isSeed: taint.seed === a } : undefined}
+          nameOf={nameOf}
+          labelOf={labelOf}
+          onTab={setTab}
+          onAdd={addToGraph}
+          onOpen={openAddress}
+          onTrace={dir => traceFromAddress(a, dir)}
+          onTraceTx={(tx, dir) => runFollow(dir, dir === 'forward' ? seedsFromTx(tx, a) : backSeedsFromTx(tx, a))}
+          onTaint={() => {
+            setTaint(t => ({ seed: a, method: t?.method ?? 'haircut', asset: nativeAsset(selectedNode.chain) }))
+            ensurePage(a)
+          }}
+          onRemove={() => removeNode(a)}
+          onLoadMore={loadMore}
+          onNote={note => {
+            const n = knownRef.current.get(a)
+            if (n) setKnownNow(new Map(knownRef.current).set(a, { ...n, note: note.trim() || undefined }))
+          }}
+          onShowCluster={() => {
+            const c = clusters.byAddress.get(a)
+            if (c) addToGraph(c.members)
+          }}
+        />
+      )
     }
-    setSelected(a)
-    setSelectedEdge(null)
-  }
+    if (selection?.kind === 'flow') {
+      return (
+        <EdgeDetail
+          from={selection.from}
+          to={selection.to}
+          chain={originChain ?? 'btc'}
+          rows={edgeRows}
+          traced={traced.filter(f => f.from === selection.from && f.to === selection.to)}
+          prices={prices}
+          busy={!!traceStatus}
+          nameOf={nameOf}
+          onSelect={openAddress}
+          onTraceForward={row => {
+            const tx = txForRow(row)
+            if (tx) runFollow('forward', seedsFromTx(tx, row.source, row.target))
+            else flash('Transaction not loaded')
+          }}
+          onTraceBack={row => {
+            const tx = txForRow(row)
+            if (tx) runFollow('backward', backSeedsFromTx(tx, row.target, row.source))
+            else flash('Transaction not loaded')
+          }}
+          onClose={() => setSelection(null)}
+        />
+      )
+    }
+    if (selection?.kind === 'tx' && hubs.get(selection.id)) {
+      return (
+        <TxInspector
+          lookup={hubs.get(selection.id)!}
+          onGraph={visible}
+          tracing={!!traceStatus}
+          nameOf={nameOf}
+          labelOf={labelOf}
+          onAdd={addToGraph}
+          onOpen={openAddress}
+          onTraceOut={traceTxOut}
+          onSourceIn={traceTxIn}
+        />
+      )
+    }
+    return (
+      <div className="p-6 text-[12px] text-muted leading-relaxed space-y-3">
+        <MousePointerClick size={18} className="text-faint" />
+        <p>Click an <b className="text-fg font-medium">address</b> to see who it paid and was paid by, and add them to the graph.</p>
+        <p>Click a <b className="text-fg font-medium">line</b> to see the payments behind it and trace any of them.</p>
+      </div>
+    )
+  })()
+
+  const originNode = originAddress ? known.get(originAddress) : undefined
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-bg">
-      {/* Top bar */}
+      {/* Header */}
       <header className="flex items-center gap-3 h-14 px-3 sm:px-4 border-b border-line flex-shrink-0">
-        <Link href="/" className="text-faint hover:text-fg p-1.5" aria-label="Home">
-          <ArrowLeft size={16} />
-        </Link>
-        <Link href="/" className="hidden lg:block text-[13px] font-medium tracking-[0.24em] text-fg pr-3 border-r border-line">
-          CRYPTOTRACER
-        </Link>
-        <div className="flex items-center gap-2 text-sm min-w-0">
-          {originChain && (
-            <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted">
-              <span className={`w-1.5 h-1.5 rounded-full ${originChain === 'btc' ? 'bg-orange-500' : 'bg-violet-500'}`} />
-              {originChain}
-            </span>
-          )}
-          <code className="text-fg text-xs truncate">{origin?.ens ?? truncate(originAddress, 10)}</code>
-          <button onClick={copyAddress} className="text-faint hover:text-fg" aria-label="Copy address">
-            <Copy size={12} />
-          </button>
-          {origin?.label && <span className="hidden sm:block text-xs font-medium text-muted truncate">· {origin.label.name}</span>}
-        </div>
-
-        <div className="ml-auto flex items-center gap-3 sm:gap-4 text-xs text-faint flex-shrink-0">
+        <Link href="/" className="text-faint hover:text-fg p-1.5" aria-label="Home"><ArrowLeft size={16} /></Link>
+        <Link href="/" className="hidden xl:block text-[13px] font-medium tracking-[0.24em] text-fg pr-3 border-r border-line">CRYPTOTRACER</Link>
+        <button
+          onClick={() => setSelection(originTx ? { kind: 'tx', id: originTx } : { kind: 'address', id: originAddress })}
+          className="flex items-center gap-2 min-w-0 max-w-[260px] text-left hover:text-accent"
+          title="Show the starting point"
+        >
+          {originChain && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${originChain === 'btc' ? 'bg-orange-500' : 'bg-violet-500'}`} />}
+          <span className="text-[10px] uppercase tracking-wider text-faint flex-shrink-0">{originTx ? 'tx' : originChain}</span>
+          <span className="text-xs text-fg truncate font-mono">{originNode?.label?.name ?? originNode?.ens ?? truncate(originKey, 8)}</span>
+        </button>
+        <div className="flex-1 flex justify-center min-w-0 px-2"><SearchForm compact /></div>
+        <div className="flex items-center gap-2.5 text-xs text-faint flex-shrink-0">
           {traceStatus && (
             <span className="flex items-center gap-2 text-accent">
               <span className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-              <span className="hidden sm:inline">{traceStatus}</span>
+              <span className="hidden 2xl:inline">{traceStatus}</span>
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
           )}
           {traced.length > 0 && (
             <div className="flex border border-line text-[11px] font-medium">
-              {([['Trace only', true], ['Everything', false]] as const).map(([label, v]) => (
-                <button
-                  key={label}
-                  onClick={() => setFocusTrace(v)}
-                  className={`h-7 px-2.5 ${focusTrace === v ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
-                >
-                  {label}
-                </button>
+              {([['Trail', true], ['All', false]] as const).map(([label, v]) => (
+                <button key={label} onClick={() => setFocusTrace(v)} title={v ? 'Show only the traced money trail' : 'Show everything on the graph'}
+                  className={`h-7 px-2.5 ${focusTrace === v ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}>{label}</button>
               ))}
             </div>
           )}
-          {!initialLoading && graphNodes.length > 0 && (
-            <>
-              <span className="hidden md:block">{graphNodes.length} addresses · {graphEdges.length} flows</span>
-              <button onClick={undo} disabled={!history.length} className="flex items-center gap-1 hover:text-fg disabled:opacity-30" title="Undo">
-                <Undo2 size={14} />
-                {history.length > 0 && <span className="text-[10px]">{history.length}</span>}
-              </button>
-              <button onClick={loadOrigin} className="hover:text-fg" title="Reset trace"><RefreshCw size={14} /></button>
-            </>
-          )}
+          <span className="hidden lg:block whitespace-nowrap">{graphNodes.length} addresses</span>
+          <button onClick={undo} disabled={!history.length} className="flex items-center gap-1 hover:text-fg disabled:opacity-30 p-1" title="Undo">
+            <Undo2 size={14} />{history.length > 0 && <span className="text-[10px]">{history.length}</span>}
+          </button>
+          <button onClick={loadOrigin} className="hover:text-fg p-1" title="Start over"><RefreshCw size={14} /></button>
+          <ExportMenu
+            onSaveCase={saveCase}
+            onLoadCase={loadCase}
+            onReport={openReport}
+            onPng={exportPng}
+            onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges, taintResult?.byEdge), 'text/csv')}
+            onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
+          />
           <ThemeToggle />
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden min-h-0">
         {!initialLoading && !error && (
-          <Sidebar
-            origin={origin}
-            counts={{ nodes: graphNodes.length, edges: graphEdges.length, labelled: graphNodes.filter(n => n.label).length, txs: allTxs.length }}
+          <CasePanel
+            collapsed={caseCollapsed}
+            onToggle={() => setCaseCollapsed(c => !c)}
             legendTypes={legendTypes}
             follow={follow}
             onFollow={setFollow}
@@ -670,148 +775,65 @@ function TracePageInner() {
             tornadoLinks={tornado}
             labelOf={labelOf}
             nameOf={nameOf}
-            onSelect={selectFromSidebar}
-            onSaveCase={saveCase}
-            onLoadCase={loadCase}
-            onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges, taintResult?.byEdge), 'text/csv')}
-            onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
-            onPng={exportPng}
-            onReport={openReport}
+            onSelect={openAddress}
           />
         )}
 
-        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex-1 relative overflow-hidden">
-            {initialLoading && (
-              <div className="absolute inset-0 grid place-items-center">
-                <div className="text-center">
-                  <div className="w-7 h-7 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <div className="text-muted text-sm">Tracing transactions…</div>
+        <main className="flex-1 relative overflow-hidden min-w-0">
+          {initialLoading && (
+            <div className="absolute inset-0 grid place-items-center">
+              <div className="text-center">
+                <div className="w-7 h-7 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <div className="text-muted text-sm">Loading…</div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="absolute inset-0 grid place-items-center p-6">
+              <div className="max-w-md border border-red-500/40 bg-red-500/5 p-5 text-sm">
+                <div className="font-medium text-red-500 mb-1">Couldn&apos;t load this {originTx ? 'transaction' : 'address'}</div>
+                <p className="text-muted leading-relaxed">{error}</p>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={loadOrigin} className="h-8 px-3 text-xs font-medium bg-accent hover:bg-accent-hover text-accent-fg">Retry</button>
+                  <Link href="/" className="h-8 px-3 grid place-items-center text-xs font-medium bg-raised hover:bg-line text-fg">New search</Link>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {error && (
-              <div className="absolute inset-0 grid place-items-center p-6">
-                <div className="max-w-md border border-red-500/40 bg-red-500/5 p-5 text-sm">
-                  <div className="font-medium text-red-500 mb-1">Couldn&apos;t trace this address</div>
-                  <p className="text-muted leading-relaxed">{error}</p>
-                  <div className="mt-4 flex gap-2">
-                    <button onClick={loadOrigin} className="h-8 px-3 text-xs font-medium bg-accent hover:bg-accent-hover text-accent-fg">Retry</button>
-                    <Link href="/" className="h-8 px-3 grid place-items-center text-xs font-medium bg-raised hover:bg-line text-fg">New search</Link>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!initialLoading && !error && graphNodes.length > 0 && (
-              <TraceGraph
-                nodes={graphNodes}
-                edges={graphEdges}
-                followedPairs={followedPairs}
-                traced={traced}
-                more={moreNodes}
-                taintByEdge={taintResult?.byEdge}
-                selected={selected}
-                selectedEdge={selectedEdge ? `${selectedEdge.from}->${selectedEdge.to}` : null}
-                onNodeClick={openAddress}
-                onEdgeClick={(from, to) => { setSelectedEdge({ from, to }); setSelected(null) }}
-                onMoreClick={openAddress}
-                onReady={api => (graphApi.current = api)}
-              />
-            )}
-
-            {!initialLoading && !error && graphNodes.length > 0 && !selected && !selectedEdge && (
-              <div className="absolute left-3 top-3 z-10 max-w-xs bg-panel/90 border border-line px-3 py-2 text-[11px] text-muted leading-relaxed">
-                Click an <b className="text-fg font-medium">address</b> to see its transactions, or a <b className="text-fg font-medium">flow</b> (line) to see the payments behind it and trace them.
-              </div>
-            )}
-
-            {selectedEdge && (
-              <EdgeDetail
-                from={selectedEdge.from}
-                to={selectedEdge.to}
-                chain={originChain ?? 'btc'}
-                rows={edgeRows}
-                traced={traced.filter(f => f.from === selectedEdge.from && f.to === selectedEdge.to)}
-                prices={prices}
-                busy={!!traceStatus}
-                nameOf={nameOf}
-                onSelect={openAddress}
-                onTraceForward={row => {
-                  const tx = txForRow(row)
-                  if (tx) runFollow('forward', seedsFromTx(tx, row.source, row.target))
-                  else flash('Transaction not loaded')
-                }}
-                onTraceBack={row => {
-                  const tx = txForRow(row)
-                  if (tx) runFollow('backward', backSeedsFromTx(tx, row.target, row.source))
-                  else flash('Transaction not loaded')
-                }}
-                onClose={() => setSelectedEdge(null)}
-              />
-            )}
-
-            {selectedNode && !selectedEdge && (
-              <NodeDetail
-                node={selectedNode}
-                loaded={selectedPage?.rawTxs.length ?? 0}
-                isLoading={loadingAddrs.has(selectedNode.address)}
-                canRemove={selectedNode.address !== originAddress}
-                cluster={clusters.byAddress.get(selectedNode.address)}
-                taint={taint ? { amount: taintResult?.byAddress.get(selectedNode.address)?.received ?? 0, asset: taint.asset, isSeed: taint.seed === selectedNode.address } : undefined}
-                tracing={!!traceStatus}
-                onClose={() => { setSelected(null); setShowTx(false) }}
-                onTransactions={() => openAddress(selectedNode.address)}
-                onRemove={() => removeNode(selectedNode.address)}
-                onTaint={() => {
-                  const addr = selectedNode.address
-                  setTaint(t => ({ seed: addr, method: t?.method ?? 'haircut', asset: nativeAsset(selectedNode.chain) }))
-                  ensurePage(addr)
-                }}
-                onTrace={dir => traceFromNode(selectedNode.address, dir)}
-                onShowCluster={() => {
-                  const c = clusters.byAddress.get(selectedNode.address)
-                  if (!c) return
-                  snapshot()
-                  showOnGraph(c.members)
-                }}
-                onNote={note => {
-                  const n = knownRef.current.get(selectedNode.address)
-                  if (!n) return
-                  knownRef.current = new Map(knownRef.current).set(n.address, { ...n, note: note.trim() || undefined })
-                  setKnown(knownRef.current)
-                }}
-              />
-            )}
-
-            {toast && (
-              <div className="absolute left-1/2 -translate-x-1/2 bottom-4 z-30 bg-panel border border-line px-4 py-2 text-xs text-fg shadow-xl">
-                {toast}
-              </div>
-            )}
-          </div>
-
-          {showTx && selected && (
-            <TxTable
-              address={selected}
-              txs={selectedPage?.rawTxs ?? []}
-              loading={loadingAddrs.has(selected) && !selectedPage}
-              hasMore={!!selectedPage?.nextCursor}
-              loadingMore={loadingMore}
-              warnings={selectedPage?.warnings}
-              onGraph={visible}
-              followingAddrs={loadingAddrs}
-              labelOf={labelOf}
-              ensOf={ensOf}
-              tracing={!!traceStatus}
-              onTrace={(tx, dir) => runFollow(dir, dir === 'forward' ? seedsFromTx(tx, selected) : backSeedsFromTx(tx, selected))}
-              onFollow={to => followAddress(selected, to)}
-              onLoadMore={loadMore}
-              onClose={() => setShowTx(false)}
+          {!initialLoading && !error && (graphNodes.length > 0 || graphHubs.length > 0) && (
+            <TraceGraph
+              nodes={graphNodes}
+              edges={graphEdges}
+              followedPairs={followedPairs}
+              traced={traced}
+              hubs={graphHubs}
+              taintByEdge={taintResult?.byEdge}
+              selected={selectedAddress}
+              selectedEdge={selection?.kind === 'flow' ? `${selection.from}->${selection.to}` : null}
+              selectedHub={selection?.kind === 'tx' ? selection.id : null}
+              onNodeClick={openAddress}
+              onEdgeClick={(from, to) => setSelection({ kind: 'flow', from, to })}
+              onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
+              onReady={api => (graphApi.current = api)}
             />
           )}
+
+          {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
+              Add counterparties from the <b className="text-fg font-medium">Counterparties</b> list on the right with <b className="text-fg font-medium">+</b>, or press <b className="text-fg font-medium">Trace out</b>.
+            </div>
+          )}
+
+          {toast && (
+            <div className="absolute left-1/2 -translate-x-1/2 top-4 z-30 bg-panel border border-line px-4 py-2 text-xs text-fg shadow-xl">{toast}</div>
+          )}
         </main>
+
+        {!initialLoading && !error && (
+          <aside className="w-[400px] max-w-[45vw] flex-shrink-0 border-l border-line bg-bg flex flex-col min-h-0">{inspector}</aside>
+        )}
       </div>
     </div>
   )

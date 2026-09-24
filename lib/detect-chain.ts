@@ -20,3 +20,20 @@ export function truncate(address: string, chars = 6): string {
   if (address.length <= chars * 2 + 3) return address
   return `${address.slice(0, chars)}...${address.slice(-4)}`
 }
+
+export type SearchTarget = { kind: 'address' | 'tx'; chain: Chain; value: string }
+
+/** Address or transaction: 0x+64 hex = ETH tx, 64 hex = BTC txid */
+export function detectInput(input: string): SearchTarget | null {
+  const t = input.trim()
+  if (/^0x[0-9a-fA-F]{64}$/.test(t)) return { kind: 'tx', chain: 'eth', value: t.toLowerCase() }
+  if (/^[0-9a-fA-F]{64}$/.test(t)) return { kind: 'tx', chain: 'btc', value: t.toLowerCase() }
+  const chain = detectChain(t)
+  return chain ? { kind: 'address', chain, value: normaliseAddress(t, chain) } : null
+}
+
+export function searchUrl(t: SearchTarget): string {
+  return t.kind === 'tx'
+    ? `/trace?tx=${t.value}&chain=${t.chain}`
+    : `/trace?address=${encodeURIComponent(t.value)}&chain=${t.chain}`
+}

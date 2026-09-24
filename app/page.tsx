@@ -67,7 +67,7 @@ export default function Home() {
             </p>
             <SearchForm />
             <p className="text-xs text-faint">
-              Bitcoin works out of the box. Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
+              Paste an address or a transaction hash. Bitcoin works out of the box; Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
               <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
           </div>

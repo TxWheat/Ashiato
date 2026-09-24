@@ -1,4 +1,4 @@
-import { Chain, EdgeData, NodeData, RawTransaction } from './types'
+import { Chain, EdgeData, NodeData, RawTransaction, TxLookup } from './types'
 import { TaintMethod } from './taint'
 import type { TracedFlow, TraceEnd } from './follow'
 
@@ -16,7 +16,10 @@ export interface LoadedPage {
 export interface CaseFile {
   version: number
   savedAt: string
+  /** For a transaction case, `address` holds the txid */
   origin: { address: string; chain: Chain }
+  originKind?: 'address' | 'tx'
+  hubs?: TxLookup[]
   /** Every address seen, with labels, risk and notes */
   known: NodeData[]
   /** Addresses shown on the graph */

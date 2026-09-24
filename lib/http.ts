@@ -7,8 +7,10 @@ import 'server-only'
 const MAX_ENTRIES = 1000
 const cache = new Map<string, { expires: number; body: unknown }>()
 const lastCall = new Map<string, number>()
+// Etherscan's free tier allows ~3 calls/s; set ETHERSCAN_RPS if your plan allows more
+const ETHERSCAN_RPS = Math.max(1, Number(process.env.ETHERSCAN_RPS) || 3)
 const MIN_GAP_MS: Record<string, number> = {
-  'api.etherscan.io': 220, // free tier: 5 calls/s
+  'api.etherscan.io': Math.ceil(1000 / ETHERSCAN_RPS) + 20,
   'blockstream.info': 120,
   'mempool.space': 120,
 }
@@ -27,7 +29,11 @@ async function throttle(host: string) {
   if (next > now) await new Promise(r => setTimeout(r, next - now))
 }
 
-export async function fetchJson<T>(url: string, ttlSeconds = 60, retries = 3): Promise<T> {
+/**
+ * `softError` lets callers flag a 200 response that is really a rate-limit error
+ * (Etherscan does this); such bodies are retried with back-off and never cached.
+ */
+export async function fetchJson<T>(url: string, ttlSeconds = 60, retries = 3, softError?: (body: T) => boolean): Promise<T> {
   const hit = cache.get(url)
   if (hit && hit.expires > Date.now()) return hit.body as T
 
@@ -49,6 +55,11 @@ export async function fetchJson<T>(url: string, ttlSeconds = 60, retries = 3): P
         body = JSON.parse(text) as T
       } catch {
         throw new UpstreamError(`${host} returned non-JSON: ${text.slice(0, 80)}`, 502)
+      }
+      if (softError?.(body)) {
+        lastErr = new UpstreamError(`${host} rate limit reached. Wait a few seconds and retry${host.includes("etherscan") ? ", or set ETHERSCAN_RPS higher if your plan allows" : ""}`, 429)
+        await new Promise(r => setTimeout(r, 1100 * 2 ** attempt))
+        continue
       }
       if (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value!)
       cache.set(url, { expires: Date.now() + ttlSeconds * 1000, body })

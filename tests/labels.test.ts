@@ -18,6 +18,10 @@ describe('label dataset', () => {
     expect(getLabel('34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo'.toLowerCase(), 'btc')).toBeUndefined()
     expect(getLabel('3BMEXqGpG4FxBA1KWhRFufXfSTRgzfDBhJ', 'btc')?.type).toBe('deposit')
   })
+  it('never labels the null or burn address as a scam', () => {
+    expect(getLabel('0x0000000000000000000000000000000000000000', 'eth')?.type).toBe('service')
+    expect(getLabel('0x000000000000000000000000000000000000dEaD', 'eth')?.name).toBe('Burn address')
+  })
   it('has the corrected Tornado pool names', () => {
     expect(getLabel('0x47ce0c6ed5b0ce3d3a51fdb1c52dc66a7c3c2936', 'eth')?.name).toBe('Tornado Cash 1 ETH pool')
   })

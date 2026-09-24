@@ -1,14 +1,13 @@
 'use client'
 
-import { useRef } from 'react'
 import { clsx } from 'clsx'
-import { Download, Upload, FileText, Image as ImageIcon, Share2, Table } from 'lucide-react'
-import { EntityLabel, EntityType, NodeData } from '@/lib/types'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { EntityLabel, EntityType } from '@/lib/types'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { TornadoLink } from '@/lib/heuristics/eth/tornado'
 import { TaintMethod, TaintResult } from '@/lib/taint'
 import { TracedFlow, TraceEnd, EndReason } from '@/lib/follow'
-import { ENTITY_STYLE, fmtAmount, fmtBalance } from '@/lib/format'
+import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
 const END_TITLE: Record<EndReason, string> = {
@@ -38,9 +37,6 @@ function Section({ title, children, right }: { title: string; children: React.Re
   )
 }
 
-const RISK_BAR: Record<string, string> = {
-  clean: 'bg-green-500', low: 'bg-lime-500', medium: 'bg-yellow-500', high: 'bg-orange-500', critical: 'bg-red-500',
-}
 
 const METHODS: { id: TaintMethod; name: string; hint: string }[] = [
   { id: 'haircut', name: 'Haircut', hint: 'Proportional share (industry default)' },
@@ -48,9 +44,9 @@ const METHODS: { id: TaintMethod; name: string; hint: string }[] = [
   { id: 'poison', name: 'Poison', hint: 'Any contact taints all (upper bound)' },
 ]
 
-export interface SidebarProps {
-  origin?: NodeData
-  counts: { nodes: number; edges: number; labelled: number; txs: number }
+export interface CasePanelProps {
+  collapsed: boolean
+  onToggle: () => void
   legendTypes: EntityType[]
   follow: { hops: number; branches: number }
   onFollow: (f: { hops: number; branches: number }) => void
@@ -68,71 +64,30 @@ export interface SidebarProps {
   labelOf: (a: string) => EntityLabel | undefined
   nameOf: (a: string) => string | undefined
   onSelect: (address: string) => void
-  onSaveCase: () => void
-  onLoadCase: (file: File) => void
-  onCsv: () => void
-  onGraphml: () => void
-  onPng: () => void
-  onReport: () => void
 }
 
-export default function Sidebar(p: SidebarProps) {
-  const fileRef = useRef<HTMLInputElement>(null)
-  const o = p.origin
+export default function CasePanel(p: CasePanelProps) {
   const name = (a: string) => p.nameOf(a) ?? truncate(a, 6)
 
-  const ExportBtn = ({ onClick, icon, children }: { onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) => (
-    <button onClick={onClick} className="flex items-center gap-2 h-8 px-2.5 text-[11px] font-medium bg-raised hover:bg-line text-fg transition-colors">
-      {icon}
-      {children}
-    </button>
-  )
-
   return (
-    <aside className="w-72 flex-shrink-0 border-r border-line bg-bg overflow-y-auto hidden md:block">
-      {o && (
-        <Section title="Subject">
-          <code className="text-[10px] text-accent break-all block leading-relaxed">{o.address}</code>
-          {o.label && (
-            <div className="mt-2 flex items-center gap-2">
-              <span className={clsx('w-2 h-2 rounded-full', ENTITY_STYLE[o.label.type].dot)} />
-              <span className="text-sm font-medium text-fg">{o.label.name}</span>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <div>
-              <div className="text-[10px] text-faint mb-0.5">Balance</div>
-              <div className="text-xs font-mono text-fg">{fmtBalance(o.balance, o.chain)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] text-faint mb-0.5">Transactions</div>
-              <div className="text-xs text-fg">{o.txCount.toLocaleString()}</div>
-            </div>
-          </div>
-          {o.risk && (
-            <div className="mt-4">
-              <div className="flex justify-between text-[11px] mb-1.5">
-                <span className="text-faint">Risk</span>
-                <span className="font-mono text-fg">{o.risk.score}/100 <span className="capitalize text-muted">{o.risk.level}</span></span>
-              </div>
-              <div className="h-1 bg-raised">
-                <div className={clsx('h-full', RISK_BAR[o.risk.level])} style={{ width: `${Math.max(2, o.risk.score)}%` }} />
-              </div>
-              <ul className="mt-2 space-y-1 text-[11px] text-muted list-disc pl-4">
-                {o.risk.reasons.slice(0, 4).map((r, i) => <li key={i}>{r}</li>)}
-              </ul>
-            </div>
-          )}
-        </Section>
-      )}
-
+    p.collapsed ? (
+      <aside className="w-10 flex-shrink-0 border-r border-line bg-bg hidden md:flex flex-col items-center pt-3">
+        <button onClick={p.onToggle} title="Show case panel" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
+        {p.traced.length > 0 && <span className="mt-2 w-2 h-2 rounded-full bg-accent" title="Trace results" />}
+      </aside>
+    ) : (
+    <aside className="w-64 flex-shrink-0 border-r border-line bg-bg overflow-y-auto hidden md:block">
+      <div className="flex items-center justify-between h-10 px-4 border-b border-line">
+        <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-faint">Case</span>
+        <button onClick={p.onToggle} title="Hide case panel" className="text-faint hover:text-fg p-1"><PanelLeftClose size={14} /></button>
+      </div>
       <Section
         title="Follow the funds"
         right={p.traced.length > 0 && <button onClick={p.onClearTrace} className="text-[10px] text-faint hover:text-fg">Clear</button>}
       >
         {p.traced.length === 0 ? (
           <p className="text-[11px] text-muted leading-relaxed">
-            Click an address, then <b className="text-fg font-medium">Trace</b> on one of its transactions (or <b className="text-fg font-medium">Trace funds out</b> for its largest payments). Bitcoin follows the exact coins; Ethereum follows the next outflows after the funds arrive, capped at the amount received.
+            Open an address or transaction and press <b className="text-fg font-medium">Trace</b> on a payment (or <b className="text-fg font-medium">Trace out</b> for its largest payments). Bitcoin follows the exact coins; Ethereum follows the next outflows after the funds arrive, capped at the amount received.
           </p>
         ) : (
           <div className="space-y-2">
@@ -263,27 +218,7 @@ export default function Sidebar(p: SidebarProps) {
         </div>
       </Section>
 
-      <Section title="Case & export">
-        <div className="grid grid-cols-2 gap-2">
-          <ExportBtn onClick={p.onSaveCase} icon={<Download size={12} />}>Save case</ExportBtn>
-          <ExportBtn onClick={() => fileRef.current?.click()} icon={<Upload size={12} />}>Open case</ExportBtn>
-          <ExportBtn onClick={p.onReport} icon={<FileText size={12} />}>Report</ExportBtn>
-          <ExportBtn onClick={p.onPng} icon={<ImageIcon size={12} />}>PNG</ExportBtn>
-          <ExportBtn onClick={p.onCsv} icon={<Table size={12} />}>CSV</ExportBtn>
-          <ExportBtn onClick={p.onGraphml} icon={<Share2 size={12} />}>GraphML</ExportBtn>
-        </div>
-        <input ref={fileRef} type="file" accept="application/json,.json" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) p.onLoadCase(f); e.target.value = '' }} />
-        <p className="mt-2 text-[10px] text-faint">Case files stay on your computer. Nothing is uploaded.</p>
-      </Section>
-
-      <Section title="Stats">
-        <dl className="space-y-1 text-[11px]">
-          {[['Addresses on graph', p.counts.nodes], ['Fund flows', p.counts.edges], ['Labelled', p.counts.labelled], ['Transactions loaded', p.counts.txs]].map(([k, v]) => (
-            <div key={k} className="flex justify-between"><dt className="text-faint">{k}</dt><dd className="text-fg">{v}</dd></div>
-          ))}
-        </dl>
-      </Section>
     </aside>
+    )
   )
 }

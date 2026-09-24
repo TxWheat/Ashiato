@@ -137,3 +137,18 @@ export interface TraceResult {
   /** Non-fatal notes for the user (e.g. "token transfers unavailable") */
   warnings?: string[]
 }
+
+/** One transaction looked up directly (search by txid / hash) */
+export interface TxLookup {
+  chain: Chain
+  txid: string
+  timestamp: number
+  /** BTC: one entry. ETH: one per value transfer inside the tx */
+  transfers: RawTransaction[]
+  labels: Record<string, EntityLabel>
+  ens: Record<string, string>
+  failed?: boolean
+  warnings?: string[]
+  /** BTC: spender txid per output (null = unspent) */
+  spentBy?: (string | null)[]
+}

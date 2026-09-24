@@ -32,8 +32,16 @@ function load() {
   return cache
 }
 
+// Protocol addresses that public datasets sometimes mislabel (e.g. the zero address
+// tagged as a scam because blacklisted tokens were minted from it)
+const SPECIAL: Record<string, EntityLabel> = {
+  '0x0000000000000000000000000000000000000000': { name: 'Null address (token mint / burn)', type: 'service', source: 'Ethereum convention' },
+  '0x000000000000000000000000000000000000dead': { name: 'Burn address', type: 'service', source: 'Ethereum convention' },
+}
+
 export function getLabel(address: string, chain: Chain): EntityLabel | undefined {
   const addr = normaliseAddress(address, chain)
+  if (chain === 'eth' && SPECIAL[addr]) return SPECIAL[addr]
   const hit = load()[chain].get(addr)
   if (hit) return hit
   // BitMEX gives every customer a vanity deposit address starting with 3BMEX
