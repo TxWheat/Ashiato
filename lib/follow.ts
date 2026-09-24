@@ -1,4 +1,4 @@
-import { Chain, EntityLabel, EntityType, RawTransaction } from './types'
+import { Chain, EntityLabel, EntityType, RawTransaction, transferKey } from './types'
 
 // Follow-the-funds tracing. Unlike a "biggest counterparties" crawl, this
 // tracks a specific amount ("lot") of money hop by hop:
@@ -244,7 +244,7 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
     if (remaining <= tol) break
     const take = Math.min(remaining, t.outputs[0].amount)
     const to = t.outputs[0].address
-    const key = `${to}|${t.txid}`
+    const key = `${to}|${transferKey(t)}`
     alloc.set(key, { amount: take, tx: t, covered: 0 })
     remaining -= take
   }

@@ -1,4 +1,4 @@
-import { EntityLabel, Finding, RawTransaction } from '../../types'
+import { EntityLabel, Finding, RawTransaction, transferKey } from '../../types'
 
 // Tornado Cash reveals, re-implemented from the ideas in pareto-xyz/tutela-app:
 //  - Address match: the same address deposits to and withdraws from a pool.
@@ -27,7 +27,7 @@ export function tornadoEvents(txs: RawTransaction[], labelOf: (a: string) => Ent
   const withdrawals: TornadoEvent[] = []
   const seen = new Set<string>()
   for (const tx of txs) {
-    const key = `${tx.txid}:${tx.kind}:${tx.asset}`
+    const key = transferKey(tx)
     if (seen.has(key)) continue
     seen.add(key)
     const from = tx.inputs[0]?.address

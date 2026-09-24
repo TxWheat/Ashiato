@@ -105,6 +105,20 @@ describe('traceEthAddress', () => {
     expect(r.warnings?.join(' ')).toMatch(/look-alike/)
   })
 
+  it('keeps several identical transfers inside one transaction (distinct logIndex)', async () => {
+    process.env.ETHERSCAN_API_KEY = 'k'
+    const DUP = '0x8888888888888888888888888888888888888888' // fresh address: responses are cached per URL
+    const tok = (logIndex: string) => ({ hash: '0xdup', from: '0x0000000000000000000000000000000000000000', to: DUP, value: '1000000', timeStamp: '100', tokenSymbol: 'USDC', tokenDecimal: '6', contractAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', logIndex })
+    mockFetch([
+      [/action=balance/, { status: '1', message: 'OK', result: '0' }],
+      [/action=tokentx/, { status: '1', message: 'OK', result: [tok('7'), tok('9')] }],
+      [/action=/, { status: '0', message: 'No transactions found', result: [] }],
+    ])
+    const r = await traceEthAddress(DUP)
+    expect(r.rawTxs.map(t => t.eventId)).toEqual(['7', '9'])
+    expect(r.edges.find(e => e.asset === 'USDC')?.amount).toBe(2)
+  })
+
   it('surfaces Etherscan errors', async () => {
     process.env.ETHERSCAN_API_KEY = 'k'
     mockFetch([

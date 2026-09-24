@@ -70,6 +70,8 @@ export interface RawTransaction {
   asset: string
   /** ETH: 'normal' | 'internal' | 'token' */
   kind?: 'normal' | 'internal' | 'token'
+  /** ETH: distinguishes several transfers inside one tx (token logIndex / internal traceId) */
+  eventId?: string
   inputs: TxIO[]
   outputs: TxIO[]
   fee?: number
@@ -79,6 +81,11 @@ export interface RawTransaction {
   gasPriceGwei?: number
   /** ETH: failed transactions are dropped, so this is always false when present */
   failed?: boolean
+}
+
+/** Unique identity of one transfer (a tx hash can carry several) */
+export function transferKey(tx: RawTransaction): string {
+  return `${tx.txid}:${tx.kind ?? ''}:${tx.eventId ?? ''}:${tx.asset}:${tx.inputs[0]?.address ?? ''}:${tx.outputs[0]?.address ?? ''}`
 }
 
 export interface NodeData {

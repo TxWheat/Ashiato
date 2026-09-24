@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ExternalLink, GitBranch, X, ArrowRight, AlertTriangle, ArrowRightFromLine, ArrowLeftToLine } from 'lucide-react'
-import { EntityLabel, RawTransaction, TxIO } from '@/lib/types'
+import { EntityLabel, RawTransaction, TxIO, transferKey } from '@/lib/types'
 import { truncate } from '@/lib/detect-chain'
 import { ENTITY_STYLE, explorerTxUrl, fmtAmount, fmtDate } from '@/lib/format'
 
@@ -71,7 +71,7 @@ export default function TxTable(p: Props) {
 
   const List = ({ tx, side }: { tx: RawTransaction; side: 'in' | 'out' }) => {
     const items = side === 'in' ? tx.inputs : tx.outputs
-    const key = `${tx.txid}:${tx.kind}:${side}`
+    const key = `${transferKey(tx)}:${side}`
     const open = expanded.has(key)
     const shown = open ? items : items.slice(0, SHOW)
     return (
@@ -126,12 +126,12 @@ export default function TxTable(p: Props) {
             <div className="grid grid-cols-[120px_60px_1fr_16px_1fr_150px] gap-3 px-4 py-2 sticky top-0 bg-bg border-b border-line text-[9px] uppercase tracking-widest text-faint z-10">
               <span>Date</span><span>Dir</span><span>From</span><span /><span>To · amount</span><span>Tx</span>
             </div>
-            {p.txs.map(tx => {
+            {p.txs.map((tx, rowIndex) => {
               const sent = tx.inputs.some(i => i.address === p.address)
               const got = tx.outputs.some(o => o.address === p.address)
               const dir = sent && got ? 'self' : sent ? 'out' : 'in'
               return (
-                <div key={`${tx.txid}:${tx.kind}:${tx.asset}:${tx.inputs[0]?.address}:${tx.outputs[0]?.address}`} className="grid grid-cols-[120px_60px_1fr_16px_1fr_150px] gap-3 px-4 py-2 border-b border-line/60 hover:bg-panel">
+                <div key={`${transferKey(tx)}:${rowIndex}`} className="grid grid-cols-[120px_60px_1fr_16px_1fr_150px] gap-3 px-4 py-2 border-b border-line/60 hover:bg-panel">
                   <div className="text-muted whitespace-nowrap">
                     {fmtDate(tx.timestamp)}
                     <div className="mt-1 flex flex-wrap gap-1">

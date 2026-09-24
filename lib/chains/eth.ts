@@ -32,11 +32,11 @@ interface NormalTx {
 }
 interface InternalTx {
   hash: string; from: string; to: string; value: string; timeStamp: string
-  isError: string; contractAddress?: string
+  isError: string; contractAddress?: string; traceId?: string
 }
 interface TokenTx {
   hash: string; from: string; to: string; value: string; timeStamp: string
-  tokenSymbol: string; tokenDecimal: string; contractAddress: string
+  tokenSymbol: string; tokenDecimal: string; contractAddress: string; logIndex?: string
 }
 
 export class MissingApiKeyError extends Error {}
@@ -95,9 +95,9 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
   const rawTxs: RawTransaction[] = []
   const transfer = (
     txid: string, from: string, to: string, amount: number, asset: string,
-    ts: string, kind: RawTransaction['kind'], gasPriceGwei?: number
+    ts: string, kind: RawTransaction['kind'], gasPriceGwei?: number, eventId?: string
   ): RawTransaction => ({
-    txid, timestamp: parseInt(ts, 10), chain: 'eth', asset, kind, gasPriceGwei,
+    txid, timestamp: parseInt(ts, 10), chain: 'eth', asset, kind, gasPriceGwei, eventId,
     inputs: [{ address: from.toLowerCase(), amount: 0 }],
     outputs: [{ address: to.toLowerCase(), amount }],
   })
@@ -114,7 +114,7 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
     const to = t.to || t.contractAddress || ''
     const v = toUnits(t.value, 18)
     if (!to || v <= 0) continue
-    rawTxs.push(transfer(t.hash, t.from, to, v, 'ETH', t.timeStamp, 'internal'))
+    rawTxs.push(transfer(t.hash, t.from, to, v, 'ETH', t.timeStamp, 'internal', undefined, t.traceId))
   }
   let spam = 0
   let fake = 0
@@ -130,7 +130,7 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
       symbol = `${symbol}*`
       fake++
     }
-    rawTxs.push(transfer(t.hash, t.from, t.to, v, symbol, t.timeStamp, 'token'))
+    rawTxs.push(transfer(t.hash, t.from, t.to, v, symbol, t.timeStamp, 'token', undefined, t.logIndex))
   }
   if (spam) warnings.push(`${spam} zero-value token transfer(s) hidden (typical address-poisoning spam)`)
   if (fake) warnings.push(`${fake} transfer(s) of look-alike tokens shown with * (not the real contract, likely scam tokens)`)

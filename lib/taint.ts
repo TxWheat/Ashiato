@@ -1,4 +1,4 @@
-import { RawTransaction } from './types'
+import { RawTransaction, transferKey } from './types'
 
 // Taint analysis: how much of the funds from a "dirty" source reached each
 // address. Methods as described by TrailBit-Labs/TaintTrail and tintiron/taintedtx:
@@ -35,7 +35,7 @@ export function edgeKey(from: string, to: string) {
 
 function dedupe(txs: RawTransaction[], asset: string) {
   const m = new Map<string, RawTransaction>()
-  for (const t of txs) if (t.asset === asset) m.set(`${t.txid}:${t.kind ?? ''}:${t.inputs[0]?.address ?? ''}:${t.outputs[0]?.address ?? ''}`, t)
+  for (const t of txs) if (t.asset === asset) m.set(transferKey(t), t)
   return [...m.values()]
 }
 

@@ -26,7 +26,7 @@ export function txEdges(address: string, chain: Chain, rawTxs: RawTransaction[])
       for (const [from, value] of byAddr) {
         const share = totalIn > 0 ? value / totalIn : 1 / byAddr.size
         perTx.push({
-          id: `${tx.txid}|${from}|${address}|${tx.asset}`, source: from, target: address, amount: received * share,
+          id: `${tx.txid}|${tx.eventId ?? ''}|${from}|${address}|${tx.asset}`, source: from, target: address, amount: received * share,
           asset: tx.asset, txid: tx.txid, timestamp: tx.timestamp, chain,
         })
       }
@@ -38,7 +38,7 @@ export function txEdges(address: string, chain: Chain, rawTxs: RawTransaction[])
       for (const o of tx.outputs) {
         if (!o.address || o.address === address || o.amount <= 0) continue
         perTx.push({
-          id: `${tx.txid}|${address}|${o.address}|${tx.asset}`, source: address, target: o.address, amount: o.amount * share,
+          id: `${tx.txid}|${tx.eventId ?? ''}|${address}|${o.address}|${tx.asset}`, source: address, target: o.address, amount: o.amount * share,
           asset: tx.asset, txid: tx.txid, timestamp: tx.timestamp, chain, isChange: o.isChange,
         })
       }

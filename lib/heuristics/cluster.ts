@@ -1,4 +1,4 @@
-import { EntityLabel, RawTransaction } from '../types'
+import { EntityLabel, RawTransaction, transferKey } from '../types'
 
 // Address clustering with union-find.
 //  - BTC common-input-ownership: every address that signs inputs of the same
@@ -57,8 +57,8 @@ export function clusterAddresses(
 
   const seen = new Set<string>()
   for (const tx of txs) {
-    if (seen.has(tx.txid + tx.asset + (tx.kind ?? ''))) continue
-    seen.add(tx.txid + tx.asset + (tx.kind ?? ''))
+    if (seen.has(transferKey(tx))) continue
+    seen.add(transferKey(tx))
 
     if (tx.chain === 'btc' && !tx.coinjoin && !tx.isCoinbase) {
       const addrs = [...new Set(tx.inputs.map(i => i.address).filter(Boolean))]

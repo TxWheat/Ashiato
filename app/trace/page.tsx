@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { ArrowLeft, Copy, RefreshCw, Undo2, X } from 'lucide-react'
-import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult } from '@/lib/types'
+import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, transferKey } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
 import { clusterAddresses } from '@/lib/heuristics/cluster'
@@ -132,7 +132,10 @@ function TracePageInner() {
     setTimeout(() => setToast(''), 5000)
   }, [])
 
-  /** Merges a page into state. `add` = which of its counterparties to put on the graph */
+  /**
+   * Merges a page into state. `add` = addresses to put on the graph. Background loads pass []
+   * so an address the user removed while its page was loading stays removed.
+   */
   const absorb = useCallback((result: TraceResult, add: string[], append = false) => {
     // Update the ref synchronously so an in-flight trace sees new labels immediately
     const next = new Map(knownRef.current)
@@ -159,14 +162,22 @@ function TracePageInner() {
     knownRef.current = next
     setKnown(next)
     const ex = pagesRef.current.get(result.address)
+    // Pages can overlap when new activity shifts pagination; keep each transfer once
+    const seen = new Set<string>()
+    const rawTxs = (append && ex ? [...ex.rawTxs, ...result.rawTxs] : result.rawTxs).filter(t => {
+      const k = transferKey(t)
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
     const page: LoadedPage = {
-      rawTxs: append && ex ? [...ex.rawTxs, ...result.rawTxs] : result.rawTxs,
+      rawTxs,
       nextCursor: result.nextCursor,
       warnings: result.warnings,
     }
     pagesRef.current = new Map(pagesRef.current).set(result.address, page)
     setPages(pagesRef.current)
-    setVisible(prev => new Set([...prev, result.address, ...add]))
+    if (add.length) setVisible(prev => new Set([...prev, ...add]))
   }, [originAddress])
 
   const resetState = () => {
@@ -197,7 +208,7 @@ function TracePageInner() {
     resetState()
     try {
       const r = await fetchTrace(originAddress, originChain)
-      absorb(r, pickInitial(r))
+      absorb(r, [r.address, ...pickInitial(r)])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to trace address')
     } finally {
