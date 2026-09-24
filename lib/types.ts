@@ -120,6 +120,8 @@ export interface EdgeData {
   txCount?: number
   /** Aggregated edges: earliest transaction time (timestamp is the latest) */
   firstTimestamp?: number
+  /** ETH: how the value moved (internal = sent by a contract inside the transaction) */
+  kind?: RawTransaction['kind']
 }
 
 export interface TraceResult {

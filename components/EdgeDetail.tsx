@@ -34,6 +34,15 @@ interface Props {
   onClose: () => void
 }
 
+/** Contract-sent ETH: Etherscan lists these under "Internal Transactions", not "Transactions" */
+export function InternalBadge() {
+  return (
+    <span className="text-[9px] px-1 bg-raised text-muted" title="Sent by a contract inside this transaction (e.g. a mixer withdrawal or a forwarder). On Etherscan it appears under the Internal Transactions tab, not Transactions.">
+      internal
+    </span>
+  )
+}
+
 function totals(rows: EdgeData[]) {
   const m = new Map<string, number>()
   for (const r of rows) m.set(r.asset, (m.get(r.asset) ?? 0) + r.amount)
@@ -182,6 +191,7 @@ export default function EdgeDetail(p: Props) {
                         {truncate(r.txid, 6)} <ExternalLink size={9} />
                       </a>
                       {r.isChange && <span className="text-[9px] px-1 bg-yellow-500/15 text-yellow-600">likely change</span>}
+                      {r.kind === 'internal' && <InternalBadge />}
                       <div className="ml-auto flex gap-1">
                         <button onClick={() => p.onTraceBack(r)} disabled={p.busy}
                           className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">

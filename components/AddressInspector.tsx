@@ -6,6 +6,7 @@ import {
   Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
 } from 'lucide-react'
 import { MyLabel } from '@/lib/my-labels'
+import { InternalBadge } from './EdgeDetail'
 import { EntityLabel, EntityType, NodeData, RawTransaction, transferKey } from '@/lib/types'
 import { Counterparty, FlowSummary } from '@/lib/counterparties'
 import { Cluster } from '@/lib/heuristics/cluster'
@@ -398,7 +399,7 @@ function TxList(p: Props) {
               <span className={clsx('text-[9px] font-medium uppercase px-1.5 py-0.5', dir === 'in' ? 'bg-green-500/15 text-green-500' : dir === 'out' ? 'bg-red-500/15 text-red-500' : 'bg-raised text-muted')}>{dir}</span>
               <span className="text-[11px] text-faint">{fmtDate(tx.timestamp)}</span>
               {tx.coinjoin && <span className="text-[9px] px-1 bg-orange-500/15 text-orange-500" title={tx.coinjoin.reasons.join('; ')}>{tx.coinjoin.kind} CoinJoin</span>}
-              {tx.kind && tx.kind !== 'normal' && <span className="text-[9px] px-1 bg-raised text-faint">{tx.kind}</span>}
+              {tx.kind === 'internal' ? <InternalBadge /> : tx.kind === 'token' && <span className="text-[9px] px-1 bg-raised text-faint">token</span>}
               <span className={clsx('ml-auto font-mono text-[12px]', dir === 'in' ? 'text-green-500' : dir === 'out' ? 'text-fg' : 'text-muted')}>
                 {dir === 'in' ? '+' : dir === 'out' ? '−' : ''}{fmtAmount(amount, tx.asset, 8)}
               </span>
