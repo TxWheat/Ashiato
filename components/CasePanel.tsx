@@ -87,7 +87,7 @@ export default function CasePanel(p: CasePanelProps) {
       >
         {p.traced.length === 0 ? (
           <p className="text-[11px] text-muted leading-relaxed">
-            Open an address or transaction and press <b className="text-fg font-medium">Trace</b> on a payment (or <b className="text-fg font-medium">Trace out</b> for its largest payments). Bitcoin follows the exact coins; Ethereum follows the next outflows after the funds arrive, capped at the amount received.
+            Open an address or transaction and press <b className="text-fg font-medium">Trace</b> on a specific payment. Bitcoin follows the exact coins; Ethereum follows the next outflows after the funds arrive, capped at the amount received.
           </p>
         ) : (
           <div className="space-y-2">

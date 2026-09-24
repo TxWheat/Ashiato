@@ -89,7 +89,7 @@ const SECTIONS: { id: string; title: string; body: string[]; limits: string; cre
     id: 'follow',
     title: 'Follow the funds',
     body: [
-      'Tracing follows a specific amount of money, not "the biggest counterparties". You start from a transaction (Trace on a payment) or from an address (Trace funds out uses its largest payments).',
+      'Tracing follows a specific amount of money, not "the biggest counterparties". You always start from a specific transaction: open it and press Trace (onward) or Source (backward).',
       'Bitcoin is exact. Every payment creates specific coins (UTXOs). We look up the transaction that later spent those coins and split the traced amount across its outputs in proportion to the coins\' share of that transaction\'s inputs. Source of funds walks the same links backwards through inputs.',
       'Ethereum balances are pooled, so a heuristic is needed. From the moment funds arrive at an address, the next outflows of the same asset are taken, in time order, until the arrived amount is used up (small differences for gas are tolerated). Outflows before the funds arrived are never followed, and a large later transfer cannot be attributed to a small incoming payment. Source of funds takes the most recent inflows before the money left.',
       'A trail ends at an exchange, exchange deposit address, mixer, CoinJoin, DeFi protocol or sanctioned address, when coins are still unspent, or at the hop limit. Every hop records its reason, shown when you click the line and in the report.',

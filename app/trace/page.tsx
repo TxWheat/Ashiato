@@ -430,26 +430,6 @@ function TracePageInner() {
     }
   }
 
-  /** Address-level: its largest outgoing (or incoming) transactions are the starting points */
-  const traceFromAddress = async (addr: string, direction: Direction) => {
-    const page = await ensurePage(addr)
-    if (!page) return
-    const merged = { lots: [] as Lot[], flows: [] as TracedFlow[] }
-    const pick = direction === 'forward'
-      ? page.rawTxs
-          .filter(t => t.inputs.some(i => i.address === addr))
-          .map(t => ({ t, v: t.outputs.filter(o => o.address !== addr && !o.isChange).reduce((s, o) => s + o.amount, 0) }))
-      : page.rawTxs
-          .filter(t => t.outputs.some(o => o.address === addr) && !t.inputs.some(i => i.address === addr))
-          .map(t => ({ t, v: t.outputs.filter(o => o.address === addr).reduce((s, o) => s + o.amount, 0) }))
-    for (const { t } of pick.filter(x => x.v > 0).sort((a, b) => b.v - a.v).slice(0, follow.branches)) {
-      const s = direction === 'forward' ? seedsFromTx(t, addr) : backSeedsFromTx(t, addr)
-      merged.lots.push(...s.lots)
-      merged.flows.push(...s.flows)
-    }
-    await runFollow(direction, merged)
-  }
-
   /** Transaction-level: follow one output (or all) onward */
   const traceTxOut = (tx: RawTransaction, to?: string) => {
     const from = tx.chain === 'eth' ? tx.inputs[0]?.address ?? '' : ''
@@ -665,7 +645,6 @@ function TracePageInner() {
           onTab={setTab}
           onAdd={addToGraph}
           onOpen={openAddress}
-          onTrace={dir => traceFromAddress(a, dir)}
           onTraceTx={(tx, dir) => runFollow(dir, dir === 'forward' ? seedsFromTx(tx, a) : backSeedsFromTx(tx, a))}
           onTaint={() => {
             setTaint(t => ({ seed: a, method: t?.method ?? 'haircut', asset: nativeAsset(selectedNode.chain) }))
@@ -874,7 +853,7 @@ function TracePageInner() {
 
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
-              Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>, or press <b className="text-fg font-medium">Trace out</b>. Click empty space to hide the panel.
+              Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>. To follow money, open a transaction and press <b className="text-fg font-medium">Trace</b>. Click empty space to hide the panel.
             </div>
           )}
 

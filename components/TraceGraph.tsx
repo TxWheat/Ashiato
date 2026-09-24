@@ -181,7 +181,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       list.forEach((e, i) => {
         // Same visual side regardless of direction, so A→B and B→A lines interleave cleanly
         const sign = e.source < e.target ? 1 : -1
-        const offset = (i - (list.length - 1) / 2) * 34 * sign
+        const offset = (i - (list.length - 1) / 2) * 48 * sign
         out.push({
           id: `item:${e.id}`,
           source: e.source,

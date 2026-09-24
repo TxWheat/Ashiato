@@ -48,7 +48,6 @@ interface Props {
   onTab: (t: AddressTab) => void
   onAdd: (addresses: string[]) => void
   onOpen: (address: string) => void
-  onTrace: (direction: 'forward' | 'backward') => void
   onTraceTx: (tx: RawTransaction, direction: 'forward' | 'backward') => void
   summary: FlowSummary
   /** Open the relationship (flow panel) between this address and a counterparty */
@@ -195,8 +194,6 @@ export default function AddressInspector(p: Props) {
           )}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <ActionBtn onClick={() => p.onTrace('forward')} disabled={p.tracing} icon={<ArrowRightFromLine size={12} />} title="Follow this address's largest payments onward">Trace out</ActionBtn>
-          <ActionBtn onClick={() => p.onTrace('backward')} disabled={p.tracing} icon={<ArrowLeftToLine size={12} />} title="Walk back to where its funds came from">Source</ActionBtn>
           <ActionBtn onClick={p.onTaint} icon={<Droplets size={12} />} title="Treat this address's funds as stolen and see where they went">Taint</ActionBtn>
           {p.canRemove && <ActionBtn onClick={p.onRemove} icon={<Trash2 size={12} />} title="Remove from graph" />}
         </div>
