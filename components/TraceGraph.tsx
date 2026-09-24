@@ -21,7 +21,7 @@ import dagre from 'dagre'
 import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
-import { ENTITY_STYLE, fiatValue, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort } from '@/lib/format'
+import { ENTITY_STYLE, fiatValue, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort, topAssets } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
 import LabelEdge from './OffsetEdge'
 
@@ -48,10 +48,56 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
   })
 }
 
+type XY = { x: number; y: number }
+
+/**
+ * Nodes already on screen stay exactly where they are (whether auto-placed or
+ * dragged). A new node goes next to a neighbour that's already placed, keeping
+ * the offset dagre would give it, then steps down until it overlaps nothing.
+ * `placed` is updated with every final position.
+ */
+function placeNodes(laid: Node[], edges: Edge[], placed: Map<string, XY>): Node[] {
+  const auto = new Map(laid.map(n => [n.id, n.position]))
+  const neighbours = new Map<string, string[]>()
+  for (const e of edges) {
+    neighbours.set(e.source, [...(neighbours.get(e.source) ?? []), e.target])
+    neighbours.set(e.target, [...(neighbours.get(e.target) ?? []), e.source])
+  }
+  // Fallback shift for new nodes with no placed neighbour: how far placed nodes sit from their auto spot
+  const kept = laid.filter(n => placed.has(n.id))
+  const shift = kept.length
+    ? kept.reduce((d, n) => ({ x: d.x + (placed.get(n.id)!.x - n.position.x) / kept.length, y: d.y + (placed.get(n.id)!.y - n.position.y) / kept.length }), { x: 0, y: 0 })
+    : { x: 0, y: 0 }
+
+  const final = new Map<string, XY>()
+  for (const n of kept) final.set(n.id, placed.get(n.id)!)
+  const clear = (p: XY) =>
+    [...final.values()].every(q => Math.abs(q.x - p.x) >= NODE_W + 30 || Math.abs(q.y - p.y) >= NODE_H + 24)
+  for (const n of laid) {
+    if (final.has(n.id)) continue
+    const anchor = (neighbours.get(n.id) ?? []).find(id => final.has(id))
+    const me = auto.get(n.id)!
+    let pos = anchor
+      ? { x: final.get(anchor)!.x + me.x - auto.get(anchor)!.x, y: final.get(anchor)!.y + me.y - auto.get(anchor)!.y }
+      : { x: me.x + shift.x, y: me.y + shift.y }
+    for (let i = 0; i < 60 && !clear(pos); i++) pos = { x: pos.x, y: pos.y + NODE_H + 24 }
+    final.set(n.id, pos)
+  }
+  for (const [id, p] of final) placed.set(id, p)
+  return laid.map(n => ({ ...n, position: final.get(n.id)! }))
+}
+
 /** "2.15K USDT ($2.9K NZD)" */
 function amountWithValue(amount: number, asset: string, prices: Record<string, number>): string {
   const fiat = fmtFiatShort(fiatValue(amount, asset, prices))
   return `${fmtCompact(amount, asset)}${fiat ? ` (${fiat} NZD)` : ''}`
+}
+
+/** "2.15K USDT ($2.9K NZD) + 1.2 ETH ($5.4K NZD) +3 tokens · 29 txs" */
+function relationshipLabel(es: EdgeData[], prices: Record<string, number>, txs: number): string {
+  const { shown, rest } = topAssets(es.map(x => [x.asset, x.amount] as [string, number]), prices)
+  const parts = shown.map(([asset, amt]) => amountWithValue(amt, asset, prices)).join(' + ')
+  return `${parts}${rest ? ` +${rest} token${rest === 1 ? '' : 's'}` : ''}${txs > 1 ? ` · ${txs} txs` : ''}`
 }
 
 export interface GraphApi {
@@ -95,6 +141,7 @@ export function pairKey(a: string, b: string) {
 
 export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
+  /** Where every node on the graph sits: auto-placed or dragged. Kept stable as nodes are added. */
   const pinned = useRef<Map<string, { x: number; y: number }>>(new Map())
   const nodeCount = useRef(0)
 
@@ -157,7 +204,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         ? [...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')
         : tainted
           ? `${fmtCompact(taint!, es[0]?.asset ?? '')} tainted`
-          : `${es.map(x => amountWithValue(x.amount, x.asset, prices)).join(' + ')}${txs > 1 ? ` · ${txs} txs` : ''}`
+          : relationshipLabel(es, prices, txs)
       const line2 = !es.length ? '' : txs === 1 ? fmtDateTime(last) : isFinite(first) && fmtDay(first) !== fmtDay(last) ? `${fmtDay(first)} → ${fmtDay(last)}` : fmtDay(last)
       const isSel = selectedEdge === key
       return {
@@ -165,7 +212,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         source,
         target,
         type: 'label',
-        data: { line1, line2, color: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', bold: !!tr || tainted || isSel },
+        // Money flowing both ways: bow the two lines apart (opposite sides) so labels don't stack
+        data: { offset: groups.has(`${target}->${source}`) ? 26 : 0, line1, line2, color: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', bold: !!tr || tainted || isSel },
         animated: !!tr || followed || tainted,
         zIndex: tr ? 2 : 1,
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
@@ -218,10 +266,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
   useEffect(() => {
     if (rawNodes.length === 0) return
-    const laid = layoutGraph(rawNodes, rawEdges).map(n => {
-      const p = pinned.current.get(n.id)
-      return p ? { ...n, position: p } : n
-    })
+    const laid = placeNodes(layoutGraph(rawNodes, rawEdges), rawEdges, pinned.current)
     setNodes(laid)
     setEdges(rawEdges)
     // Refit when nodes are added or removed, not on every data refresh

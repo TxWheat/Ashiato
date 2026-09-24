@@ -9,13 +9,13 @@ import { EntityLabel, NodeData, RawTransaction, transferKey } from '@/lib/types'
 import { Counterparty, FlowSummary } from '@/lib/counterparties'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { LoadedPage } from '@/lib/export'
-import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue } from '@/lib/format'
+import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue, MAJOR_ASSETS, topAssets } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
 
 /** Assets that are never airdrop spam */
-const MAJOR = new Set(['ETH', 'BTC', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
+const MAJOR = MAJOR_ASSETS
 type SortKey = 'amount' | 'txs' | 'recent'
 
 const RISK_BAR: Record<string, string> = {
@@ -63,8 +63,10 @@ interface Props {
   onShowCluster: () => void
 }
 
-function amounts(rec: Record<string, number>) {
-  return Object.entries(rec).map(([asset, amt]) => fmtCompact(amt, asset)).join(' + ')
+/** Short amount list: the two biggest assets, then "+N tokens" */
+function amounts(rec: Record<string, number>, prices: Record<string, number>) {
+  const { shown, rest } = topAssets(Object.entries(rec), prices)
+  return shown.map(([asset, amt]) => fmtCompact(amt, asset)).join(' + ') + (rest ? ` +${rest} token${rest === 1 ? '' : 's'}` : '')
 }
 
 /** Breadcrumbs-style node visualizer: totals in and out, per asset, with transaction counts */
@@ -230,19 +232,13 @@ export default function AddressInspector(p: Props) {
         ) : p.tab === 'counterparties' ? (
           <div>
             <div className="px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10 space-y-2">
-              <div className="flex items-center gap-1.5">
+              <div className="grid grid-cols-2 border border-line">
                 {(['in', 'out'] as const).map(f => (
                   <button key={f} onClick={() => setFilter(f)} title={f === 'in' ? 'Addresses that sent funds to this one' : 'Addresses this one sent funds to'}
-                    className={clsx('h-6 px-2 text-[11px] font-medium', filter === f ? 'bg-raised text-fg' : 'text-faint hover:text-fg')}>
-                    {f === 'in' ? 'Senders' : 'Recipients'} · {dirCount(f)}
+                    className={clsx('h-8 px-2 text-[11px] font-medium', filter === f ? (f === 'in' ? 'bg-green-500/15 text-fg' : 'bg-red-500/15 text-fg') : 'text-faint hover:text-fg')}>
+                    {f === 'in' ? '↓ Incoming transactions' : '↑ Outgoing transactions'} <span className="text-faint">({dirCount(f)})</span>
                   </button>
                 ))}
-                {notOnGraph.length > 0 && (
-                  <button onClick={() => p.onAdd(notOnGraph.slice(0, 5).map(c => c.address))}
-                    className="ml-auto h-6 px-2 text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg">
-                    Add top {Math.min(5, notOnGraph.length)}
-                  </button>
-                )}
               </div>
               <div className="flex items-center gap-1.5 text-[11px]">
                 <select value={sort} onChange={e => setSort(e.target.value as SortKey)} aria-label="Sort counterparties"
@@ -260,16 +256,29 @@ export default function AddressInspector(p: Props) {
                   placeholder={asset ? `Min ${asset}` : 'Pick asset for min'} aria-label="Minimum amount" inputMode="decimal"
                   className="h-7 w-full min-w-0 px-2 bg-panel border border-line text-fg placeholder:text-faint outline-none focus:border-accent disabled:opacity-50" />
               </div>
-              <div className="flex items-center justify-between text-[10px] text-faint">
-                <span>{list.length} shown</span>
+              <div className="flex items-center justify-between gap-2 text-[10px] text-faint">
+                <span>
+                  {list.length} {filter === 'in' ? 'incoming' : 'outgoing'} address{list.length === 1 ? '' : 'es'} · showing{' '}
+                  {sort === 'amount' ? `highest cumulative ${asset || 'value'}` : sort === 'txs' ? 'most transactions' : 'most recent'}
+                </span>
                 {spamCount > 0 && (
-                  <button onClick={() => setShowSpam(v => !v)} className="hover:text-fg underline underline-offset-2">
-                    {showSpam ? 'Hide' : 'Show'} {spamCount} spam (poisoning, fake tokens, airdrops)
+                  <button onClick={() => setShowSpam(v => !v)} title="Address poisoning, fake tokens and unsolicited airdrops" className="flex-shrink-0 hover:text-fg underline underline-offset-2">
+                    {showSpam ? 'Hide' : 'Show'} {spamCount} spam
                   </button>
                 )}
               </div>
             </div>
-            {list.length === 0 && <p className="p-4 text-[12px] text-faint">{filter === 'in' ? 'No senders' : 'No recipients'} in the loaded transactions.</p>}
+            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-line text-[10px] uppercase tracking-wider text-faint">
+              <span className="flex-1">{filter === 'in' ? 'Incoming address' : 'Outgoing address'} · last tx</span>
+              <span>Cumulative amount</span>
+              {notOnGraph.length > 0 ? (
+                <button onClick={() => p.onAdd(notOnGraph.slice(0, 5).map(c => c.address))} title="Add the top addresses in this list to the graph"
+                  className="h-6 px-2 normal-case tracking-normal text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg">
+                  + Top {Math.min(5, notOnGraph.length)}
+                </button>
+              ) : <span className="w-7 text-center">Add</span>}
+            </div>
+            {list.length === 0 && <p className="p-4 text-[12px] text-faint">No {filter === 'in' ? 'incoming' : 'outgoing'} transactions loaded.</p>}
             {list.map(c => {
               const l = p.labelOf(c.address)
               const on = p.onGraph.has(c.address)
@@ -280,10 +289,10 @@ export default function AddressInspector(p: Props) {
                     <div className={clsx('text-[12px] text-fg truncate', !p.nameOf(c.address) && 'font-mono')}>{p.nameOf(c.address) ?? truncate(c.address, 8)}</div>
                     <div className="text-[10px] text-faint">{countOf(c)} tx{countOf(c) === 1 ? '' : 's'} · last {fmtDate(lastOf(c)).split(' ').slice(0, 3).join(' ')}</div>
                   </button>
-                  <div className="text-right font-mono text-[11px] leading-tight">
+                  <div className="text-right font-mono text-[11px] leading-tight max-w-[55%] flex-shrink-0">
                     {filter === 'in'
-                      ? <div className="text-green-500" title="Received from them">↓ {amounts(c.received)}</div>
-                      : <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent)}</div>}
+                      ? <div className="text-green-500" title="Received from them">↓ {amounts(c.received, p.prices)}</div>
+                      : <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent, p.prices)}</div>}
                     {valueOf(c) > 0 && <div className="text-[10px] text-faint" title="Value at today's prices">≈ {fmtFiatShort(valueOf(c))} NZD</div>}
                   </div>
                   <button onClick={() => !on && p.onAdd([c.address])} disabled={on} title={on ? 'On the graph' : 'Add to graph'}

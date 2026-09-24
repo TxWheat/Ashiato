@@ -98,3 +98,25 @@ export const ENTITY_STYLE: Record<EntityType, { hex: string; label: string; bord
 }
 
 export const RISKY_TYPES: EntityType[] = ['sanctioned', 'scam', 'hack', 'ransomware', 'illicit', 'darknet', 'mixer', 'coinjoin']
+
+/** Assets that are never airdrop spam */
+export const MAJOR_ASSETS = new Set(['ETH', 'BTC', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
+
+/**
+ * The few assets worth naming in a short label: highest NZD value first, then
+ * well-known assets. Obscure and fake (`*`) tokens are only named when nothing
+ * better moved; the rest are counted. Returns the picks and how many were left out.
+ */
+export function topAssets(entries: [string, number][], prices: Record<string, number>, n = 2) {
+  const real = entries.filter(([a]) => !a.endsWith('*'))
+  // Name obscure tokens only when nothing well-known or priced moved
+  const known = real.filter(([a, amt]) => MAJOR_ASSETS.has(a) || fiatValue(amt, a, prices) > 0)
+  const pool = known.length ? known : real.length ? real : entries
+  const rank = ([a, amt]: [string, number]) => [fiatValue(amt, a, prices), MAJOR_ASSETS.has(a) ? 1 : 0] as const
+  const sorted = [...pool].sort((x, y) => {
+    const [vx, mx] = rank(x)
+    const [vy, my] = rank(y)
+    return vy - vx || my - mx
+  })
+  return { shown: sorted.slice(0, n), rest: entries.length - Math.min(n, sorted.length) }
+}
