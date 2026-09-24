@@ -3,6 +3,32 @@
 _Review date: 2026-09-24. Covers the whole codebase at `ef0ac77`, the ideas in
 [pareto-xyz/tutela-app](https://github.com/pareto-xyz/tutela-app), and a survey of other open-source tracing tools._
 
+## Status (updated 2026-09-24)
+
+**Done in this branch:** Phase 0 in full. Phase 1 items 1–5. Phase 2 items 1–3. Phase 3 items 1–4, 6 and 7. Plus a Railgun-style UI with a light/dark theme.
+
+| Item | Status |
+|---|---|
+| C1 Etherscan V2 | ✅ `lib/chains/eth.ts` (normal + internal + ERC-20; flags spoofed tokens and address-poisoning spam) |
+| C2 BTC overcount | ✅ `lib/graph.ts` splits by input share; edges are rebuilt client-side from loaded txs, deduplicated per tx |
+| C3 BTC labels | ✅ 109k BTC + 12.8k ETH labels (GraphSense TagPacks + OFAC + curated). Old curated Tornado labels were wrong and have been corrected |
+| C4 origin case | ✅ origin normalised |
+| C5 change detection | ✅ `lib/heuristics/btc/change.ts`, with confidence and reasons |
+| C6 backward tracing | ✅ Follow on inputs; Source-of-funds walk |
+| H1 pagination | ✅ Load older transactions (Esplora cursor / Etherscan page) |
+| H2 tokens / internal | ✅ |
+| H3 wei precision | ✅ BigInt conversion. The original concern was overstated: `parseInt` kept ~16 significant digits, which was fine for display |
+| H4 validation / cache / 429 | ✅ `lib/api.ts`, `lib/http.ts` |
+| H5 missing key message | ✅ |
+| M1 no-op undo | ✅ undo only snapshots graph membership |
+| M2 re-layout every render | ✅ |
+| M3 historical fiat | ⏳ still uses today's price |
+| M4 case export | ✅ JSON / CSV / GraphML / PNG / printable report |
+| M5 lint + tests | ✅ ESLint 9 flat config; 39 vitest tests |
+| M6 duplicated formatters | ✅ `lib/format.ts` |
+| M7 uppercase bech32 | ✅ |
+| Remaining | Historical fiat (M3), multi-EVM chain picker, eth-labels import (licence unclear), Tornado reveals over full pool history |
+
 ---
 
 ## 1. Code review: current tool

@@ -4,82 +4,72 @@ import { Handle, Position } from 'reactflow'
 import { clsx } from 'clsx'
 import { NodeData } from '@/lib/types'
 import { truncate } from '@/lib/detect-chain'
+import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
 
-const borderColors = {
-  exchange: 'border-green-500',
-  mixer:    'border-orange-500',
-  scam:     'border-red-500',
-  defi:     'border-purple-500',
-  wallet:   'border-slate-500',
-  unknown:  'border-slate-600',
+export interface AddressNodeData extends NodeData {
+  view: {
+    clusterSize?: number
+    taintAsset?: string
+    isTaintSeed?: boolean
+    loading?: boolean
+  }
 }
 
-const bgColors = {
-  exchange: 'bg-green-500/10',
-  mixer:    'bg-orange-500/10',
-  scam:     'bg-red-500/10',
-  defi:     'bg-purple-500/10',
-  wallet:   'bg-slate-800/60',
-  unknown:  'bg-slate-800/60',
+const RISK_TEXT: Record<string, string> = {
+  clean: 'text-green-500',
+  low: 'text-lime-500',
+  medium: 'text-yellow-500',
+  high: 'text-orange-500',
+  critical: 'text-red-500',
 }
 
-const badgeColors = {
-  exchange: 'bg-green-500/20 text-green-400',
-  mixer:    'bg-orange-500/20 text-orange-400',
-  scam:     'bg-red-500/20 text-red-400',
-  defi:     'bg-purple-500/20 text-purple-400',
-  wallet:   'bg-slate-600/40 text-slate-400',
-  unknown:  'bg-slate-700 text-slate-500',
-}
-
-interface Props {
-  data: NodeData
-}
-
-export default function AddressNode({ data }: Props) {
+export default function AddressNode({ data, selected }: { data: AddressNodeData; selected?: boolean }) {
   const type = data.label?.type ?? 'unknown'
+  const style = ENTITY_STYLE[type]
+  const labelled = !!data.label
 
   return (
     <div
       className={clsx(
-        'rounded-lg border-2 px-3 py-2.5 min-w-[170px] shadow-xl backdrop-blur-sm',
-        borderColors[type],
-        bgColors[type],
-        data.isOrigin && '!border-cyan-400 !bg-cyan-500/10 ring-2 ring-cyan-400/20'
+        'relative w-[196px] bg-panel border px-3 py-2.5 transition-shadow',
+        data.isOrigin ? 'border-accent border-2' : labelled ? `${style.border} border-2` : 'border-line',
+        data.label?.inferredBy && 'border-dashed',
+        selected && 'ring-2 ring-accent/60',
+        data.view.loading && 'animate-pulse'
       )}
     >
-      <Handle type="target" position={Position.Left} className="!bg-slate-600 !border-slate-500 !w-2 !h-2" />
+      <Handle type="target" position={Position.Left} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
 
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <span className={clsx(
-          'text-[9px] font-mono uppercase font-bold px-1.5 py-0.5 rounded',
-          data.chain === 'btc' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'
-        )}>
-          {data.chain}
-        </span>
-        {data.label && (
-          <span className={clsx('text-[9px] px-1.5 py-0.5 rounded font-semibold capitalize', badgeColors[type])}>
-            {type}
+      <div className="flex items-center gap-1.5 mb-1.5 text-[9px] font-medium uppercase tracking-wider">
+        <span className={clsx('w-1.5 h-1.5 rounded-full', data.chain === 'btc' ? 'bg-orange-500' : 'bg-violet-500')} />
+        <span className="text-faint">{data.chain}</span>
+        {labelled && <span className={clsx('px-1 py-px', style.badge)}>{style.label.split(' ')[0]}</span>}
+        {data.isOrigin && <span className="px-1 py-px bg-accent/20 text-accent">origin</span>}
+        {data.clusterId !== undefined && (
+          <span className="px-1 py-px bg-raised text-muted" title={`Cluster of ${data.view.clusterSize} addresses`}>
+            C{data.clusterId}
           </span>
         )}
-        {data.isOrigin && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-semibold">
-            origin
+        {data.risk && (
+          <span className={clsx('ml-auto font-mono normal-case', RISK_TEXT[data.risk.level])} title={`Risk ${data.risk.level}`}>
+            {data.risk.score}
           </span>
         )}
       </div>
 
-      <div className="font-semibold text-sm text-white leading-tight">
+      <div className="text-[13px] font-medium text-fg leading-tight truncate" title={data.label?.name ?? data.address}>
         {data.label?.name ?? truncate(data.address, 7)}
       </div>
+      {labelled && <div className="text-[10px] font-mono text-faint mt-0.5 truncate">{truncate(data.address)}</div>}
 
-      {data.label?.name && (
-        <div className="text-[10px] font-mono text-slate-500 mt-0.5 truncate">
-          {truncate(data.address)}
+      {(data.view.isTaintSeed || (data.taint ?? 0) > 0) && (
+        <div className="mt-1.5 pt-1.5 border-t border-line text-[10px] font-mono text-red-500">
+          {data.view.isTaintSeed ? 'taint source' : `${fmtAmount(data.taint!, data.view.taintAsset ?? '', 4)} tainted`}
         </div>
       )}
+      {data.note && <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-yellow-500" title={data.note} />}
 
-      <Handle type="source" position={Position.Right} className="!bg-slate-600 !border-slate-500 !w-2 !h-2" />
+      <Handle type="source" position={Position.Right} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
     </div>
   )
 }

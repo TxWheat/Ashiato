@@ -1,0 +1,407 @@
+[
+ {
+  "title": "Curated (this repo)",
+  "url": "data/labels/curated.tsv",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Alt-Right tag pack",
+  "url": "https://www.splcenter.org/bitcoin-and-alt-right",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Cold Wallets Tagpack",
+  "url": "https://www.forbes.com/sites/digital-assets/2024/01/25/bitwise-become-first-to-disclose-bitcoin-etf-holdings-address/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Africrypt TagPack",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/africrypt-hack.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: 155 virtual currency assets",
+  "url": "https://www.justice.gov/opa/press-release/file/1304296/download",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: AI DECISIONS - OFAC SDN crypto addresses (primary-source)",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/aidecisions_ofac.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: GraphSense Binance",
+  "url": "https://www.coindesk.com/hackers-steal-40-7-million-in-bitcoin-from-crypto-exchange-binance",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: bitzillions gambling Tag Pack LTC",
+  "url": "https://bitzillions.com/satoshibones/ltc/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Blender.io",
+  "url": "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/20220506",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Cold Wallets Tagpack",
+  "url": "https://chain.info/richlist",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Coinjoin Bounty Tagpack",
+  "url": "https://bitcointalk.org/index.php?topic=279249.0",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Tagpack extracted from DeFi Fraud Masterthesis",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/defi-fraud-masterthesis.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Known DeFi protocol addresses",
+  "url": "https://arxiv.org/abs/2111.11933",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: 1inch v3-prerelease",
+  "url": "https://docs.1inch.io",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Aave addresses",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/defi-protocols_aave.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Compound addresses",
+  "url": "https://github.com/compound-finance/compound-config/blob/master/networks/mainnet.json",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: CurveFinance addresses",
+  "url": "https://curve.readthedocs.io/ref-addresses.html",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: InstaDapp addresses",
+  "url": "https://github.com/Instadapp/dsa-connectors/blob/main/docs/connectors.json",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: SushiSwap addresses",
+  "url": "https://dev.sushi.com/docs/Developers/Deployment%20Addresses",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Synthetix v2.77.0-alpha",
+  "url": "https://docs.synthetix.io/addresses/#mainnet-contracts",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: UniSwap Governance-related addresses",
+  "url": "https://docs.uniswap.org/concepts/governance/overview",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: UniSwap Pools-related addresses",
+  "url": "https://info.uniswap.org/#/pools/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: GraphSense Demo TagPack",
+  "url": "https://archive.org/donate/cryptocurrency",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Electrum Phishing Tagpack",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/electrum_phishing.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/e5bffb655805b49658e7459d2a2407645b0d5118f70df1539a4a254fdad86ef7",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/21638f22c0be9714d9c2c8570ade24615e124444af84b33b95a8c25f6552c299",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/d414884dbdc5e998259e590d5a5b5c271c013375673ab63c679c2ff4ac0b062a",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/75ae0a3d0cefc66a30b8245169e17a93dcbc5c111cddc4a6336ab99ef225e76f",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/527a0ca3cb12834756a16edbbc1ed0503b0cc2608f4040677025c8c94d994b3d",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/a1d77bc67ff3dddaac44a75a68c897268445698db001dda72a2a07d45deaab14",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/87d73442db05ec53c1418fdd9914506c7e11912108b29febe750e74d99b55cb8",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/4794f1341c17fdc4e5e841d486bb158e9df82322bad169a4312478925c5e4c7d",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ETH gambling addresses",
+  "url": "https://bloks.io/transaction/badaee7e3e42a2f455f32a5274ad1db494f4ff70e6443252ccbcf7cb98b14870",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: EtherHiding addresses",
+  "url": "https://labs.guard.io/etherhiding-hiding-web2-malicious-code-in-web3-smart-contracts-65ea78efad16",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Ethereum Scam Database TagPack",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/etherscamdb_tagpack.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: EtherScan Label Word Cloud Tags",
+  "url": "https://etherscan.io/labelcloud",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Etherscan exchange",
+  "url": "https://etherscan.io/accounts/label/exchange",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Etherscan gambling",
+  "url": "https://etherscan.io/accounts/label/gambling",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Etherscan market",
+  "url": "https://etherscan.io/accounts/label/market",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Etherscan miner",
+  "url": "https://etherscan.io/accounts/label/miner",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Etherscan mixing_service",
+  "url": "https://etherscan.io/accounts/label/mixing_service",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Binance reserve wallets",
+  "url": "https://www.binance.com/en/blog/community/our-commitment-to-transparency-2895840147147652626",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: bitfinex.com reserve wallets",
+  "url": "https://github.com/bitfinexcom/pub/blob/main/wallets.txt",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Bybit reserve wallets",
+  "url": "https://blog.bybit.com/en-US/post/statement-from-ben-on-bybit-s-wallets-bltfb7a70c50462875b/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: crypto.com reserve wallets",
+  "url": "https://twitter.com/kris/status/1591036632664518657",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: deribit reserve wallets",
+  "url": "https://insights.deribit.com/exchange-updates/deribit-wallet-holdings/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Huobi reserve wallets",
+  "url": "https://www.huobi.com/support/en-us/detail/24922606430831",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: kucoin reserve wallets",
+  "url": "https://www.kucoin.com/blog/transparency-and-trust-a-detailed-list-of-kucoin-s-wallets",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: OKX reserve wallets",
+  "url": "https://twitter.com/okx/status/1590812545346330624",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: SwisBorg reserve wallets",
+  "url": "https://portfolio.nansen.ai/dashboard/APE-C3CMH1",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Forsage Pyramid Scheme",
+  "url": "https://arxiv.org/abs/2105.04380",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Known Cryptoservice hacks",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/hacks.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Hydra Market",
+  "url": "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/20220405",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: INTERPOL TagPack",
+  "url": "https://www.interpol.int",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: OFAC Tagpack",
+  "url": "https://www.treasury.gov/resource-center/sanctions/OFAC-Enforcement/Pages/20200302.aspx",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: FBI Identifies Cryptocurrency Funds Stolen by DPRK",
+  "url": "https://www.fbi.gov/news/press-releases/fbi-identifies-cryptocurrency-funds-stolen-by-dprk",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: LockBit-Tattoo",
+  "url": "https://github.com/3xp0rt/LockBit-Tattoo",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Miners TagPack",
+  "url": "https://github.com/MatteoRomiti/Deep_Dive_BTC_Mining_Pools/blob/master/dataset/miners.json",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Miners tagpack update for the years 2020-current",
+  "url": "https://github.com/MatteoRomiti/Deep_Dive_BTC_Mining_Pools/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Mixing Services",
+  "url": "https://fc21.ifca.ai/papers/103.pdf",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: US Treasury OFAC Sanctions List",
+  "url": "https://www.treasury.gov/ofac/downloads/sdnlist.txt",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Plus Token Scam Tagpack",
+  "url": "https://boxmining.com/plus-token-ponzi/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Ponzi Scheme Tagpack",
+  "url": "https://arxiv.org/abs/1803.00646",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: ProtonMail Tagpack",
+  "url": "https://protonmail.com/donate",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Ransomware Tagpack",
+  "url": "https://zenodo.org/record/1238041#.XLQwopMzZR4",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Ransomwhere tag pack",
+  "url": "https://ransomwhe.re/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Richest Addresses",
+  "url": "https://bitinfocharts.com/top-100-richest-bitcoin-addresses.html",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Ronin bridge hack",
+  "url": "https://roninblockchain.substack.com/p/community-alert-ronin-validators",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Samourai Wallet Tagpack",
+  "url": "https://github.com/nopara73/WasabiVsSamourai/blob/master/WasabiVsSamourai/SamouraiCoinJoins.txt",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: satoshidice gambling Tag Pack BCH",
+  "url": "https://satoshidice.com/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Checksig reserve wallets",
+  "url": "https://www.checksig.com/por/",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Talos Sextortion Tagpack",
+  "url": "https://github.com/MatteoRomiti/Sextortion_Spam_Bitcoin",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Talos Sextortion Tagpack",
+  "url": "https://blog.talosintelligence.com/2018/10/anatomy-of-sextortion-scam.html",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: sinbad.io",
+  "url": "https://ofac.treasury.gov/recent-actions/20231129",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Suidlanders TagPack",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/suidlanders.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Tornado.cash",
+  "url": "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/20220808",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Twitter Hack Scam Tagpack",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/twitter_hack_scam.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: USDT blacklist",
+  "url": "https://ikna.io",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: WalletExplorer Tag Pack",
+  "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/walletexplorer.yaml",
+  "license": "MIT"
+ },
+ {
+  "title": "GraphSense TagPack: Wasabi Fee Collector Addresses",
+  "url": "https://github.com/nopara73/WasabiVsSamourai/blob/master/WasabiVsSamourai/CoinJoinIndexer.cs#L24",
+  "license": "MIT"
+ },
+ {
+  "title": "US Treasury OFAC SDN list (via 0xB10C mirror)",
+  "url": "https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses",
+  "license": "Public domain (US Gov) / MIT tooling"
+ }
+]

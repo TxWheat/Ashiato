@@ -1,0 +1,103 @@
+import { Chain, EdgeData, NodeData, RawTransaction } from './types'
+import { TaintMethod } from './taint'
+
+// Case files and exports: JSON (save/load an investigation), CSV of flows,
+// GraphML (Gephi / yEd / Cytoscape, as in s0md3v/Orbit).
+
+export const CASE_VERSION = 1
+
+export interface LoadedPage {
+  rawTxs: RawTransaction[]
+  nextCursor?: string
+  warnings?: string[]
+}
+
+export interface CaseFile {
+  version: number
+  savedAt: string
+  origin: { address: string; chain: Chain }
+  /** Every address seen, with labels, risk and notes */
+  known: NodeData[]
+  /** Addresses shown on the graph */
+  visible: string[]
+  pages: Record<string, LoadedPage>
+  followedPairs: string[]
+  taint?: { seed: string; method: TaintMethod; asset: string } | null
+}
+
+export function parseCase(text: string): CaseFile {
+  const c = JSON.parse(text) as CaseFile
+  if (c.version !== CASE_VERSION || !c.origin?.address || !Array.isArray(c.known) || !Array.isArray(c.visible) || typeof c.pages !== 'object') {
+    throw new Error('Not a valid case file')
+  }
+  return c
+}
+
+function csvCell(v: unknown): string {
+  const s = String(v ?? '')
+  // Neutralise spreadsheet formula injection from on-chain strings (token symbols, labels)
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s
+  return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
+}
+
+export function flowsToCsv(
+  nodes: Map<string, NodeData>,
+  edges: EdgeData[],
+  taintByEdge?: Map<string, number>
+): string {
+  const header = ['from', 'from_label', 'to', 'to_label', 'asset', 'amount', 'tx_count', 'last_seen_utc', 'likely_change', 'tainted_amount', 'txids']
+  const rows = edges.map(e => [
+    e.source,
+    nodes.get(e.source)?.label?.name ?? '',
+    e.target,
+    nodes.get(e.target)?.label?.name ?? '',
+    e.asset,
+    e.amount,
+    e.txCount ?? 1,
+    e.timestamp ? new Date(e.timestamp * 1000).toISOString() : '',
+    e.isChange ? 'yes' : '',
+    taintByEdge?.get(`${e.source}->${e.target}`) ?? '',
+    (e.txids ?? [e.txid]).join(' '),
+  ])
+  return [header, ...rows].map(r => r.map(csvCell).join(',')).join('\n') + '\n'
+}
+
+function xml(s: unknown): string {
+  return String(s ?? '').replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]!)
+}
+
+export function toGraphml(nodes: NodeData[], edges: EdgeData[]): string {
+  const ids = new Set(nodes.map(n => n.address))
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <key id="label" for="node" attr.name="label" attr.type="string"/>
+  <key id="type" for="node" attr.name="type" attr.type="string"/>
+  <key id="risk" for="node" attr.name="risk" attr.type="int"/>
+  <key id="chain" for="node" attr.name="chain" attr.type="string"/>
+  <key id="amount" for="edge" attr.name="amount" attr.type="double"/>
+  <key id="asset" for="edge" attr.name="asset" attr.type="string"/>
+  <key id="txcount" for="edge" attr.name="tx_count" attr.type="int"/>
+  <graph id="trace" edgedefault="directed">
+${nodes.map(n => `    <node id="${xml(n.address)}"><data key="label">${xml(n.label?.name ?? n.address)}</data><data key="type">${xml(n.label?.type ?? 'unknown')}</data><data key="risk">${n.risk?.score ?? 0}</data><data key="chain">${n.chain}</data></node>`).join('\n')}
+${edges.filter(e => ids.has(e.source) && ids.has(e.target)).map(e => `    <edge source="${xml(e.source)}" target="${xml(e.target)}"><data key="amount">${e.amount}</data><data key="asset">${xml(e.asset)}</data><data key="txcount">${e.txCount ?? 1}</data></edge>`).join('\n')}
+  </graph>
+</graphml>
+`
+}
+
+export function download(filename: string, content: string | Blob, type = 'text/plain') {
+  const blob = typeof content === 'string' ? new Blob([content], { type }) : content
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+export function downloadDataUrl(filename: string, dataUrl: string) {
+  const a = document.createElement('a')
+  a.href = dataUrl
+  a.download = filename
+  a.click()
+}

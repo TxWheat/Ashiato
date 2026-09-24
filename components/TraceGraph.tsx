@@ -12,178 +12,162 @@ import ReactFlow, {
   useEdgesState,
   BackgroundVariant,
   MarkerType,
-  FitViewOptions,
+  ReactFlowInstance,
+  getRectOfNodes,
+  getTransformForBounds,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import dagre from 'dagre'
-import { NodeData, EdgeData } from '@/lib/types'
-import AddressNode from './AddressNode'
+import { toPng } from 'html-to-image'
+import { EdgeData } from '@/lib/types'
+import { ENTITY_STYLE, fiatValue, fmtAmount } from '@/lib/format'
+import AddressNode, { AddressNodeData } from './AddressNode'
 
 const nodeTypes = { addressNode: AddressNode }
 
-const NODE_W = 185
-const NODE_H = 72
-const FIT_OPTS: FitViewOptions = { padding: 0.4 }
+const NODE_W = 196
+const NODE_H = 78
+const FIT = { padding: 0.3 }
+const TAINT = '#ef4444'
 
 function layoutGraph(nodes: Node[], edges: Edge[]) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 220 })
-
+  g.setGraph({ rankdir: 'LR', nodesep: 70, ranksep: 240 })
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
   edges.forEach(e => {
     if (g.hasNode(e.source) && g.hasNode(e.target)) g.setEdge(e.source, e.target)
   })
-
   dagre.layout(g)
-
   return nodes.map(n => {
     const pos = g.node(n.id)
-    if (!pos) return { ...n, position: { x: 0, y: 0 } }
-    return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } }
+    return pos ? { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } } : n
   })
 }
 
-function fmtEdgeLabel(e: EdgeData, prices: { btc: number; eth: number }): string {
-  const parts: string[] = []
-  const multi = e.txCount && e.txCount > 1 ? ` (${e.txCount} txs)` : ''
-
-  if (e.chain === 'btc') {
-    const btc = e.amount / 1e8
-    if (btc > 0) {
-      parts.push(`${btc.toFixed(4)} BTC${multi}`)
-      if (prices.btc > 0) parts.push(`$${Math.round(btc * prices.btc).toLocaleString('en-NZ')} NZD`)
-    }
-  } else {
-    const eth = e.amount / 1e18
-    if (eth > 0) {
-      const amt = eth < 0.0001 ? '<0.0001 ETH' : `${eth.toFixed(4)} ETH${multi}`
-      parts.push(amt)
-      if (prices.eth > 0) parts.push(`$${Math.round(eth * prices.eth).toLocaleString('en-NZ')} NZD`)
-    }
-  }
-
-  if (e.timestamp) {
-    const d = new Date(e.timestamp * 1000)
-    parts.push(d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }))
-  }
-
+function edgeLabel(e: EdgeData, prices: Record<string, number>, taint?: number): string {
+  const parts = [fmtAmount(e.amount, e.asset) + (e.txCount && e.txCount > 1 ? ` ×${e.txCount}` : '')]
+  const fiat = fiatValue(e.amount, e.asset, prices)
+  if (fiat > 0) parts.push(`$${Math.round(fiat).toLocaleString('en-NZ')} NZD`)
+  if (e.timestamp) parts.push(new Date(e.timestamp * 1000).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }))
+  if (taint) parts.push(`${fmtAmount(taint, e.asset)} tainted`)
   return parts.join(' · ')
 }
 
-interface Props {
-  nodes: NodeData[]
-  edges: EdgeData[]
-  originAddress: string
-  prices: { btc: number; eth: number }
-  followedEdgeIds?: Set<string>
-  onNodeClick: (node: NodeData) => void
+export interface GraphApi {
+  exportPng: () => Promise<string | null>
+  fitView: () => void
 }
 
-export default function TraceGraph({
-  nodes: nodeData,
-  edges: edgeData,
-  originAddress,
-  prices,
-  followedEdgeIds = new Set(),
-  onNodeClick,
-}: Props) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rfRef = useRef<any>(null)
-  // Positions pinned by the user dragging — survive re-layouts
-  const pinnedPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
-  // Only auto-fit once per mount (when first data arrives)
-  const hasFit = useRef(false)
+interface Props {
+  nodes: AddressNodeData[]
+  edges: EdgeData[]
+  prices: Record<string, number>
+  followedPairs: Set<string>
+  taintByEdge?: Map<string, number>
+  selected?: string | null
+  onNodeClick: (address: string) => void
+  onReady?: (api: GraphApi) => void
+}
+
+export function pairKey(a: string, b: string) {
+  return a < b ? `${a}|${b}` : `${b}|${a}`
+}
+
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, prices, followedPairs, taintByEdge, selected, onNodeClick, onReady }: Props) {
+  const rf = useRef<ReactFlowInstance | null>(null)
+  const pinned = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const nodeCount = useRef(0)
 
   const rawNodes: Node[] = useMemo(
-    () =>
-      nodeData.map(n => ({
-        id: n.address,
-        type: 'addressNode',
-        position: { x: 0, y: 0 },
-        data: n,
-      })),
-    [nodeData]
+    () => nodeData.map(n => ({ id: n.address, type: 'addressNode', position: { x: 0, y: 0 }, data: n, selected: n.address === selected })),
+    [nodeData, selected]
   )
 
-  const nodeIdSet = useMemo(() => new Set(nodeData.map(n => n.address)), [nodeData])
+  const rawEdges: Edge[] = useMemo(() => {
+    const ids = new Set(nodeData.map(n => n.address))
+    const visible = edgeData.filter(e => ids.has(e.source) && ids.has(e.target))
+    // Orbit-style weighting: width scales with value relative to the largest flow of that asset
+    const maxByAsset = new Map<string, number>()
+    for (const e of visible) maxByAsset.set(e.asset, Math.max(maxByAsset.get(e.asset) ?? 0, e.amount))
 
-  const rawEdges: Edge[] = useMemo(
-    () =>
-      edgeData
-        .filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
-        .map(e => {
-          const isFollowed = followedEdgeIds.has(e.id)
-          const isOriginEdge = e.source === originAddress || e.target === originAddress
+    // Several assets between the same pair (e.g. ETH + USDT) share one drawn edge
+    const groups = new Map<string, EdgeData[]>()
+    for (const e of visible) {
+      const k = `${e.source}->${e.target}`
+      groups.set(k, [...(groups.get(k) ?? []), e])
+    }
 
-          return {
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            label: fmtEdgeLabel(e, prices),
-            labelStyle: {
-              fill: e.isChange ? '#a16207' : isFollowed ? '#22d3ee' : '#cbd5e1',
-              fontSize: 11,
-              fontWeight: isFollowed ? 700 : 500,
-            },
-            labelBgStyle: { fill: '#0f172a', fillOpacity: 0.95 },
-            labelBgPadding: [6, 8] as [number, number],
-            labelBgBorderRadius: 4,
-            animated: isFollowed || (!e.isChange && isOriginEdge),
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: e.isChange ? '#422006' : isFollowed ? '#22d3ee' : '#475569',
-              width: 16,
-              height: 16,
-            },
-            style: {
-              stroke: e.isChange ? '#422006' : isFollowed ? '#22d3ee' : '#475569',
-              strokeWidth: isFollowed ? 2 : e.isChange ? 1 : 1.5,
-              strokeDasharray: e.isChange ? '5 4' : undefined,
-              opacity: e.isChange ? 0.35 : 1,
-            },
-          }
-        }),
-    [edgeData, nodeIdSet, originAddress, prices, followedEdgeIds]
-  )
+    return [...groups.entries()].map(([key, es]) => {
+      const e = es.reduce((a, b) => (b.amount / (maxByAsset.get(b.asset) || 1) > a.amount / (maxByAsset.get(a.asset) || 1) ? b : a))
+      const isChange = es.every(x => x.isChange)
+      const followed = followedPairs.has(pairKey(e.source, e.target))
+      const taint = taintByEdge?.get(key)
+      const tainted = !!taint && taint > 0
+      const weight = Math.max(...es.map(x => Math.log1p(x.amount) / Math.log1p(maxByAsset.get(x.asset) || 1)))
+      const width = isChange ? 1 : 1 + 4 * Math.min(1, Math.max(0, weight))
+      const color = tainted ? TAINT : followed ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--muted))'
+      const label = es.map(x => edgeLabel(x, prices, tainted && x === e ? taint : undefined)).join('  |  ')
+      return {
+        id: key,
+        source: e.source,
+        target: e.target,
+        label,
+        labelStyle: { fill: tainted ? TAINT : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', fontSize: 11, fontWeight: followed || tainted ? 600 : 500 },
+        labelBgStyle: { fill: 'rgb(var(--panel))', fillOpacity: 0.95 },
+        labelBgPadding: [6, 4] as [number, number],
+        labelBgBorderRadius: 2,
+        animated: followed || tainted,
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
+        style: { stroke: color, strokeWidth: width, strokeDasharray: isChange ? '5 4' : undefined, opacity: isChange ? 0.5 : 1 },
+      }
+    })
+  }, [edgeData, nodeData, prices, followedPairs, taintByEdge])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
   useEffect(() => {
     if (rawNodes.length === 0) return
-
     const laid = layoutGraph(rawNodes, rawEdges).map(n => {
-      const pinned = pinnedPositions.current.get(n.id)
-      return pinned ? { ...n, position: pinned } : n
+      const p = pinned.current.get(n.id)
+      return p ? { ...n, position: p } : n
     })
     setNodes(laid)
     setEdges(rawEdges)
-
-    // Fit view the first time real data arrives, and whenever a new node is added
-    if (!hasFit.current) {
-      hasFit.current = true
-      setTimeout(() => rfRef.current?.fitView(FIT_OPTS), 50)
+    // Refit when nodes are added or removed, not on every data refresh
+    if (rawNodes.length !== nodeCount.current) {
+      nodeCount.current = rawNodes.length
+      setTimeout(() => rf.current?.fitView(FIT), 60)
     }
   }, [rawNodes, rawEdges, setNodes, setEdges])
 
-  // Capture node positions when the user finishes dragging
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const c of changes) {
-        if (c.type === 'position' && c.dragging === false && c.position) {
-          pinnedPositions.current.set(c.id, c.position)
-        }
+        if (c.type === 'position' && c.dragging === false && c.position) pinned.current.set(c.id, c.position)
       }
       onNodesChange(changes)
     },
     [onNodesChange]
   )
 
-  const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => onNodeClick(node.data as NodeData),
-    [onNodeClick]
-  )
+  const exportPng = useCallback(async () => {
+    const inst = rf.current
+    const viewport = document.querySelector('.react-flow__viewport') as HTMLElement | null
+    if (!inst || !viewport) return null
+    const bounds = getRectOfNodes(inst.getNodes())
+    const w = Math.min(4000, Math.max(1200, bounds.width + 400))
+    const h = Math.min(4000, Math.max(800, bounds.height + 400))
+    const [x, y, zoom] = getTransformForBounds(bounds, w, h, 0.2, 2)
+    const bg = getComputedStyle(document.body).backgroundColor
+    return toPng(viewport, {
+      backgroundColor: bg,
+      width: w,
+      height: h,
+      style: { width: `${w}px`, height: `${h}px`, transform: `translate(${x}px, ${y}px) scale(${zoom})` },
+    })
+  }, [])
 
   return (
     <div className="w-full h-full">
@@ -192,31 +176,25 @@ export default function TraceGraph({
         edges={edges}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
-        onInit={inst => { rfRef.current = inst }}
+        onNodeClick={(_, n) => onNodeClick(n.id)}
+        onInit={inst => {
+          rf.current = inst
+          onReady?.({ exportPng, fitView: () => inst.fitView(FIT) })
+        }}
         nodeTypes={nodeTypes}
         minZoom={0.05}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} color="#1e293b" gap={24} size={1.2} />
-        <Controls
-          style={{ background: '#0f172a', border: '1px solid #1e293b' }}
-          showInteractive={false}
-        />
+        <Background variant={BackgroundVariant.Dots} color="rgb(var(--line))" gap={22} size={1.1} />
+        <Controls showInteractive={false} />
         <MiniMap
-          nodeColor={(n) => {
-            const d = n.data as NodeData
-            if (d.isOrigin) return '#22d3ee'
-            const t = d.label?.type
-            if (t === 'exchange') return '#22c55e'
-            if (t === 'scam') return '#ef4444'
-            if (t === 'mixer') return '#f97316'
-            if (t === 'defi') return '#a855f7'
-            return '#475569'
+          nodeColor={n => {
+            const d = n.data as AddressNodeData
+            return d.isOrigin ? 'rgb(var(--accent))' : ENTITY_STYLE[d.label?.type ?? 'unknown'].hex
           }}
-          maskColor="rgba(2,8,23,0.7)"
-          style={{ background: '#0f172a', border: '1px solid #1e293b' }}
+          maskColor="rgb(var(--bg) / 0.7)"
+          style={{ background: 'rgb(var(--panel))', border: '1px solid rgb(var(--line))' }}
         />
       </ReactFlow>
     </div>
