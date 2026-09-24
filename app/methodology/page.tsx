@@ -86,13 +86,16 @@ const SECTIONS: { id: string; title: string; body: string[]; limits: string; cre
     credit: 'Model after peterzen/heuristic',
   },
   {
-    id: 'autotrace',
-    title: 'Auto-trace',
+    id: 'follow',
+    title: 'Follow the funds',
     body: [
-      'Crawls N hops forward (or back), keeping the top K counterparties per hop by share of value, and stops at exchanges, deposit addresses, mixers, CoinJoins and sanctioned wallets. Source of funds walks back along the single largest input each hop.',
+      'Tracing follows a specific amount of money, not "the biggest counterparties". You start from a transaction (Trace on a payment) or from an address (Trace funds out uses its largest payments).',
+      'Bitcoin is exact. Every payment creates specific coins (UTXOs). We look up the transaction that later spent those coins and split the traced amount across its outputs in proportion to the coins\' share of that transaction\'s inputs. Source of funds walks the same links backwards through inputs.',
+      'Ethereum balances are pooled, so a heuristic is needed. From the moment funds arrive at an address, the next outflows of the same asset are taken, in time order, until the arrived amount is used up (small differences for gas are tolerated). Outflows before the funds arrived are never followed, and a large later transfer cannot be attributed to a small incoming payment. Source of funds takes the most recent inflows before the money left.',
+      'A trail ends at an exchange, exchange deposit address, mixer, CoinJoin, DeFi protocol or sanctioned address, when coins are still unspent, or at the hop limit. Every hop records its reason, shown when you click the line and in the report.',
     ],
-    limits: 'Uses the most recent page of each address; peel chains longer than the hop limit need manual follow-up.',
-    credit: 's0md3v/Orbit; peterzen/heuristic',
+    limits: 'The Ethereum rule is a convention investigators commonly use, not proof: if the address already held other funds, a different outflow could be "the" victim\'s money. Only loaded history is searched (up to several pages per address).',
+    credit: 'UTXO tracing via Esplora outspends; hop display after s0md3v/Orbit; source-of-funds walk after peterzen/heuristic',
   },
 ]
 

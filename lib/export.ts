@@ -1,5 +1,6 @@
 import { Chain, EdgeData, NodeData, RawTransaction } from './types'
 import { TaintMethod } from './taint'
+import type { TracedFlow, TraceEnd } from './follow'
 
 // Case files and exports: JSON (save/load an investigation), CSV of flows,
 // GraphML (Gephi / yEd / Cytoscape, as in s0md3v/Orbit).
@@ -22,6 +23,8 @@ export interface CaseFile {
   visible: string[]
   pages: Record<string, LoadedPage>
   followedPairs: string[]
+  traced?: TracedFlow[]
+  traceEnds?: TraceEnd[]
   taint?: { seed: string; method: TaintMethod; asset: string } | null
 }
 

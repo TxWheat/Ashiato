@@ -27,12 +27,12 @@ interface Props {
   canRemove: boolean
   cluster?: Cluster
   taint?: { amount: number; asset: string; isSeed: boolean }
-  autoRunning: boolean
+  tracing: boolean
   onClose: () => void
   onTransactions: () => void
   onRemove: () => void
   onTaint: () => void
-  onAutoTrace: (direction: 'forward' | 'backward') => void
+  onTrace: (direction: 'forward' | 'backward') => void
   onShowCluster: () => void
   onNote: (note: string) => void
 }
@@ -84,6 +84,11 @@ export default function NodeDetail(p: Props) {
             <span className={clsx('text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5', style.badge)}>{style.label}</span>
             {node.label && <span className="text-sm font-medium text-fg">{node.label.name}</span>}
           </div>
+          {node.ens && (
+            <p className="text-xs text-fg">
+              ENS: <span className="font-medium">{node.ens}</span> <span className="text-faint">(verified primary name)</span>
+            </p>
+          )}
           {node.label?.inferredBy && (
             <p className="text-[11px] text-muted">
               Inferred by the {node.label.inferredBy} heuristic · {Math.round((node.label.confidence ?? 0) * 100)}% confidence
@@ -190,11 +195,11 @@ export default function NodeDetail(p: Props) {
 
       <div className="p-3 border-t border-line grid grid-cols-2 gap-2 flex-shrink-0">
         <Btn primary onClick={p.onTransactions} disabled={p.isLoading} icon={<List size={12} />}>
-          {p.isLoading ? 'Loading…' : 'Transactions'}
+          {p.isLoading ? 'Loading…' : 'Show transactions'}
         </Btn>
         <Btn onClick={p.onTaint} icon={<Droplets size={12} />}>Taint from here</Btn>
-        <Btn onClick={() => p.onAutoTrace('forward')} disabled={p.autoRunning} icon={<ArrowRightFromLine size={12} />}>Auto-trace out</Btn>
-        <Btn onClick={() => p.onAutoTrace('backward')} disabled={p.autoRunning} icon={<ArrowLeftToLine size={12} />}>Source of funds</Btn>
+        <Btn onClick={() => p.onTrace('forward')} disabled={p.tracing} icon={<ArrowRightFromLine size={12} />}>Trace funds out</Btn>
+        <Btn onClick={() => p.onTrace('backward')} disabled={p.tracing} icon={<ArrowLeftToLine size={12} />}>Source of funds</Btn>
         <a
           href={explorerAddressUrl(node.address, node.chain)}
           target="_blank"

@@ -1,5 +1,6 @@
 import { Chain, EdgeData, NodeData } from './types'
 import { TaintResult } from './taint'
+import type { TracedFlow, TraceEnd } from './follow'
 import { explorerAddressUrl, explorerTxUrl, fmtAmount } from './format'
 
 // Printable investigation report (open in a new tab → Print → Save as PDF).
@@ -21,8 +22,14 @@ export function buildReport(opts: {
   nodes: Map<string, NodeData>
   edges: EdgeData[]
   taint?: TaintResult | null
+  traced?: TracedFlow[]
+  traceEnds?: TraceEnd[]
+  nameOf?: (a: string) => string | undefined
 }): string {
   const { origin, chain, nodes, edges, taint } = opts
+  const traced = opts.traced ?? []
+  const ends = opts.traceEnds ?? []
+  const nm = (a: string) => opts.nameOf?.(a) ?? nodes.get(a)?.label?.name ?? ''
   const originNode = nodes.get(origin)
   const cashOut = [...nodes.values()].filter(n => n.label && ['exchange', 'deposit'].includes(n.label.type))
   const risky = [...nodes.values()].filter(n => (n.risk?.score ?? 0) >= 50 || (n.label && ['sanctioned', 'scam', 'hack', 'ransomware', 'mixer', 'coinjoin', 'darknet', 'illicit'].includes(n.label.type)))
@@ -56,6 +63,14 @@ ${cashOut.map(n => {
 <td>${ins.map(e => esc(fmtAmount(e.amount, e.asset, 8))).join('<br>') || '–'}</td><td>${ins.map(txs).join('<br>') || '–'}</td>
 <td>${esc(n.label!.inferredBy ? `Inferred by ${n.label!.inferredBy} heuristic (confidence ${Math.round((n.label!.confidence ?? 0) * 100)}%)` : n.label!.source ?? 'label dataset')}</td></tr>`
 }).join('')}</table>` : '<p class="muted">No exchange addresses in the traced graph yet.</p>')}
+
+${traced.length ? section('Traced path (follow the funds)', `<p class="muted">Each hop shows the amount attributed to the traced funds and why. Bitcoin hops follow the exact coins (UTXOs); Ethereum hops use the next outflows after the funds arrived, capped at the amount received.</p>
+<table><tr><th>Hop</th><th>From</th><th>To</th><th>Traced amount</th><th>When</th><th>Transaction</th><th>Basis</th></tr>
+${[...traced].sort((a, b) => a.hop - b.hop || a.time - b.time).map(f => `<tr><td>${f.hop}</td><td>${addr(f.from)}<br><span class="muted">${esc(nm(f.from))}</span></td><td>${addr(f.to)}<br><span class="muted">${esc(nm(f.to))}</span></td>
+<td>${esc(fmtAmount(f.amount, f.asset, 8))}</td><td>${esc(date(f.time))}</td><td><a href="${esc(explorerTxUrl(f.txid, chain))}"><code>${esc(f.txid.slice(0, 16))}…</code></a></td><td>${esc(f.reason)}</td></tr>`).join('')}
+</table>
+${ends.length ? `<h3 style="font-size:13px;margin:16px 0 6px">Where the traced funds ended up</h3><table><tr><th>Address</th><th>Amount</th><th>Status</th></tr>
+${ends.map(e => `<tr><td>${addr(e.address)}<br><span class="muted">${esc(nm(e.address))}</span></td><td>${esc(fmtAmount(e.amount, e.asset, 8))}</td><td>${esc(e.detail)}</td></tr>`).join('')}</table>` : ''}`) : ''}
 
 ${taint ? section(`Taint analysis (${taint.method}, ${taint.asset})`, `<p>Source: ${taint.seeds.map(addr).join(', ')}. Based on ${taint.txsUsed} loaded transactions; unloaded activity is not counted, so figures are a lower bound.</p>
 <table><tr><th>Address</th><th>Entity</th><th>Tainted received</th><th>Still held (est.)</th></tr>

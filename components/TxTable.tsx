@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { ExternalLink, GitBranch, X, ArrowRight, AlertTriangle } from 'lucide-react'
+import { ExternalLink, GitBranch, X, ArrowRight, AlertTriangle, ArrowRightFromLine, ArrowLeftToLine } from 'lucide-react'
 import { EntityLabel, RawTransaction, TxIO } from '@/lib/types'
 import { truncate } from '@/lib/detect-chain'
 import { ENTITY_STYLE, explorerTxUrl, fmtAmount, fmtDate } from '@/lib/format'
@@ -17,6 +17,9 @@ interface Props {
   onGraph: Set<string>
   followingAddrs: Set<string>
   labelOf: (a: string) => EntityLabel | undefined
+  ensOf: (a: string) => string | undefined
+  tracing: boolean
+  onTrace: (tx: RawTransaction, direction: 'forward' | 'backward') => void
   onFollow: (address: string) => void
   onLoadMore: () => void
   onClose: () => void
@@ -35,8 +38,8 @@ export default function TxTable(p: Props) {
     return (
       <div className={clsx('flex items-center gap-2 min-w-0 h-6', io.isChange && 'opacity-60')}>
         {label && <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', ENTITY_STYLE[label.type].dot)} title={label.type} />}
-        <span className={clsx('font-mono truncate', isMe ? 'text-accent' : 'text-fg')} title={io.address}>
-          {label ? label.name : truncate(io.address, 6)}
+        <span className={clsx('truncate', isMe ? 'text-accent' : 'text-fg', !label && !p.ensOf(io.address) && 'font-mono')} title={io.address}>
+          {label ? label.name : p.ensOf(io.address) ?? truncate(io.address, 6)}
         </span>
         {io.isChange && (
           <span
@@ -94,7 +97,7 @@ export default function TxTable(p: Props) {
           <span className="text-xs font-medium text-fg">Transactions</span>
           <code className="text-[10px] text-accent bg-accent/10 px-1.5 py-0.5">{truncate(p.address, 8)}</code>
           <span className="text-[10px] text-faint truncate hidden sm:block">
-            {p.loading ? 'Fetching…' : `${p.txs.length} loaded${p.hasMore ? ' · more available' : ''} · Follow adds an address to the graph`}
+            {p.loading ? 'Fetching…' : `${p.txs.length} loaded${p.hasMore ? ' · more available' : ''} · Trace follows a payment onward, Source walks it back, Follow adds one address`}
           </span>
         </div>
         <button onClick={p.onClose} className="text-faint hover:text-fg p-1" aria-label="Close transactions">
@@ -120,7 +123,7 @@ export default function TxTable(p: Props) {
           <div className="flex items-center justify-center h-full text-faint text-sm">No transactions found</div>
         ) : (
           <div className="min-w-[760px]">
-            <div className="grid grid-cols-[120px_60px_1fr_16px_1fr_110px] gap-3 px-4 py-2 sticky top-0 bg-bg border-b border-line text-[9px] uppercase tracking-widest text-faint z-10">
+            <div className="grid grid-cols-[120px_60px_1fr_16px_1fr_150px] gap-3 px-4 py-2 sticky top-0 bg-bg border-b border-line text-[9px] uppercase tracking-widest text-faint z-10">
               <span>Date</span><span>Dir</span><span>From</span><span /><span>To · amount</span><span>Tx</span>
             </div>
             {p.txs.map(tx => {
@@ -128,7 +131,7 @@ export default function TxTable(p: Props) {
               const got = tx.outputs.some(o => o.address === p.address)
               const dir = sent && got ? 'self' : sent ? 'out' : 'in'
               return (
-                <div key={`${tx.txid}:${tx.kind}:${tx.asset}:${tx.inputs[0]?.address}:${tx.outputs[0]?.address}`} className="grid grid-cols-[120px_60px_1fr_16px_1fr_110px] gap-3 px-4 py-2 border-b border-line/60 hover:bg-panel">
+                <div key={`${tx.txid}:${tx.kind}:${tx.asset}:${tx.inputs[0]?.address}:${tx.outputs[0]?.address}`} className="grid grid-cols-[120px_60px_1fr_16px_1fr_150px] gap-3 px-4 py-2 border-b border-line/60 hover:bg-panel">
                   <div className="text-muted whitespace-nowrap">
                     {fmtDate(tx.timestamp)}
                     <div className="mt-1 flex flex-wrap gap-1">
@@ -149,15 +152,39 @@ export default function TxTable(p: Props) {
                   <List tx={tx} side="in" />
                   <ArrowRight size={11} className="text-faint mt-1.5" />
                   <List tx={tx} side="out" />
-                  <a
-                    href={explorerTxUrl(tx.txid, tx.chain)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-1 font-mono text-muted hover:text-accent whitespace-nowrap h-6 items-center"
-                  >
-                    {truncate(tx.txid, 5)}
-                    <ExternalLink size={9} />
-                  </a>
+                  <div className="space-y-1.5">
+                    <a
+                      href={explorerTxUrl(tx.txid, tx.chain)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex gap-1 font-mono text-muted hover:text-accent whitespace-nowrap h-6 items-center"
+                    >
+                      {truncate(tx.txid, 5)}
+                      <ExternalLink size={9} />
+                    </a>
+                    <div className="flex gap-1">
+                      {dir !== 'out' && (
+                        <button
+                          onClick={() => p.onTrace(tx, 'backward')}
+                          disabled={p.tracing}
+                          title="Walk back to where these funds came from"
+                          className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40"
+                        >
+                          <ArrowLeftToLine size={10} /> Source
+                        </button>
+                      )}
+                      {dir !== 'in' && (
+                        <button
+                          onClick={() => p.onTrace(tx, 'forward')}
+                          disabled={p.tracing}
+                          title="Follow this payment onward"
+                          className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40"
+                        >
+                          Trace <ArrowRightFromLine size={10} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )
             })}

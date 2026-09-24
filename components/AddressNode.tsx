@@ -57,10 +57,14 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
         )}
       </div>
 
-      <div className="text-[13px] font-medium text-fg leading-tight truncate" title={data.label?.name ?? data.address}>
-        {data.label?.name ?? truncate(data.address, 7)}
+      <div className="text-[13px] font-medium text-fg leading-tight truncate" title={data.label?.name ?? data.ens ?? data.address}>
+        {data.label?.name ?? data.ens ?? truncate(data.address, 7)}
       </div>
-      {labelled && <div className="text-[10px] font-mono text-faint mt-0.5 truncate">{truncate(data.address)}</div>}
+      {(labelled || data.ens) && (
+        <div className="text-[10px] font-mono text-faint mt-0.5 truncate">
+          {labelled && data.ens ? `${data.ens} · ` : ''}{truncate(data.address)}
+        </div>
+      )}
 
       {(data.view.isTaintSeed || (data.taint ?? 0) > 0) && (
         <div className="mt-1.5 pt-1.5 border-t border-line text-[10px] font-mono text-red-500">
@@ -70,6 +74,24 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
       {data.note && <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-yellow-500" title={data.note} />}
 
       <Handle type="source" position={Position.Right} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
+    </div>
+  )
+}
+
+export interface MoreNodeData {
+  count: number
+  side: 'in' | 'out'
+  anchor: string
+}
+
+/** "+N more senders / recipients" placeholder that keeps the graph readable */
+export function MoreNode({ data }: { data: MoreNodeData }) {
+  return (
+    <div className="w-[150px] border border-dashed border-line bg-bg px-3 py-2 text-center cursor-pointer hover:border-accent transition-colors">
+      <Handle type="target" position={Position.Left} className="!opacity-0" />
+      <div className="text-sm font-medium text-fg">+{data.count}</div>
+      <div className="text-[10px] text-faint">more {data.side === 'in' ? 'senders' : 'recipients'} · click to list</div>
+      <Handle type="source" position={Position.Right} className="!opacity-0" />
     </div>
   )
 }

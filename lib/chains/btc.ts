@@ -1,5 +1,6 @@
 import 'server-only'
-import { RawTransaction, TraceResult } from '../types'
+import { EntityLabel, RawTransaction, TraceResult } from '../types'
+import { getLabel } from '../labels'
 import { fetchJson } from '../http'
 import { detectCoinJoin } from '../heuristics/btc/coinjoin'
 import { annotateChange } from '../heuristics/btc/change'
@@ -95,4 +96,31 @@ export async function traceBtcAddress(address: string, cursor?: string): Promise
     rawTxs: txs.map(normaliseBtcTx),
     nextCursor,
   })
+}
+
+export interface BtcTxDetail {
+  tx: RawTransaction
+  /** Per output: the txid that spent it, null if unspent */
+  spentBy: (string | null)[]
+  labels: Record<string, EntityLabel>
+}
+
+/** One transaction plus where each of its outputs went (exact UTXO following) */
+export async function fetchBtcTx(txid: string): Promise<BtcTxDetail> {
+  const [tx, outspends] = await Promise.all([
+    esplora<EsploraTx>(`/tx/${txid}`, 300),
+    esplora<{ spent: boolean; txid?: string }[]>(`/tx/${txid}/outspends`, 30),
+  ])
+  const raw = normaliseBtcTx(tx)
+  // normaliseBtcTx drops address-less outputs (OP_RETURN), so map by output index
+  const spentBy = raw.outputs.map(o => {
+    const s = outspends[o.index ?? -1]
+    return s?.spent && s.txid ? s.txid : null
+  })
+  const labels: Record<string, EntityLabel> = {}
+  for (const io of [...raw.inputs, ...raw.outputs]) {
+    const l = getLabel(io.address, 'btc')
+    if (l) labels[io.address] = l
+  }
+  return { tx: raw, spentBy, labels }
 }
