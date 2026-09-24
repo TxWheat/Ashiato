@@ -20,10 +20,11 @@ import 'reactflow/dist/style.css'
 import dagre from 'dagre'
 import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
-import { ENTITY_STYLE, fiatValue, fmtAmount } from '@/lib/format'
-import AddressNode, { AddressNodeData } from './AddressNode'
+import { TracedFlow } from '@/lib/follow'
+import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
+import AddressNode, { AddressNodeData, MoreNode, MoreNodeData } from './AddressNode'
 
-const nodeTypes = { addressNode: AddressNode }
+const nodeTypes = { addressNode: AddressNode, more: MoreNode }
 
 const NODE_W = 196
 const NODE_H = 78
@@ -45,13 +46,9 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
   })
 }
 
-function edgeLabel(e: EdgeData, prices: Record<string, number>, taint?: number): string {
-  const parts = [fmtAmount(e.amount, e.asset) + (e.txCount && e.txCount > 1 ? ` ×${e.txCount}` : '')]
-  const fiat = fiatValue(e.amount, e.asset, prices)
-  if (fiat > 0) parts.push(`$${Math.round(fiat).toLocaleString('en-NZ')} NZD`)
-  if (e.timestamp) parts.push(new Date(e.timestamp * 1000).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }))
-  if (taint) parts.push(`${fmtAmount(taint, e.asset)} tainted`)
-  return parts.join(' · ')
+/** Short on-canvas label; dates, fiat and tx hashes live in the flow panel (click the edge) */
+function edgeLabel(e: EdgeData): string {
+  return fmtAmount(e.amount, e.asset) + (e.txCount && e.txCount > 1 ? ` ×${e.txCount}` : '')
 }
 
 export interface GraphApi {
@@ -62,11 +59,15 @@ export interface GraphApi {
 interface Props {
   nodes: AddressNodeData[]
   edges: EdgeData[]
-  prices: Record<string, number>
   followedPairs: Set<string>
+  traced: TracedFlow[]
+  more: MoreNodeData[]
   taintByEdge?: Map<string, number>
   selected?: string | null
+  selectedEdge?: string | null
   onNodeClick: (address: string) => void
+  onEdgeClick: (from: string, to: string) => void
+  onMoreClick: (anchor: string) => void
   onReady?: (api: GraphApi) => void
 }
 
@@ -74,14 +75,17 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, prices, followedPairs, taintByEdge, selected, onNodeClick, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, more, taintByEdge, selected, selectedEdge, onNodeClick, onEdgeClick, onMoreClick, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   const pinned = useRef<Map<string, { x: number; y: number }>>(new Map())
   const nodeCount = useRef(0)
 
   const rawNodes: Node[] = useMemo(
-    () => nodeData.map(n => ({ id: n.address, type: 'addressNode', position: { x: 0, y: 0 }, data: n, selected: n.address === selected })),
-    [nodeData, selected]
+    () => [
+      ...nodeData.map(n => ({ id: n.address, type: 'addressNode', position: { x: 0, y: 0 }, data: n, selected: n.address === selected })),
+      ...more.map(m => ({ id: `more:${m.side}:${m.anchor}`, type: 'more', position: { x: 0, y: 0 }, data: m })),
+    ],
+    [nodeData, more, selected]
   )
 
   const rawEdges: Edge[] = useMemo(() => {
@@ -91,38 +95,68 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, prices, f
     const maxByAsset = new Map<string, number>()
     for (const e of visible) maxByAsset.set(e.asset, Math.max(maxByAsset.get(e.asset) ?? 0, e.amount))
 
+    // Traced amounts per directed pair and asset
+    const tracedBy = new Map<string, Map<string, number>>()
+    for (const f of traced) {
+      if (!ids.has(f.from) || !ids.has(f.to)) continue
+      const k = `${f.from}->${f.to}`
+      const m = tracedBy.get(k) ?? new Map<string, number>()
+      m.set(f.asset, (m.get(f.asset) ?? 0) + f.amount)
+      tracedBy.set(k, m)
+    }
+
     // Several assets between the same pair (e.g. ETH + USDT) share one drawn edge
     const groups = new Map<string, EdgeData[]>()
     for (const e of visible) {
       const k = `${e.source}->${e.target}`
       groups.set(k, [...(groups.get(k) ?? []), e])
     }
+    for (const k of tracedBy.keys()) if (!groups.has(k)) groups.set(k, [])
 
-    return [...groups.entries()].map(([key, es]) => {
-      const e = es.reduce((a, b) => (b.amount / (maxByAsset.get(b.asset) || 1) > a.amount / (maxByAsset.get(a.asset) || 1) ? b : a))
-      const isChange = es.every(x => x.isChange)
-      const followed = followedPairs.has(pairKey(e.source, e.target))
+    const out: Edge[] = [...groups.entries()].map(([key, es]) => {
+      const [source, target] = key.split('->')
+      const tr = tracedBy.get(key)
+      const isChange = es.length > 0 && es.every(x => x.isChange) && !tr
+      const followed = followedPairs.has(pairKey(source, target))
       const taint = taintByEdge?.get(key)
       const tainted = !!taint && taint > 0
-      const weight = Math.max(...es.map(x => Math.log1p(x.amount) / Math.log1p(maxByAsset.get(x.asset) || 1)))
-      const width = isChange ? 1 : 1 + 4 * Math.min(1, Math.max(0, weight))
-      const color = tainted ? TAINT : followed ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--muted))'
-      const label = es.map(x => edgeLabel(x, prices, tainted && x === e ? taint : undefined)).join('  |  ')
+      const weight = es.length ? Math.max(...es.map(x => Math.log1p(x.amount) / Math.log1p(maxByAsset.get(x.asset) || 1))) : 0.6
+      const width = isChange ? 1 : tr ? 2.5 + 2 * Math.min(1, weight) : 1 + 3 * Math.min(1, Math.max(0, weight))
+      const color = tainted ? TAINT : tr || followed ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--muted))'
+      const label = tr
+        ? [...tr].map(([asset, amt]) => `${fmtAmount(amt, asset)} traced`).join(' | ')
+        : tainted
+          ? `${fmtAmount(taint!, es[0]?.asset ?? '')} tainted`
+          : es.map(edgeLabel).join(' | ')
+      const isSel = selectedEdge === key
       return {
         id: key,
-        source: e.source,
-        target: e.target,
+        source,
+        target,
         label,
-        labelStyle: { fill: tainted ? TAINT : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', fontSize: 11, fontWeight: followed || tainted ? 600 : 500 },
-        labelBgStyle: { fill: 'rgb(var(--panel))', fillOpacity: 0.95 },
+        interactionWidth: 24,
+        labelStyle: { fill: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', fontSize: 11, fontWeight: tr || tainted || isSel ? 600 : 500, cursor: 'pointer' },
+        labelBgStyle: { fill: 'rgb(var(--panel))', fillOpacity: 0.95, stroke: isSel ? 'rgb(var(--accent))' : 'none' },
         labelBgPadding: [6, 4] as [number, number],
         labelBgBorderRadius: 2,
-        animated: followed || tainted,
+        animated: !!tr || followed || tainted,
+        zIndex: tr ? 2 : 1,
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
-        style: { stroke: color, strokeWidth: width, strokeDasharray: isChange ? '5 4' : undefined, opacity: isChange ? 0.5 : 1 },
+        style: { stroke: color, strokeWidth: isSel ? width + 1.5 : width, strokeDasharray: isChange ? '5 4' : undefined, opacity: isChange ? 0.5 : 1, cursor: 'pointer' },
       }
     })
-  }, [edgeData, nodeData, prices, followedPairs, taintByEdge])
+
+    for (const m of more) {
+      const id = `more:${m.side}:${m.anchor}`
+      out.push({
+        id,
+        source: m.side === 'in' ? id : m.anchor,
+        target: m.side === 'in' ? m.anchor : id,
+        style: { stroke: 'rgb(var(--line))', strokeDasharray: '3 4' },
+      })
+    }
+    return out
+  }, [edgeData, nodeData, followedPairs, traced, more, taintByEdge, selectedEdge])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -138,7 +172,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, prices, f
     // Refit when nodes are added or removed, not on every data refresh
     if (rawNodes.length !== nodeCount.current) {
       nodeCount.current = rawNodes.length
+      // Refit again once new nodes have been measured
       setTimeout(() => rf.current?.fitView(FIT), 60)
+      setTimeout(() => rf.current?.fitView({ ...FIT, duration: 250 }), 400)
     }
   }, [rawNodes, rawEdges, setNodes, setEdges])
 
@@ -176,7 +212,10 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, prices, f
         edges={edges}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeClick={(_, n) => onNodeClick(n.id)}
+        onNodeClick={(_, n) => (n.type === 'more' ? onMoreClick((n.data as MoreNodeData).anchor) : onNodeClick(n.id))}
+        onEdgeClick={(_, e) => {
+          if (!e.id.startsWith('more:')) onEdgeClick(e.source, e.target)
+        }}
         onInit={inst => {
           rf.current = inst
           onReady?.({ exportPng, fitView: () => inst.fitView(FIT) })
@@ -191,6 +230,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, prices, f
         <MiniMap
           nodeColor={n => {
             const d = n.data as AddressNodeData
+            if (n.type === 'more') return 'rgb(var(--line))'
             return d.isOrigin ? 'rgb(var(--accent))' : ENTITY_STYLE[d.label?.type ?? 'unknown'].hex
           }}
           maskColor="rgb(var(--bg) / 0.7)"

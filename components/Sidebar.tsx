@@ -7,8 +7,24 @@ import { EntityLabel, EntityType, NodeData } from '@/lib/types'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { TornadoLink } from '@/lib/heuristics/eth/tornado'
 import { TaintMethod, TaintResult } from '@/lib/taint'
+import { TracedFlow, TraceEnd, EndReason } from '@/lib/follow'
 import { ENTITY_STYLE, fmtAmount, fmtBalance } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
+
+const END_TITLE: Record<EndReason, string> = {
+  entity: 'Reached an exchange / mixer / sanctioned',
+  unspent: 'Still sitting (unspent)',
+  'no-outflow': 'Not moved on yet',
+  coinjoin: 'Entered a CoinJoin',
+  'no-source': 'Origin of funds',
+  'max-hops': 'Hop limit: continue from here',
+  'not-loaded': 'Could not load',
+}
+const END_ORDER: EndReason[] = ['entity', 'coinjoin', 'unspent', 'no-outflow', 'no-source', 'max-hops', 'not-loaded']
+
+function groupEnds(ends: TraceEnd[]) {
+  return END_ORDER.map(reason => ({ reason, items: ends.filter(e => e.reason === reason).sort((a, b) => b.amount - a.amount) })).filter(g => g.items.length)
+}
 
 function Section({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
@@ -36,8 +52,11 @@ export interface SidebarProps {
   origin?: NodeData
   counts: { nodes: number; edges: number; labelled: number; txs: number }
   legendTypes: EntityType[]
-  auto: { depth: number; topK: number }
-  onAuto: (a: { depth: number; topK: number }) => void
+  follow: { hops: number; branches: number }
+  onFollow: (f: { hops: number; branches: number }) => void
+  traced: TracedFlow[]
+  traceEnds: TraceEnd[]
+  onClearTrace: () => void
   taint: { seed: string; method: TaintMethod; asset: string } | null
   taintResult: TaintResult | null
   taintAssets: string[]
@@ -47,6 +66,7 @@ export interface SidebarProps {
   clusters: Cluster[]
   tornadoLinks: TornadoLink[]
   labelOf: (a: string) => EntityLabel | undefined
+  nameOf: (a: string) => string | undefined
   onSelect: (address: string) => void
   onSaveCase: () => void
   onLoadCase: (file: File) => void
@@ -59,7 +79,7 @@ export interface SidebarProps {
 export default function Sidebar(p: SidebarProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const o = p.origin
-  const name = (a: string) => p.labelOf(a)?.name ?? truncate(a, 6)
+  const name = (a: string) => p.nameOf(a) ?? truncate(a, 6)
 
   const ExportBtn = ({ onClick, icon, children }: { onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) => (
     <button onClick={onClick} className="flex items-center gap-2 h-8 px-2.5 text-[11px] font-medium bg-raised hover:bg-line text-fg transition-colors">
@@ -106,24 +126,48 @@ export default function Sidebar(p: SidebarProps) {
         </Section>
       )}
 
-      <Section title="Auto-trace">
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
+      <Section
+        title="Follow the funds"
+        right={p.traced.length > 0 && <button onClick={p.onClearTrace} className="text-[10px] text-faint hover:text-fg">Clear</button>}
+      >
+        {p.traced.length === 0 ? (
+          <p className="text-[11px] text-muted leading-relaxed">
+            Click an address, then <b className="text-fg font-medium">Trace</b> on one of its transactions (or <b className="text-fg font-medium">Trace funds out</b> for its largest payments). Bitcoin follows the exact coins; Ethereum follows the next outflows after the funds arrive, capped at the amount received.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <div className="text-[11px] text-muted">{p.traced.length} traced hops. Where the money ended up:</div>
+            {groupEnds(p.traceEnds).map(g => (
+              <div key={g.reason}>
+                <div className="text-[10px] uppercase tracking-wider text-faint mt-2 mb-1">{END_TITLE[g.reason]}</div>
+                {g.items.slice(0, 6).map((e, i) => {
+                  const l = p.labelOf(e.address)
+                  return (
+                    <button key={i} onClick={() => p.onSelect(e.address)} title={e.detail} className="w-full flex items-center gap-2 text-[11px] hover:bg-panel -mx-1 px-1 h-6">
+                      <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', l ? ENTITY_STYLE[l.type].dot : 'bg-faint')} />
+                      <span className="truncate text-fg">{name(e.address)}</span>
+                      <span className="ml-auto font-mono text-accent whitespace-nowrap">{fmtAmount(e.amount, e.asset)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2 text-[11px] mt-4">
           <label className="space-y-1">
-            <span className="text-faint">Hops</span>
-            <input type="number" min={1} max={6} value={p.auto.depth}
-              onChange={e => p.onAuto({ ...p.auto, depth: Math.min(6, Math.max(1, +e.target.value || 1)) })}
+            <span className="text-faint">Max hops</span>
+            <input type="number" min={1} max={12} value={p.follow.hops}
+              onChange={e => p.onFollow({ ...p.follow, hops: Math.min(12, Math.max(1, +e.target.value || 1)) })}
               className="w-full h-8 px-2 bg-panel border border-line text-fg outline-none focus:border-accent" />
           </label>
           <label className="space-y-1">
-            <span className="text-faint">Top per hop</span>
-            <input type="number" min={1} max={8} value={p.auto.topK}
-              onChange={e => p.onAuto({ ...p.auto, topK: Math.min(8, Math.max(1, +e.target.value || 1)) })}
+            <span className="text-faint">Branches per hop</span>
+            <input type="number" min={1} max={6} value={p.follow.branches}
+              onChange={e => p.onFollow({ ...p.follow, branches: Math.min(6, Math.max(1, +e.target.value || 1)) })}
               className="w-full h-8 px-2 bg-panel border border-line text-fg outline-none focus:border-accent" />
           </label>
         </div>
-        <p className="mt-2 text-[10px] text-faint leading-relaxed">
-          Select a node, then Auto-trace out or Source of funds. Stops at exchanges, deposit addresses, mixers and sanctioned wallets.
-        </p>
       </Section>
 
       <Section
@@ -213,9 +257,9 @@ export default function Sidebar(p: SidebarProps) {
             </div>
           ))}
           <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-dashed border-faint" />Likely change</div>
-          <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-accent" />Followed path</div>
+          <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-accent" />Traced / followed funds</div>
           <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-red-500" />Tainted flow</div>
-          <p className="text-[10px] text-faint pt-1">Thicker edges carry more value. Dashed borders are inferred labels.</p>
+          <p className="text-[10px] text-faint pt-1">Thicker lines carry more value. Click any line to see its transactions. Dashed borders are inferred labels.</p>
         </div>
       </Section>
 

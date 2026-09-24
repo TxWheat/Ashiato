@@ -92,7 +92,9 @@ describe('traceEthAddress', () => {
       ] }],
     ])
     const r = await traceEthAddress(ADDR.toUpperCase().replace('0X', '0x'))
-    expect(calls.every(u => u.startsWith('https://api.etherscan.io/v2/api?chainid=1&'))).toBe(true)
+    const etherscanCalls = calls.filter(u => u.includes('etherscan'))
+    expect(etherscanCalls.length).toBe(4)
+    expect(etherscanCalls.every(u => u.startsWith('https://api.etherscan.io/v2/api?chainid=1&'))).toBe(true)
     expect(r.address).toBe(ADDR)
     expect(r.balance).toBe(1.5)
     expect(r.rawTxs.map(t => t.txid)).toEqual(['0xc', '0xb', '0xa']) // failed + zero-value dropped

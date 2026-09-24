@@ -1,13 +1,14 @@
 import 'server-only'
-import { Chain, EntityLabel, Finding, RawTransaction, TraceResult } from './types'
+import { Chain, EntityLabel, Finding, NodeData, RawTransaction, TraceResult } from './types'
 import { getLabel } from './labels'
 import { buildGraph } from './graph'
 import { detectDepositAddress } from './heuristics/deposit'
 import { tornadoFindings } from './heuristics/eth/tornado'
 import { scoreRisk } from './risk'
+import { lookupEnsNames } from './ens'
 
 /** Labels, heuristics, risk and graph for one page of an address's transactions */
-export function assemble(opts: {
+export async function assemble(opts: {
   address: string
   chain: Chain
   balance: number
@@ -15,7 +16,7 @@ export function assemble(opts: {
   rawTxs: RawTransaction[]
   nextCursor?: string
   warnings?: string[]
-}): TraceResult {
+}): Promise<TraceResult> {
   const { address, chain, rawTxs } = opts
   const labelCache = new Map<string, EntityLabel | undefined>()
   const labelOf = (a: string) => {
@@ -48,9 +49,17 @@ export function assemble(opts: {
 
   const risk = scoreRisk(address, entity, rawTxs, labelOf, findings)
   const { nodes, edges } = buildGraph(address, chain, rawTxs, labelOf)
-  const origin = {
+  const origin: NodeData = {
     address, chain, label: entity, balance: opts.balance, txCount: opts.txCount,
     isOrigin: true, risk, findings,
+  }
+
+  if (chain === 'eth') {
+    const ens = await lookupEnsNames([address, ...nodes.map(n => n.address)])
+    for (const n of [origin, ...nodes]) {
+      const name = ens.get(n.address)
+      if (name) n.ens = name
+    }
   }
 
   return {

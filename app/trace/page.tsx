@@ -5,22 +5,23 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { ArrowLeft, Copy, RefreshCw, Undo2, X } from 'lucide-react'
-import { Chain, EntityLabel, EntityType, NodeData, TraceResult } from '@/lib/types'
+import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
 import { clusterAddresses } from '@/lib/heuristics/cluster'
 import { tornadoLinks as findTornadoLinks } from '@/lib/heuristics/eth/tornado'
 import { runTaint, TaintMethod } from '@/lib/taint'
-import { autoTrace, DEFAULT_STOP } from '@/lib/autotrace'
+import { BtcTxInfo, Direction, followFunds, Lot, seedsFromTx, backSeedsFromTx, TracedFlow, TraceEnd } from '@/lib/follow'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
 import { ENTITY_STYLE, nativeAsset } from '@/lib/format'
 import NodeDetail from '@/components/NodeDetail'
+import EdgeDetail from '@/components/EdgeDetail'
 import TxTable from '@/components/TxTable'
 import Sidebar from '@/components/Sidebar'
 import ThemeToggle from '@/components/ThemeToggle'
 import type { GraphApi } from '@/components/TraceGraph'
-import type { AddressNodeData } from '@/components/AddressNode'
+import type { AddressNodeData, MoreNodeData } from '@/components/AddressNode'
 
 const TraceGraph = dynamic(() => import('@/components/TraceGraph'), { ssr: false })
 
@@ -29,7 +30,17 @@ type TaintCfg = { seed: string; method: TaintMethod; asset: string }
 interface Snapshot {
   visible: Set<string>
   followedPairs: Set<string>
+  traced: TracedFlow[]
+  traceEnds: TraceEnd[]
 }
+
+/** On first load, show only the largest counterparties on each side plus labelled entities */
+const INITIAL_PER_SIDE = 4
+const INITIAL_LABELLED = 4
+/** Trails end at cash-out points and mixers */
+const STOP_AT: EntityType[] = ['exchange', 'deposit', 'mixer', 'coinjoin', 'sanctioned', 'defi']
+/** Older pages loaded per address while following funds */
+const MAX_EXTRA_PAGES = 5
 
 function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
@@ -43,13 +54,34 @@ async function fetchTrace(address: string, chain: Chain, cursor?: string): Promi
   return body as TraceResult
 }
 
+/** Largest counterparties on each side, ranked by share of each asset's flow */
+function pickInitial(result: TraceResult): string[] {
+  const rank = (edges: EdgeData[], other: (e: EdgeData) => string) => {
+    const total = new Map<string, number>()
+    for (const e of edges) total.set(e.asset, (total.get(e.asset) ?? 0) + e.amount)
+    const score = new Map<string, number>()
+    for (const e of edges) {
+      const a = other(e)
+      score.set(a, Math.max(score.get(a) ?? 0, e.amount / (total.get(e.asset) || 1)))
+    }
+    return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a)
+  }
+  const me = result.address
+  const ins = rank(result.edges.filter(e => e.target === me), e => e.source).slice(0, INITIAL_PER_SIDE)
+  const outs = rank(result.edges.filter(e => e.source === me && !e.isChange), e => e.target).slice(0, INITIAL_PER_SIDE)
+  const labelled = result.nodes
+    .filter(n => n.address !== me && n.label && n.label.type !== 'unknown')
+    .map(n => n.address)
+    .slice(0, INITIAL_LABELLED)
+  return [...new Set([...ins, ...outs, ...labelled])]
+}
+
 function TracePageInner() {
   const params = useSearchParams()
   const router = useRouter()
   const rawAddress = params.get('address') ?? ''
   const chainParam = params.get('chain') as Chain | null
   const originChain: Chain | null = chainParam === 'btc' || chainParam === 'eth' ? chainParam : detectChain(rawAddress)
-  // Node IDs are normalised (ETH lowercase), so the origin must be too (bug C4)
   const originAddress = originChain ? normaliseAddress(rawAddress, originChain) : rawAddress
 
   // Everything we know about each address (labels, risk, notes), and which are on the graph
@@ -57,6 +89,8 @@ function TracePageInner() {
   const [visible, setVisible] = useState<Set<string>>(new Set())
   const [pages, setPages] = useState<Map<string, LoadedPage>>(new Map())
   const [followedPairs, setFollowedPairs] = useState<Set<string>>(new Set())
+  const [traced, setTraced] = useState<TracedFlow[]>([])
+  const [traceEnds, setTraceEnds] = useState<TraceEnd[]>([])
   const [history, setHistory] = useState<Snapshot[]>([])
 
   const [initialLoading, setInitialLoading] = useState(true)
@@ -66,16 +100,25 @@ function TracePageInner() {
   const [loadingMore, setLoadingMore] = useState(false)
 
   const [selected, setSelected] = useState<string | null>(null)
+  const [selectedEdge, setSelectedEdge] = useState<{ from: string; to: string } | null>(null)
   const [showTx, setShowTx] = useState(false)
 
   const [taint, setTaint] = useState<TaintCfg | null>(null)
-  const [auto, setAuto] = useState({ depth: 3, topK: 3 })
-  const [autoStatus, setAutoStatus] = useState<string | null>(null)
-  const autoCancel = useRef(false)
+  const [follow, setFollow] = useState({ hops: 6, branches: 3 })
+  const [traceStatus, setTraceStatus] = useState<string | null>(null)
+  /** Show only the traced money trail (plus the origin) */
+  const [focusTrace, setFocusTrace] = useState(false)
+  const traceCancel = useRef(false)
   const restoring = useRef(false)
   const graphApi = useRef<GraphApi | null>(null)
 
-  // Live NZD prices (fail silently; labels just omit fiat)
+  // Refs mirror state for use inside long-running async traces
+  const pagesRef = useRef(pages)
+  const knownRef = useRef(known)
+  const btcTxCache = useRef(new Map<string, BtcTxInfo>())
+  const btcLabels = useRef(new Map<string, EntityLabel>())
+
+  // Live NZD prices (fail silently; the flow panel just omits fiat)
   const [prices, setPrices] = useState<Record<string, number>>({})
   useEffect(() => {
     fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=nzd')
@@ -86,52 +129,62 @@ function TracePageInner() {
 
   const flash = useCallback((msg: string) => {
     setToast(msg)
-    setTimeout(() => setToast(''), 4000)
+    setTimeout(() => setToast(''), 5000)
   }, [])
 
-  /** Merges a page into state. `add` = which of its addresses to put on the graph */
-  const absorb = useCallback((result: TraceResult, add: 'all' | 'self' | string[], append = false) => {
-    setKnown(prev => {
-      const next = new Map(prev)
-      for (const n of result.nodes) {
-        const ex = next.get(n.address)
-        if (n.address === result.address) {
-          next.set(n.address, {
-            ...(ex ?? n),
-            balance: n.balance,
-            txCount: n.txCount,
-            risk: n.risk,
-            findings: n.findings,
-            label: ex?.label && !ex.label.inferredBy ? ex.label : n.label ?? ex?.label,
-            isExpanded: true,
-            isOrigin: n.address === originAddress,
-          })
-        } else if (!ex) {
-          next.set(n.address, { ...n, isOrigin: false })
-        } else if (!ex.label && n.label) {
-          next.set(n.address, { ...ex, label: n.label })
-        }
+  /** Merges a page into state. `add` = which of its counterparties to put on the graph */
+  const absorb = useCallback((result: TraceResult, add: string[], append = false) => {
+    // Update the ref synchronously so an in-flight trace sees new labels immediately
+    const next = new Map(knownRef.current)
+    for (const n of result.nodes) {
+      const ex = next.get(n.address)
+      if (n.address === result.address) {
+        next.set(n.address, {
+          ...(ex ?? n),
+          balance: n.balance,
+          txCount: n.txCount,
+          risk: n.risk,
+          findings: n.findings,
+          ens: n.ens ?? ex?.ens,
+          label: ex?.label && !ex.label.inferredBy ? ex.label : n.label ?? ex?.label,
+          isExpanded: true,
+          isOrigin: n.address === originAddress,
+        })
+      } else if (!ex) {
+        next.set(n.address, { ...n, isOrigin: false })
+      } else if ((!ex.label && n.label) || (!ex.ens && n.ens)) {
+        next.set(n.address, { ...ex, label: ex.label ?? n.label, ens: ex.ens ?? n.ens })
       }
-      return next
-    })
-    setPages(prev => {
-      const next = new Map(prev)
-      const ex = next.get(result.address)
-      next.set(result.address, {
-        rawTxs: append && ex ? [...ex.rawTxs, ...result.rawTxs] : result.rawTxs,
-        nextCursor: result.nextCursor,
-        warnings: result.warnings,
-      })
-      return next
-    })
-    setVisible(prev => {
-      const next = new Set(prev)
-      next.add(result.address)
-      if (add === 'all') result.nodes.forEach(n => next.add(n.address))
-      else if (Array.isArray(add)) add.forEach(a => next.add(a))
-      return next
-    })
+    }
+    knownRef.current = next
+    setKnown(next)
+    const ex = pagesRef.current.get(result.address)
+    const page: LoadedPage = {
+      rawTxs: append && ex ? [...ex.rawTxs, ...result.rawTxs] : result.rawTxs,
+      nextCursor: result.nextCursor,
+      warnings: result.warnings,
+    }
+    pagesRef.current = new Map(pagesRef.current).set(result.address, page)
+    setPages(pagesRef.current)
+    setVisible(prev => new Set([...prev, result.address, ...add]))
   }, [originAddress])
+
+  const resetState = () => {
+    knownRef.current = new Map()
+    setKnown(knownRef.current)
+    setVisible(new Set())
+    pagesRef.current = new Map()
+    setPages(pagesRef.current)
+    setFollowedPairs(new Set())
+    setTraced([])
+    setTraceEnds([])
+    setFocusTrace(false)
+    setHistory([])
+    setSelected(null)
+    setSelectedEdge(null)
+    setShowTx(false)
+    setTaint(null)
+  }
 
   const loadOrigin = useCallback(async () => {
     if (!originChain) {
@@ -141,16 +194,10 @@ function TracePageInner() {
     }
     setInitialLoading(true)
     setError('')
-    setKnown(new Map())
-    setVisible(new Set())
-    setPages(new Map())
-    setFollowedPairs(new Set())
-    setHistory([])
-    setSelected(null)
-    setShowTx(false)
-    setTaint(null)
+    resetState()
     try {
-      absorb(await fetchTrace(originAddress, originChain), 'all')
+      const r = await fetchTrace(originAddress, originChain)
+      absorb(r, pickInitial(r))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to trace address')
     } finally {
@@ -177,61 +224,64 @@ function TracePageInner() {
 
   const chainOf = useCallback((a: string): Chain => known.get(a)?.chain ?? originChain ?? 'btc', [known, originChain])
 
-  /** Puts addresses on the graph, creating bare nodes for ones only seen inside transactions */
-  const showOnGraph = useCallback((addrs: string[]) => {
-    const chain = originChain ?? 'btc'
-    setKnown(prev => {
-      const missing = addrs.filter(a => !prev.has(a))
-      if (!missing.length) return prev
-      const next = new Map(prev)
-      for (const a of missing) next.set(a, { address: a, chain, balance: 0, txCount: 0, isOrigin: false })
-      return next
-    })
-    setVisible(prev => new Set([...prev, ...addrs]))
-  }, [originChain])
-
   /** Loads an address's first page if we don't have it yet */
-  const ensurePage = useCallback(async (addr: string): Promise<TraceResult | null> => {
-    if (pages.has(addr)) return null
+  const ensurePage = useCallback(async (addr: string): Promise<LoadedPage | null> => {
+    const have = pagesRef.current.get(addr)
+    if (have) return have
     setBusy(addr, true)
     try {
-      const r = await fetchTrace(addr, chainOf(addr))
-      absorb(r, 'self')
-      return r
+      absorb(await fetchTrace(addr, knownRef.current.get(addr)?.chain ?? originChain ?? 'btc'), [])
+      return pagesRef.current.get(addr) ?? null
     } catch (e) {
       flash(`${truncate(addr, 6)}: ${e instanceof Error ? e.message : 'failed to load'}`)
       return null
     } finally {
       setBusy(addr, false)
     }
-  }, [pages, chainOf, absorb, flash])
+  }, [absorb, flash, originChain])
+
+  /** Puts addresses on the graph, creating bare nodes for ones only seen inside transactions */
+  const showOnGraph = useCallback((addrs: string[]) => {
+    const chain = originChain ?? 'btc'
+    const missing = addrs.filter(a => !knownRef.current.has(a))
+    if (missing.length) {
+      const next = new Map(knownRef.current)
+      for (const a of missing) next.set(a, { address: a, chain, label: btcLabels.current.get(a), balance: 0, txCount: 0, isOrigin: false })
+      knownRef.current = next
+      setKnown(next)
+    }
+    setVisible(prev => new Set([...prev, ...addrs]))
+  }, [originChain])
 
   const snapshot = useCallback(() => {
-    setHistory(prev => [...prev.slice(-29), { visible: new Set(visible), followedPairs: new Set(followedPairs) }])
-  }, [visible, followedPairs])
+    setHistory(prev => [...prev.slice(-29), { visible: new Set(visible), followedPairs: new Set(followedPairs), traced, traceEnds }])
+  }, [visible, followedPairs, traced, traceEnds])
 
   const undo = () => {
     const last = history[history.length - 1]
     if (!last) return
     setVisible(last.visible)
     setFollowedPairs(last.followedPairs)
+    setTraced(last.traced)
+    setTraceEnds(last.traceEnds)
     setHistory(history.slice(0, -1))
     if (selected && !last.visible.has(selected)) setSelected(null)
   }
 
-  const openTransactions = (addr: string) => {
+  const openAddress = (addr: string) => {
     setSelected(addr)
+    setSelectedEdge(null)
     setShowTx(true)
     ensurePage(addr)
   }
 
   const loadMore = async () => {
     if (!selected) return
-    const cursor = pages.get(selected)?.nextCursor
+    const cursor = pagesRef.current.get(selected)?.nextCursor
     if (!cursor) return
     setLoadingMore(true)
     try {
-      absorb(await fetchTrace(selected, chainOf(selected), cursor), 'self', true)
+      absorb(await fetchTrace(selected, chainOf(selected), cursor), [], true)
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Failed to load more')
     } finally {
@@ -240,7 +290,7 @@ function TracePageInner() {
   }
 
   /** Put `to` on the graph, linked from `from`, and load its activity */
-  const follow = async (from: string, to: string) => {
+  const followAddress = async (from: string, to: string) => {
     if (visible.has(to)) return
     snapshot()
     showOnGraph([to])
@@ -259,46 +309,115 @@ function TracePageInner() {
     setShowTx(false)
   }
 
-  const runAuto = async (start: string, direction: 'forward' | 'backward') => {
+  // ── Follow the funds ─────────────────────────────────────────────────────
+  const addressTxs = useCallback(async (addr: string, since: number): Promise<RawTransaction[]> => {
+    let page = pagesRef.current.get(addr) ?? (await ensurePage(addr))
+    if (!page) throw new Error(`Could not load ${truncate(addr, 6)}`)
+    const chain = knownRef.current.get(addr)?.chain ?? originChain ?? 'eth'
+    for (let i = 0; i < MAX_EXTRA_PAGES && page.nextCursor; i++) {
+      const stamps = page.rawTxs.map(t => t.timestamp).filter(Boolean)
+      const oldest = stamps.length ? Math.min(...stamps) : 0
+      if (oldest && oldest <= since) break
+      absorb(await fetchTrace(addr, chain, page.nextCursor), [], true)
+      page = pagesRef.current.get(addr)!
+    }
+    return page.rawTxs
+  }, [absorb, ensurePage, originChain])
+
+  const btcTx = useCallback(async (txid: string): Promise<BtcTxInfo> => {
+    const hit = btcTxCache.current.get(txid)
+    if (hit) return hit
+    const res = await fetch(`/api/tx/btc/${txid}`)
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    const info = body as BtcTxInfo
+    for (const [a, l] of Object.entries(info.labels)) btcLabels.current.set(a, l)
+    btcTxCache.current.set(txid, info)
+    return info
+  }, [])
+
+  const runFollow = async (direction: Direction, seed: { lots: Lot[]; flows: TracedFlow[] }) => {
+    if (!seed.lots.length) {
+      flash('Nothing to trace from here')
+      return
+    }
     snapshot()
-    autoCancel.current = false
-    const opts = direction === 'backward' && auto.topK > 1
-      ? { direction, depth: Math.max(auto.depth, 4), topK: 1, stopAt: DEFAULT_STOP }
-      : { direction, depth: auto.depth, topK: auto.topK, stopAt: DEFAULT_STOP }
-    setAutoStatus(direction === 'forward' ? 'Tracing outflows…' : 'Walking back to the source…')
-    const cache = new Map<string, TraceResult>()
-    const res = await autoTrace(
-      start,
-      opts,
-      async addr => {
-        setAutoStatus(`Loading ${truncate(addr, 6)}…`)
-        const r = cache.get(addr) ?? (await fetchTrace(addr, chainOf(addr)))
-        cache.set(addr, r)
-        return r
-      },
-      step => {
-        absorb(step.result, step.picked)
-        setFollowedPairs(prev => {
-          const n = new Set(prev)
-          step.picked.forEach(p => n.add(pairKey(step.from, p)))
-          return n
-        })
-      },
-      () => autoCancel.current
-    )
-    setAutoStatus(null)
-    flash(`Auto-trace visited ${res.visited} addresses${res.stoppedAt.length ? `, stopped at ${res.stoppedAt.length} exchange/mixer/sanctioned` : ''}`)
+    traceCancel.current = false
+    setSelectedEdge(null)
+    const before = traced
+    const show = (flows: TracedFlow[]) => {
+      setTraced([...before, ...flows])
+      showOnGraph([...new Set(flows.flatMap(f => [f.from, f.to]))])
+    }
+    show(seed.flows)
+    setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
+    try {
+      const res = await followFunds(
+        seed.lots,
+        { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT },
+        { addressTxs, btcTx, labelOf: a => knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
+        (msg, partial) => {
+          setTraceStatus(msg)
+          show([...seed.flows, ...partial.flows])
+        },
+        () => traceCancel.current
+      )
+      const flows = [...seed.flows, ...res.flows]
+      show(flows)
+      setTraceEnds(prev => [...prev, ...res.ends])
+      if (flows.length) setFocusTrace(true)
+      const cashOut = res.ends.filter(e => e.reason === 'entity').length
+      flash(`Traced ${flows.length} hop${flows.length === 1 ? '' : 's'}${cashOut ? ` · reached ${cashOut} exchange/mixer/sanctioned endpoint${cashOut === 1 ? '' : 's'}` : ''}`)
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Trace failed')
+    } finally {
+      setTraceStatus(null)
+    }
+  }
+
+  /** Node-level: the address's largest outgoing (or incoming) transactions as starting points */
+  const traceFromNode = async (addr: string, direction: Direction) => {
+    const page = await ensurePage(addr)
+    if (!page) return
+    const merged = { lots: [] as Lot[], flows: [] as TracedFlow[] }
+    if (direction === 'forward') {
+      const outs = page.rawTxs
+        .filter(t => t.inputs.some(i => i.address === addr))
+        .map(t => ({ t, v: t.outputs.filter(o => o.address !== addr && !o.isChange).reduce((s, o) => s + o.amount, 0) }))
+        .filter(x => x.v > 0)
+        .sort((a, b) => b.v - a.v)
+        .slice(0, follow.branches)
+      for (const { t } of outs) {
+        const s = seedsFromTx(t, addr)
+        merged.lots.push(...s.lots)
+        merged.flows.push(...s.flows)
+      }
+    } else {
+      const ins = page.rawTxs
+        .filter(t => t.outputs.some(o => o.address === addr) && !t.inputs.some(i => i.address === addr))
+        .map(t => ({ t, v: t.outputs.filter(o => o.address === addr).reduce((s, o) => s + o.amount, 0) }))
+        .sort((a, b) => b.v - a.v)
+        .slice(0, follow.branches)
+      for (const { t } of ins) {
+        const s = backSeedsFromTx(t, addr)
+        merged.lots.push(...s.lots)
+        merged.flows.push(...s.flows)
+      }
+    }
+    await runFollow(direction, merged)
   }
 
   // ── Derived data ─────────────────────────────────────────────────────────
   const allTxs = useMemo(() => [...pages.values()].flatMap(p => p.rawTxs), [pages])
 
-  const allEdges = useMemo(() => {
-    const perTx = [...pages.entries()].flatMap(([addr, p]) => txEdges(addr, chainOf(addr), p.rawTxs))
-    return aggregateEdges(perTx)
-  }, [pages, chainOf])
+  const perTx = useMemo(
+    () => [...pages.entries()].flatMap(([addr, p]) => txEdges(addr, chainOf(addr), p.rawTxs)),
+    [pages, chainOf]
+  )
+  const allEdges = useMemo(() => aggregateEdges(perTx), [perTx])
 
-  const labelOf = useCallback((a: string): EntityLabel | undefined => known.get(a)?.label, [known])
+  const labelOf = useCallback((a: string): EntityLabel | undefined => known.get(a)?.label ?? btcLabels.current.get(a), [known])
+  const ensOf = useCallback((a: string) => known.get(a)?.ens, [known])
 
   const clusters = useMemo(() => {
     const labels = new Map<string, EntityLabel | undefined>()
@@ -311,15 +430,18 @@ function TracePageInner() {
   const taintAssets = useMemo(() => [...new Set(allTxs.map(t => t.asset))].sort(), [allTxs])
   const taintResult = useMemo(() => (taint ? runTaint(allTxs, [taint.seed], taint.method, taint.asset) : null), [taint, allTxs])
 
+  const traceSet = useMemo(() => new Set(traced.flatMap(f => [f.from, f.to])), [traced])
+  const showTraceOnly = focusTrace && traced.length > 0
+
   const graphNodes: AddressNodeData[] = useMemo(() => {
-    return [...visible].flatMap(a => {
+    const shown = showTraceOnly ? [...visible].filter(a => traceSet.has(a) || a === originAddress || a === selected) : [...visible]
+    return shown.flatMap(a => {
       const n = known.get(a)
       if (!n) return []
       const cluster = clusters.byAddress.get(a)
-      const label = n.label ?? cluster?.label
       return [{
         ...n,
-        label,
+        label: n.label ?? btcLabels.current.get(a) ?? cluster?.label,
         isOrigin: a === originAddress,
         clusterId: cluster?.id,
         taint: taintResult?.byAddress.get(a)?.received,
@@ -331,9 +453,30 @@ function TracePageInner() {
         },
       }]
     })
-  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress])
+  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, showTraceOnly, traceSet, selected])
 
-  const graphEdges = useMemo(() => allEdges.filter(e => visible.has(e.source) && visible.has(e.target)), [allEdges, visible])
+  const graphEdges = useMemo(() => {
+    const ids = new Set(graphNodes.map(n => n.address))
+    return allEdges.filter(e => ids.has(e.source) && ids.has(e.target))
+  }, [allEdges, graphNodes])
+
+  // "+N more" placeholders for counterparties not on the graph (origin and the selected address)
+  const moreNodes: MoreNodeData[] = useMemo(() => {
+    const out: MoreNodeData[] = []
+    if (showTraceOnly) return out
+    for (const anchor of new Set([originAddress, selected].filter(Boolean) as string[])) {
+      if (!visible.has(anchor) || !pages.has(anchor)) continue
+      const hiddenIn = new Set<string>()
+      const hiddenOut = new Set<string>()
+      for (const e of allEdges) {
+        if (e.target === anchor && !visible.has(e.source)) hiddenIn.add(e.source)
+        if (e.source === anchor && !visible.has(e.target) && !e.isChange) hiddenOut.add(e.target)
+      }
+      if (hiddenIn.size) out.push({ anchor, side: 'in', count: hiddenIn.size })
+      if (hiddenOut.size) out.push({ anchor, side: 'out', count: hiddenOut.size })
+    }
+    return out
+  }, [originAddress, selected, visible, pages, allEdges, showTraceOnly])
 
   const legendTypes = useMemo(() => {
     const present = new Set(graphNodes.map(n => n.label?.type).filter(Boolean) as EntityType[])
@@ -343,6 +486,22 @@ function TracePageInner() {
   const selectedNode = selected ? graphNodes.find(n => n.address === selected) ?? known.get(selected) : undefined
   const selectedPage = selected ? pages.get(selected) : undefined
   const origin = graphNodes.find(n => n.address === originAddress)
+  const nodeMap = useMemo(() => new Map(graphNodes.map(n => [n.address, n as NodeData])), [graphNodes])
+  const nameOf = useCallback((a: string) => nodeMap.get(a)?.label?.name ?? labelOf(a)?.name ?? ensOf(a), [nodeMap, labelOf, ensOf])
+
+  const edgeRows = useMemo(() => {
+    if (!selectedEdge) return []
+    const seen = new Set<string>()
+    return perTx.filter(e => {
+      if (e.source !== selectedEdge.from || e.target !== selectedEdge.to || seen.has(e.id)) return false
+      seen.add(e.id)
+      return true
+    })
+  }, [perTx, selectedEdge])
+
+  /** The raw transaction behind one per-tx edge */
+  const txForRow = (row: EdgeData): RawTransaction | undefined =>
+    allTxs.find(t => t.txid === row.txid && t.asset === row.asset && t.inputs.some(i => i.address === row.source) && t.outputs.some(o => o.address === row.target))
 
   // ── Case files & exports ─────────────────────────────────────────────────
   const fileBase = `trace-${originChain}-${originAddress.slice(0, 10)}`
@@ -357,6 +516,8 @@ function TracePageInner() {
       visible: [...visible],
       pages: Object.fromEntries(pages),
       followedPairs: [...followedPairs],
+      traced,
+      traceEnds,
       taint,
     }
     download(`${fileBase}.case.json`, JSON.stringify(c), 'application/json')
@@ -365,13 +526,18 @@ function TracePageInner() {
   const loadCase = async (file: File) => {
     try {
       const c = parseCase(await file.text())
-      setKnown(new Map(c.known.map(n => [n.address, n])))
+      knownRef.current = new Map(c.known.map(n => [n.address, n]))
+      setKnown(knownRef.current)
       setVisible(new Set(c.visible))
-      setPages(new Map(Object.entries(c.pages)))
+      pagesRef.current = new Map(Object.entries(c.pages))
+      setPages(pagesRef.current)
       setFollowedPairs(new Set(c.followedPairs))
+      setTraced(c.traced ?? [])
+      setTraceEnds(c.traceEnds ?? [])
       setTaint(c.taint ?? null)
       setHistory([])
       setSelected(null)
+      setSelectedEdge(null)
       setShowTx(false)
       setError('')
       setInitialLoading(false)
@@ -385,11 +551,9 @@ function TracePageInner() {
     }
   }
 
-  const nodeMap = useMemo(() => new Map(graphNodes.map(n => [n.address, n as NodeData])), [graphNodes])
-
   const openReport = () => {
     if (!originChain) return
-    const html = buildReport({ origin: originAddress, chain: originChain, nodes: nodeMap, edges: graphEdges, taint: taintResult })
+    const html = buildReport({ origin: originAddress, chain: originChain, nodes: nodeMap, edges: graphEdges, taint: taintResult, traced, traceEnds, nameOf })
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank', 'noopener')
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -404,6 +568,15 @@ function TracePageInner() {
   const copyAddress = () => {
     navigator.clipboard.writeText(originAddress)
     flash('Address copied')
+  }
+
+  const selectFromSidebar = (a: string) => {
+    if (!visible.has(a)) {
+      snapshot()
+      showOnGraph([a])
+    }
+    setSelected(a)
+    setSelectedEdge(null)
   }
 
   return (
@@ -423,7 +596,7 @@ function TracePageInner() {
               {originChain}
             </span>
           )}
-          <code className="text-fg text-xs truncate">{truncate(originAddress, 10)}</code>
+          <code className="text-fg text-xs truncate">{origin?.ens ?? truncate(originAddress, 10)}</code>
           <button onClick={copyAddress} className="text-faint hover:text-fg" aria-label="Copy address">
             <Copy size={12} />
           </button>
@@ -431,12 +604,25 @@ function TracePageInner() {
         </div>
 
         <div className="ml-auto flex items-center gap-3 sm:gap-4 text-xs text-faint flex-shrink-0">
-          {autoStatus && (
+          {traceStatus && (
             <span className="flex items-center gap-2 text-accent">
               <span className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-              <span className="hidden sm:inline">{autoStatus}</span>
-              <button onClick={() => (autoCancel.current = true)} className="text-faint hover:text-fg" aria-label="Cancel auto-trace"><X size={12} /></button>
+              <span className="hidden sm:inline">{traceStatus}</span>
+              <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
+          )}
+          {traced.length > 0 && (
+            <div className="flex border border-line text-[11px] font-medium">
+              {([['Trace only', true], ['Everything', false]] as const).map(([label, v]) => (
+                <button
+                  key={label}
+                  onClick={() => setFocusTrace(v)}
+                  className={`h-7 px-2.5 ${focusTrace === v ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           )}
           {!initialLoading && graphNodes.length > 0 && (
             <>
@@ -458,8 +644,11 @@ function TracePageInner() {
             origin={origin}
             counts={{ nodes: graphNodes.length, edges: graphEdges.length, labelled: graphNodes.filter(n => n.label).length, txs: allTxs.length }}
             legendTypes={legendTypes}
-            auto={auto}
-            onAuto={setAuto}
+            follow={follow}
+            onFollow={setFollow}
+            traced={traced}
+            traceEnds={traceEnds}
+            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]); setFocusTrace(false) }}
             taint={taint}
             taintResult={taintResult}
             taintAssets={taintAssets}
@@ -468,14 +657,9 @@ function TracePageInner() {
             onTaintClear={() => setTaint(null)}
             clusters={clusters.clusters}
             tornadoLinks={tornado}
-            labelOf={a => nodeMap.get(a)?.label ?? labelOf(a)}
-            onSelect={a => {
-              if (!visible.has(a)) {
-                snapshot()
-                showOnGraph([a])
-              }
-              setSelected(a)
-            }}
+            labelOf={labelOf}
+            nameOf={nameOf}
+            onSelect={selectFromSidebar}
             onSaveCase={saveCase}
             onLoadCase={loadCase}
             onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges, taintResult?.byEdge), 'text/csv')}
@@ -513,19 +697,51 @@ function TracePageInner() {
               <TraceGraph
                 nodes={graphNodes}
                 edges={graphEdges}
-                prices={prices}
                 followedPairs={followedPairs}
+                traced={traced}
+                more={moreNodes}
                 taintByEdge={taintResult?.byEdge}
                 selected={selected}
-                onNodeClick={a => {
-                  setSelected(a)
-                  if (showTx) ensurePage(a)
-                }}
+                selectedEdge={selectedEdge ? `${selectedEdge.from}->${selectedEdge.to}` : null}
+                onNodeClick={openAddress}
+                onEdgeClick={(from, to) => { setSelectedEdge({ from, to }); setSelected(null) }}
+                onMoreClick={openAddress}
                 onReady={api => (graphApi.current = api)}
               />
             )}
 
-            {selectedNode && (
+            {!initialLoading && !error && graphNodes.length > 0 && !selected && !selectedEdge && (
+              <div className="absolute left-3 top-3 z-10 max-w-xs bg-panel/90 border border-line px-3 py-2 text-[11px] text-muted leading-relaxed">
+                Click an <b className="text-fg font-medium">address</b> to see its transactions, or a <b className="text-fg font-medium">flow</b> (line) to see the payments behind it and trace them.
+              </div>
+            )}
+
+            {selectedEdge && (
+              <EdgeDetail
+                from={selectedEdge.from}
+                to={selectedEdge.to}
+                chain={originChain ?? 'btc'}
+                rows={edgeRows}
+                traced={traced.filter(f => f.from === selectedEdge.from && f.to === selectedEdge.to)}
+                prices={prices}
+                busy={!!traceStatus}
+                nameOf={nameOf}
+                onSelect={openAddress}
+                onTraceForward={row => {
+                  const tx = txForRow(row)
+                  if (tx) runFollow('forward', seedsFromTx(tx, row.source, row.target))
+                  else flash('Transaction not loaded')
+                }}
+                onTraceBack={row => {
+                  const tx = txForRow(row)
+                  if (tx) runFollow('backward', backSeedsFromTx(tx, row.target, row.source))
+                  else flash('Transaction not loaded')
+                }}
+                onClose={() => setSelectedEdge(null)}
+              />
+            )}
+
+            {selectedNode && !selectedEdge && (
               <NodeDetail
                 node={selectedNode}
                 loaded={selectedPage?.rawTxs.length ?? 0}
@@ -533,26 +749,28 @@ function TracePageInner() {
                 canRemove={selectedNode.address !== originAddress}
                 cluster={clusters.byAddress.get(selectedNode.address)}
                 taint={taint ? { amount: taintResult?.byAddress.get(selectedNode.address)?.received ?? 0, asset: taint.asset, isSeed: taint.seed === selectedNode.address } : undefined}
-                autoRunning={!!autoStatus}
+                tracing={!!traceStatus}
                 onClose={() => { setSelected(null); setShowTx(false) }}
-                onTransactions={() => openTransactions(selectedNode.address)}
+                onTransactions={() => openAddress(selectedNode.address)}
                 onRemove={() => removeNode(selectedNode.address)}
                 onTaint={() => {
                   const addr = selectedNode.address
                   setTaint(t => ({ seed: addr, method: t?.method ?? 'haircut', asset: nativeAsset(selectedNode.chain) }))
                   ensurePage(addr)
                 }}
-                onAutoTrace={dir => runAuto(selectedNode.address, dir)}
+                onTrace={dir => traceFromNode(selectedNode.address, dir)}
                 onShowCluster={() => {
                   const c = clusters.byAddress.get(selectedNode.address)
                   if (!c) return
                   snapshot()
                   showOnGraph(c.members)
                 }}
-                onNote={note => setKnown(prev => {
-                  const n = prev.get(selectedNode.address)
-                  return n ? new Map(prev).set(n.address, { ...n, note: note.trim() || undefined }) : prev
-                })}
+                onNote={note => {
+                  const n = knownRef.current.get(selectedNode.address)
+                  if (!n) return
+                  knownRef.current = new Map(knownRef.current).set(n.address, { ...n, note: note.trim() || undefined })
+                  setKnown(knownRef.current)
+                }}
               />
             )}
 
@@ -573,8 +791,11 @@ function TracePageInner() {
               warnings={selectedPage?.warnings}
               onGraph={visible}
               followingAddrs={loadingAddrs}
-              labelOf={a => nodeMap.get(a)?.label ?? labelOf(a)}
-              onFollow={to => follow(selected, to)}
+              labelOf={labelOf}
+              ensOf={ensOf}
+              tracing={!!traceStatus}
+              onTrace={(tx, dir) => runFollow(dir, dir === 'forward' ? seedsFromTx(tx, selected) : backSeedsFromTx(tx, selected))}
+              onFollow={to => followAddress(selected, to)}
               onLoadMore={loadMore}
               onClose={() => setShowTx(false)}
             />

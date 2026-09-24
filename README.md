@@ -14,7 +14,8 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | **CoinJoin & mixers** | Whirlpool, Wasabi 1/2 and JoinMarket fingerprints; Tornado Cash address-match, gas-price and multi-denomination reveals |
 | **Change detection** | Address reuse, round amounts, script type, unnecessary input, each with a confidence score |
 | **Risk score** | 0–100 with reasons (sanctioned / scam / mixer exposure, CoinJoin and Tornado use) |
-| **Auto-trace** | Follow the money N hops forward, or walk back to the source of funds; stops at exchanges and mixers |
+| **Follow the funds** | Trace a specific payment hop by hop: exact coin (UTXO) tracing on Bitcoin, chronological amount-capped tracing on Ethereum. Every hop explains itself; stops at exchanges, deposit addresses and mixers |
+| **ENS names** | Verified primary ENS names on Ethereum addresses (reverse + forward check, so spoofed names are ignored) |
 | **Case files & exports** | Save and reopen investigations (JSON), CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
 
 Every heuristic is documented, with its limits, at `/methodology`.
@@ -38,9 +39,9 @@ Open http://localhost:3000. Bitcoin works without any key.
 ## How to use it
 
 1. Paste a BTC or ETH address. The chain is auto-detected.
-2. Click a node to see its label, risk score, findings and cluster.
-3. **Transactions** lists its activity: **Follow** any sender or recipient to add them to the graph. **Load older transactions** pages back through history.
-4. **Auto-trace out** follows the largest outflows; **Source of funds** walks back along the largest inputs.
+2. The graph starts with the largest senders and recipients; the rest sit behind **+N more**.
+3. Click an **address** to open its transactions (and label, risk and findings). On any transaction, **Trace →** follows that payment onward and **← Source** walks it back. **Follow** adds a single address.
+4. Click a **line** to see the payments behind it and trace any of them. **Trace only / Everything** in the top bar switches between just the money trail and the full graph.
 5. On the address that received the stolen funds, click **Taint from here**, then choose Haircut / FIFO / Poison in the sidebar.
 6. **Report** opens a printable summary (Print → Save as PDF). **Save case** stores the investigation on your computer.
 
@@ -70,10 +71,12 @@ lib/chains/        Esplora + Etherscan V2 clients (paginated, cached, rate-limit
 lib/heuristics/    change, coinjoin, cluster, deposit-address, tornado
 lib/taint.ts       poison / haircut / FIFO
 lib/risk.ts        0–100 risk score
-lib/autotrace.ts   hop-limited crawler
 lib/labels.ts      label lookup (server only)
 app/api/[chain]/[address]          trace one page of an address
 app/api/screen/[chain]/[address]   JSON risk screening
+app/api/tx/btc/[txid]              one BTC tx + who spent each output
+lib/follow.ts      follow-the-funds engine
+lib/ens.ts         verified ENS names (ETH_RPC_URL)
 ```
 
 ## Credits

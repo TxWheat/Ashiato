@@ -85,6 +85,8 @@ export interface NodeData {
   address: string
   chain: Chain
   label?: EntityLabel
+  /** Verified ENS primary name (ETH) */
+  ens?: string
   balance: number
   txCount: number
   isOrigin: boolean
