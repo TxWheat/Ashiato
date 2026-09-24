@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { keccak_256 } from '@noble/hashes/sha3.js'
 import { lookupEnsNames, namehash } from '@/lib/ens'
+import { keccak256 } from '@/lib/keccak'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -60,6 +60,6 @@ describe('lookupEnsNames', () => {
   })
 
   it('uses keccak-256 (sanity)', () => {
-    expect(Buffer.from(keccak_256(new TextEncoder().encode('eth'))).toString('hex')).toBe('4f5b812789fc606be1b3b16908db13fc7a9adf7ca72641f84d75b47069d3d7f0')
+    expect(Buffer.from(keccak256(new TextEncoder().encode('eth'))).toString('hex')).toBe('4f5b812789fc606be1b3b16908db13fc7a9adf7ca72641f84d75b47069d3d7f0')
   })
 })
