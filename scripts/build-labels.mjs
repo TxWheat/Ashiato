@@ -2,12 +2,14 @@
 // Builds data/labels/{btc,eth}.tsv.gz from open label sources:
 //   - GraphSense TagPacks (MIT)   https://github.com/graphsense/graphsense-tagpacks
 //   - OFAC SDN crypto addresses   https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses (lists branch)
+//   - eth-labels (MIT)            https://github.com/dawsbot/eth-labels (Etherscan-family public name tags)
 //   - data/labels/curated.tsv     hand-maintained labels in this repo
 //
 // Usage:
 //   git clone --depth 1 https://github.com/graphsense/graphsense-tagpacks.git /tmp/tagpacks
 //   git clone --depth 1 -b lists https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses.git /tmp/ofac
-//   node scripts/build-labels.mjs --tagpacks /tmp/tagpacks --ofac /tmp/ofac [--with-miners] [--with-bitmex]
+//   git clone --depth 1 https://github.com/dawsbot/eth-labels.git /tmp/eth-labels
+//   node scripts/build-labels.mjs --tagpacks /tmp/tagpacks --ofac /tmp/ofac --eth-labels /tmp/eth-labels [--with-miners] [--with-bitmex]
 //
 // BitMEX deposit addresses (336k) are skipped by default: they all start with "3BMEX"
 // and lib/labels.ts matches that prefix instead. Miner payout addresses are skipped
@@ -25,6 +27,7 @@ const arg = name => {
 }
 const tagpacksDir = arg('--tagpacks')
 const ofacDir = arg('--ofac')
+const ethLabelsDir = arg('--eth-labels')
 const withMiners = args.includes('--with-miners')
 const withBitmex = args.includes('--with-bitmex')
 const outDir = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'data', 'labels')
@@ -157,6 +160,60 @@ if (ofacDir) {
         if (chain === 'eth' && !/^0x[0-9a-fA-F]{40}$/.test(a)) continue
         add(chain, a, 'OFAC sanctioned address', 'sanctioned', src)
       }
+    }
+  }
+}
+
+// ── eth-labels (Etherscan-family name tags) ───────────────────────────────
+// Categories that describe people or history rather than who controls funds
+const ETH_LABELS_SKIP = new Set([
+  'take-action', 'genesis-address', 'blocked', 'airdrop-hunter', 'sybil-delegate', 'delegate', 'nonprofit',
+  'charity', 'endaoment', 'buidlguidl-builders', 'proposer-fee-recipient', 'avs-operator', 'maker-vault-owner',
+  'parity-bug', 'token-sale', 'old-contract', 'deprecated', 'fraud-proof', 'binance-charity',
+])
+const CEX = new Set([
+  'exchange', 'bitget', 'deribit', 'bilaxy', 'coinbase', 'bitfinex', 'kraken', 'bithumb', 'kucoin', 'okx', 'crypto-com',
+  'gate', 'gate-io', 'mexc', 'gemini', 'upbit', 'bitstamp', 'binance', 'blofin-exchange', 'huobi', 'htx', 'bybit',
+])
+function ethLabelType(slug, name) {
+  // Sanctions come only from the live OFAC list: eth-labels' OFAC tags are stale
+  // (e.g. Tornado Cash, delisted in 2025)
+  if (/ofac/.test(slug)) return /tornado/i.test(name) ? 'mixer' : null
+  if (slug === 'phish-hack' || slug === 'scam' || /fake_phishing/i.test(name)) return 'scam'
+  if (slug === 'heist' || /exploit$/.test(slug)) return 'hack'
+  if (/tornado|mixer/.test(slug)) return 'mixer'
+  if (slug === 'gambling') return 'gambling'
+  if (CEX.has(slug)) return /\bdep(osit)?\b:?/i.test(name) && !/funder/i.test(name) ? 'deposit' : 'exchange'
+  return 'service'
+}
+if (ethLabelsDir) {
+  const src = sourceId('eth-labels (Etherscan public name tags)', 'https://github.com/dawsbot/eth-labels', 'MIT')
+  const text = fs.readFileSync(path.join(ethLabelsDir, 'data', 'csv', 'accounts.csv'), 'utf8')
+  const unq = v => v.replace(/^"|"$/g, '').replace(/""/g, '"')
+  const rows = text.split('\n').slice(1).filter(Boolean).map(line => {
+    // address,chainId,label,nameTag (nameTag may contain commas)
+    const m = line.match(/^("[^"]*"|[^,]*),("[^"]*"|[^,]*),("[^"]*"|[^,]*),(.*)$/)
+    return m ? { address: unq(m[1]).toLowerCase(), chain: unq(m[2]), slug: unq(m[3]), tag: unq(m[4]).trim() } : null
+  }).filter(Boolean)
+  const pretty = slug => slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  const seen = new Set()
+  // Ethereum mainnet first. An ordinary wallet is the same key on every EVM chain, so
+  // exchange / abuse tags from other chains also apply (e.g. "MEXC 16" is only tagged on
+  // Avalanche and World Chain); protocol tags from other chains may be different contracts.
+  for (const pass of ['1', 'other']) {
+    for (const r of rows) {
+      if ((pass === '1') !== (r.chain === '1') || ETH_LABELS_SKIP.has(r.slug)) continue
+      if (!/^0x[0-9a-f]{40}$/.test(r.address)) continue
+      // "Bitget Dep: 0x3b41…" → "Bitget deposit address"; "MEV Bot: 0x19f...7e6" → "MEV Bot"
+      const tag = (r.tag && r.tag !== 'null' ? r.tag : '')
+        .replace(/\s+Dep:\s*0x[0-9a-f.…]+$/i, ' deposit address')
+        .replace(/:\s*0x[0-9a-f.…]+$/i, '')
+      const type = ethLabelType(r.slug, tag)
+      if (!type) continue
+      if (pass === 'other' && (type === 'service' || seen.has(r.address))) continue
+      const name = tag || `${pretty(r.slug)}${type === 'exchange' ? ' (exchange)' : ''}`
+      seen.add(r.address)
+      add('eth', r.address, name, type, src)
     }
   }
 }

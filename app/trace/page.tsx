@@ -14,6 +14,8 @@ import { clusterAddresses } from '@/lib/heuristics/cluster'
 import { tornadoLinks as findTornadoLinks } from '@/lib/heuristics/eth/tornado'
 import { runTaint, TaintMethod } from '@/lib/taint'
 import { BtcTxInfo, Direction, followFunds, Lot, seedsFromTx, backSeedsFromTx, TracedFlow, TraceEnd } from '@/lib/follow'
+import { saveCase as saveChartToBrowser, getCase as getSavedChart, newCaseId } from '@/lib/saved-cases'
+import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
 import { ENTITY_STYLE, nativeAsset } from '@/lib/format'
@@ -21,10 +23,11 @@ import AddressInspector, { AddressTab } from '@/components/AddressInspector'
 import TxInspector from '@/components/TxInspector'
 import EdgeDetail from '@/components/EdgeDetail'
 import CasePanel from '@/components/CasePanel'
+import SaveChartButton from '@/components/SaveChartButton'
 import ExportMenu from '@/components/ExportMenu'
 import SearchForm from '@/components/SearchForm'
 import ThemeToggle from '@/components/ThemeToggle'
-import type { GraphApi } from '@/components/TraceGraph'
+import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
 const TraceGraph = dynamic(() => import('@/components/TraceGraph'), { ssr: false })
@@ -129,6 +132,10 @@ function TracePageInner() {
   const [focusTrace, setFocusTrace] = useState(false)
   const traceCancel = useRef(false)
   const restoring = useRef(false)
+  /** Node positions on the canvas (shared with the graph, saved with the chart) */
+  const positionsRef = useRef(new Map<string, XY>())
+  /** The browser-saved chart this view came from, so Save updates it */
+  const [saved, setSaved] = useState<{ id: string; name: string } | null>(null)
   const graphApi = useRef<GraphApi | null>(null)
 
   // Refs mirror state for use inside long-running async traces
@@ -214,6 +221,8 @@ function TracePageInner() {
   }, [])
 
   const resetState = () => {
+    positionsRef.current.clear()
+    setSaved(null)
     setKnownNow(new Map())
     setVisible(new Set())
     pagesRef.current = new Map()
@@ -260,14 +269,28 @@ function TracePageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originAddress, originTx, originChain, absorb, absorbTx])
 
+  const caseParam = params.get('case')
   useEffect(() => {
     if (restoring.current) {
       restoring.current = false
       return
     }
+    if (caseParam) {
+      getSavedChart(caseParam)
+        .then(r => {
+          if (!r) throw new Error('That saved chart no longer exists')
+          applyCase(parseCase(JSON.stringify(r.data)))
+          setSaved({ id: caseParam, name: r.name })
+        })
+        .catch(e => {
+          setError(e instanceof Error ? e.message : 'Could not open the saved chart')
+          setInitialLoading(false)
+        })
+      return
+    }
     loadOrigin()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originKey, originChain])
+  }, [originKey, originChain, caseParam])
 
   const setBusy = (addr: string, busy: boolean) =>
     setLoadingAddrs(prev => {
@@ -278,6 +301,14 @@ function TracePageInner() {
     })
 
   const chainOf = useCallback((a: string): Chain => known.get(a)?.chain ?? originChain ?? 'btc', [known, originChain])
+
+  // Your own labels win over every other source, wherever the address appears
+  const { labels: myLabels, setLabel: setMyLabel } = useMyLabels()
+  const myLabelOf = useCallback((a: string) => myLabels[myLabelKey(chainOf(a), a)], [myLabels, chainOf])
+  const mine = useCallback((a: string) => {
+    const l = myLabelOf(a)
+    return l ? toEntityLabel(l) : undefined
+  }, [myLabelOf])
 
   /** Loads an address's first page if we don't have it yet */
   const ensurePage = useCallback(async (addr: string): Promise<LoadedPage | null> => {
@@ -459,7 +490,7 @@ function TracePageInner() {
   )
   const allEdges = useMemo(() => aggregateEdges(perTx), [perTx])
 
-  const labelOf = useCallback((a: string): EntityLabel | undefined => known.get(a)?.label ?? btcLabels.current.get(a), [known])
+  const labelOf = useCallback((a: string): EntityLabel | undefined => mine(a) ?? known.get(a)?.label ?? btcLabels.current.get(a), [known, mine])
   const ensOf = useCallback((a: string) => known.get(a)?.ens, [known])
 
   const clusters = useMemo(() => {
@@ -488,7 +519,7 @@ function TracePageInner() {
       const cluster = clusters.byAddress.get(a)
       return [{
         ...n,
-        label: n.label ?? btcLabels.current.get(a) ?? cluster?.label,
+        label: mine(a) ?? n.label ?? btcLabels.current.get(a) ?? cluster?.label,
         isOrigin: a === originAddress,
         clusterId: cluster?.id,
         taint: taintResult?.byAddress.get(a)?.received,
@@ -500,7 +531,7 @@ function TracePageInner() {
         },
       }]
     })
-  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, showTraceOnly, traceSet, traceEnds, selectedAddress])
+  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, showTraceOnly, traceSet, traceEnds, selectedAddress, mine])
 
   const graphEdges = useMemo(() => {
     const ids = new Set(graphNodes.map(n => n.address))
@@ -518,7 +549,10 @@ function TracePageInner() {
   const nodeMap = useMemo(() => new Map(graphNodes.map(n => [n.address, n as NodeData])), [graphNodes])
   const nameOf = useCallback((a: string) => nodeMap.get(a)?.label?.name ?? labelOf(a)?.name ?? ensOf(a), [nodeMap, labelOf, ensOf])
 
-  const selectedNode = selectedAddress ? graphNodes.find(n => n.address === selectedAddress) ?? known.get(selectedAddress) : undefined
+  const selectedNode = selectedAddress
+    ? graphNodes.find(n => n.address === selectedAddress) ??
+      (known.get(selectedAddress) && { ...known.get(selectedAddress)!, label: mine(selectedAddress) ?? known.get(selectedAddress)!.label })
+    : undefined
   const selectedCounterparties = useMemo(() => (selectedAddress ? findCounterparties(selectedAddress, allEdges) : []), [selectedAddress, allEdges])
 
   // Both directions between the selected pair
@@ -548,49 +582,79 @@ function TracePageInner() {
   // ── Case files & exports ─────────────────────────────────────────────────
   const fileBase = `trace-${originChain}-${originKey.replace(/^0x/, '').slice(0, 10)}`
 
-  const saveCase = () => {
-    if (!originChain) return
-    const c: CaseFile = {
-      version: CASE_VERSION,
-      savedAt: new Date().toISOString(),
-      origin: { address: originKey, chain: originChain },
-      originKind: originTx ? 'tx' : 'address',
-      known: [...known.values()],
-      visible: [...visible],
-      pages: Object.fromEntries(pages),
-      hubs: [...hubs.values()],
-      followedPairs: [...followedPairs],
-      traced,
-      traceEnds,
-      taint,
-    }
-    download(`${fileBase}.case.json`, JSON.stringify(c), 'application/json')
+  /** Everything needed to reopen this chart exactly as it is */
+  const buildCase = (): CaseFile | null =>
+    originChain
+      ? {
+          version: CASE_VERSION,
+          savedAt: new Date().toISOString(),
+          origin: { address: originKey, chain: originChain },
+          originKind: originTx ? 'tx' : 'address',
+          // Your labels travel with the case (e.g. to another computer)
+          known: [...known.values()].map(n => (mine(n.address) ? { ...n, label: mine(n.address) } : n)),
+          visible: [...visible],
+          pages: Object.fromEntries(pages),
+          hubs: [...hubs.values()],
+          followedPairs: [...followedPairs],
+          traced,
+          traceEnds,
+          taint,
+          positions: Object.fromEntries([...positionsRef.current].filter(([a]) => visible.has(a) || hubs.has(a.replace(/^tx:/, '')))),
+          itemizedIds: [...itemizedIds],
+        }
+      : null
+
+  const saveCaseFile = () => {
+    const c = buildCase()
+    if (c) download(`${fileBase}.case.json`, JSON.stringify(c), 'application/json')
   }
 
-  const loadCase = async (file: File) => {
+  const applyCase = (c: CaseFile) => {
+    positionsRef.current.clear()
+    for (const [id, pos] of Object.entries(c.positions ?? {})) positionsRef.current.set(id, pos)
+    setKnownNow(new Map(c.known.map(n => [n.address, n])))
+    setVisible(new Set(c.visible))
+    pagesRef.current = new Map(Object.entries(c.pages))
+    setPages(pagesRef.current)
+    setHubs(new Map((c.hubs ?? []).map(h => [h.txid, h])))
+    setFollowedPairs(new Set(c.followedPairs))
+    setItemizedIds(new Set(c.itemizedIds ?? []))
+    setTraced(c.traced ?? [])
+    setTraceEnds(c.traceEnds ?? [])
+    setTaint(c.taint ?? null)
+    setHistory([])
+    setError('')
+    setInitialLoading(false)
+    const isTx = c.originKind === 'tx'
+    setSelection(isTx ? { kind: 'tx', id: c.origin.address } : { kind: 'address', id: c.origin.address })
+    if (c.origin.address !== originKey || params.get('case')) {
+      restoring.current = true
+      router.replace(isTx ? `/trace?tx=${c.origin.address}&chain=${c.origin.chain}` : `/trace?address=${encodeURIComponent(c.origin.address)}&chain=${c.origin.chain}`)
+    }
+  }
+
+  const loadCaseFile = async (file: File) => {
     try {
       const c = parseCase(await file.text())
-      setKnownNow(new Map(c.known.map(n => [n.address, n])))
-      setVisible(new Set(c.visible))
-      pagesRef.current = new Map(Object.entries(c.pages))
-      setPages(pagesRef.current)
-      setHubs(new Map((c.hubs ?? []).map(h => [h.txid, h])))
-      setFollowedPairs(new Set(c.followedPairs))
-      setTraced(c.traced ?? [])
-      setTraceEnds(c.traceEnds ?? [])
-      setTaint(c.taint ?? null)
-      setHistory([])
-      setError('')
-      setInitialLoading(false)
-      const isTx = c.originKind === 'tx'
-      setSelection(isTx ? { kind: 'tx', id: c.origin.address } : { kind: 'address', id: c.origin.address })
-      if (c.origin.address !== originKey) {
-        restoring.current = true
-        router.replace(isTx ? `/trace?tx=${c.origin.address}&chain=${c.origin.chain}` : `/trace?address=${encodeURIComponent(c.origin.address)}&chain=${c.origin.chain}`)
-      }
+      applyCase(c)
+      setSaved(null)
       flash(`Opened case saved ${new Date(c.savedAt).toLocaleString()}`)
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Could not open case file')
+    }
+  }
+
+  /** Save to this browser; saving again updates the same chart */
+  const saveChart = async (name: string) => {
+    const c = buildCase()
+    if (!c) return
+    const id = saved?.id ?? newCaseId()
+    try {
+      await saveChartToBrowser(id, name, c)
+      setSaved({ id, name })
+      flash(`Saved “${name}”. Reopen it from the home page.`)
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Could not save the chart')
     }
   }
 
@@ -653,6 +717,9 @@ function TracePageInner() {
           }}
           onRemove={() => removeNode(a)}
           onLoadMore={loadMore}
+          myLabel={myLabelOf(a)}
+          baseLabel={known.get(a)?.label ?? btcLabels.current.get(a)}
+          onSaveLabel={l => setMyLabel(selectedNode.chain, a, l)}
           onNote={note => {
             const n = knownRef.current.get(a)
             if (n) setKnownNow(new Map(knownRef.current).set(a, { ...n, note: note.trim() || undefined }))
@@ -771,9 +838,16 @@ function TracePageInner() {
             <Undo2 size={14} />{history.length > 0 && <span className="text-[10px]">{history.length}</span>}
           </button>
           <button onClick={loadOrigin} className="hover:text-fg p-1" title="Start over"><RefreshCw size={14} /></button>
+          {!initialLoading && !error && (
+            <SaveChartButton
+              savedName={saved?.name}
+              defaultName={`${nameOf(originKey) ?? truncate(originKey, 6)} · ${new Date().toLocaleDateString('en-NZ')}`}
+              onSave={saveChart}
+            />
+          )}
           <ExportMenu
-            onSaveCase={saveCase}
-            onLoadCase={loadCase}
+            onSaveCase={saveCaseFile}
+            onLoadCase={loadCaseFile}
             onReport={openReport}
             onPng={exportPng}
             onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges, taintResult?.byEdge), 'text/csv')}
@@ -848,6 +922,7 @@ function TracePageInner() {
               onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}
+              positions={positionsRef.current}
               onReady={api => (graphApi.current = api)}
             />
           )}

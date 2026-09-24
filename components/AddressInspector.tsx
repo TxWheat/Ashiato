@@ -3,9 +3,10 @@
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
-  Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle,
+  Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
 } from 'lucide-react'
-import { EntityLabel, NodeData, RawTransaction, transferKey } from '@/lib/types'
+import { MyLabel } from '@/lib/my-labels'
+import { EntityLabel, EntityType, NodeData, RawTransaction, transferKey } from '@/lib/types'
 import { Counterparty, FlowSummary } from '@/lib/counterparties'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { LoadedPage } from '@/lib/export'
@@ -32,6 +33,11 @@ const HEURISTIC_NAME: Record<string, string> = {
 }
 
 interface Props {
+  /** Your own label for this address (overrides every other source) */
+  myLabel?: MyLabel
+  /** The label from datasets / heuristics, shown when you edit */
+  baseLabel?: EntityLabel
+  onSaveLabel: (label: { name: string; type: EntityType } | null) => void
   /** Today's NZD prices, used to rank counterparties across different assets */
   prices: Record<string, number>
   node: NodeData
@@ -67,6 +73,47 @@ interface Props {
 function amounts(rec: Record<string, number>, prices: Record<string, number>) {
   const { shown, rest } = topAssets(Object.entries(rec), prices)
   return shown.map(([asset, amt]) => fmtCompact(amt, asset)).join(' + ') + (rest ? ` +${rest} token${rest === 1 ? '' : 's'}` : '')
+}
+
+const LABEL_TYPES = (Object.keys(ENTITY_STYLE) as EntityType[]).filter(t => t !== 'unknown')
+
+/** Set or change your own name and category for an address */
+function LabelEditor({ mine, base, onSave, onCancel }: {
+  mine?: MyLabel
+  base?: EntityLabel
+  onSave: (l: { name: string; type: EntityType } | null) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState(mine?.name ?? base?.name ?? '')
+  const [type, setType] = useState<EntityType>(mine?.type ?? (base?.type && base.type !== 'unknown' ? base.type : 'wallet'))
+  return (
+    <form
+      onSubmit={e => { e.preventDefault(); if (name.trim()) onSave({ name, type }) }}
+      className="border border-line bg-panel p-3 space-y-2"
+    >
+      <div className="text-[10px] font-medium uppercase tracking-wider text-faint">Your label</div>
+      <input autoFocus value={name} onChange={e => setName(e.target.value)} maxLength={80} placeholder="e.g. Scammer's wallet, Victim, Binance hot wallet" aria-label="Label name"
+        className="w-full h-8 px-2 text-[12px] bg-bg border border-line text-fg placeholder:text-faint outline-none focus:border-accent" />
+      <select value={type} onChange={e => setType(e.target.value as EntityType)} aria-label="Category"
+        className="w-full h-8 px-1.5 text-[12px] bg-bg border border-line text-fg outline-none focus:border-accent">
+        {LABEL_TYPES.map(t => <option key={t} value={t}>{ENTITY_STYLE[t].label}</option>)}
+      </select>
+      {base && (
+        <p className="text-[10px] text-faint leading-relaxed">
+          Replaces “{base.name}”{base.source ? ` (${base.source})` : ''} for you. Saved in this browser and applied wherever this address appears.
+        </p>
+      )}
+      <div className="flex gap-1.5">
+        <button type="submit" disabled={!name.trim()} className="h-7 px-3 text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-50">Save</button>
+        <button type="button" onClick={onCancel} className="h-7 px-2.5 text-[11px] font-medium bg-raised hover:bg-line text-fg">Cancel</button>
+        {mine && (
+          <button type="button" onClick={() => onSave(null)} className="ml-auto h-7 px-2.5 text-[11px] font-medium text-faint hover:text-red-500">
+            {base ? 'Restore original' : 'Remove label'}
+          </button>
+        )}
+      </div>
+    </form>
+  )
 }
 
 /** Breadcrumbs-style node visualizer: totals in and out, per asset, with transaction counts */
@@ -108,6 +155,7 @@ export default function AddressInspector(p: Props) {
   const [asset, setAsset] = useState('')
   const [minAmount, setMinAmount] = useState('')
   const [showSpam, setShowSpam] = useState(false)
+  const [editing, setEditing] = useState(false)
   const type = node.label?.type ?? 'unknown'
   const style = ENTITY_STYLE[type]
   const title = node.label?.name ?? node.ens
@@ -183,6 +231,7 @@ export default function AddressInspector(p: Props) {
           <span className="text-faint">{node.chain} address</span>
           <span className={clsx('px-1.5 py-0.5', style.badge)}>{style.label}</span>
           {node.isOrigin && <span className="px-1.5 py-0.5 bg-accent/20 text-accent">origin</span>}
+          {p.myLabel && <span className="px-1.5 py-0.5 bg-raised text-fg" title="You set this label">your label</span>}
         </div>
         {title && <div className="text-lg font-medium text-fg leading-tight">{title}</div>}
         <div className="flex items-start gap-2">
@@ -205,8 +254,18 @@ export default function AddressInspector(p: Props) {
         </div>
         <div className="flex flex-wrap gap-1.5">
           <ActionBtn onClick={p.onTaint} icon={<Droplets size={12} />} title="Treat this address's funds as stolen and see where they went">Taint</ActionBtn>
+          <ActionBtn onClick={() => setEditing(v => !v)} icon={<Tag size={12} />} title="Name this address yourself">{p.myLabel ? 'Edit label' : 'Label'}</ActionBtn>
           {p.canRemove && <ActionBtn onClick={p.onRemove} icon={<Trash2 size={12} />} title="Remove from graph" />}
         </div>
+        {editing && (
+          <LabelEditor
+            key={node.address}
+            mine={p.myLabel}
+            base={p.baseLabel}
+            onSave={l => { p.onSaveLabel(l); setEditing(false) }}
+            onCancel={() => setEditing(false)}
+          />
+        )}
         <FlowBoxes summary={p.summary} />
       </div>
 

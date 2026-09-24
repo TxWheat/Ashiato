@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import SiteNav from '@/components/SiteNav'
 import SearchForm from '@/components/SearchForm'
+import SavedCharts from '@/components/SavedCharts'
 import { labelStats } from '@/lib/labels'
 import { Bitcoin, ShieldAlert, Droplets } from 'lucide-react'
 
@@ -70,6 +71,7 @@ export default function Home() {
               Paste an address or a transaction hash. Bitcoin works out of the box; Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
               <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
+            <SavedCharts />
           </div>
         </div>
 

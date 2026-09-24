@@ -7,7 +7,7 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | | |
 |---|---|
 | **Bitcoin + Ethereum** | BTC via Esplora (Blockstream / mempool.space), ETH + ERC-20 tokens + internal transfers via Etherscan API V2 |
-| **122k+ entity labels** | GraphSense TagPacks (exchanges, scams, ransomware, hacks, darknet, CoinJoin) + the OFAC sanctions list, each with a source link |
+| **185k+ entity labels** | GraphSense TagPacks (exchanges, scams, ransomware, hacks, darknet, CoinJoin), Etherscan public name tags via [eth-labels](https://github.com/dawsbot/eth-labels) (exchange hot wallets and deposit addresses, phishing, exploits) and the OFAC sanctions list, each with a source link. You can also add or edit your own |
 | **Exchange deposit addresses** | Detects the customer deposit address funds were swept from (tutela / FC'20 heuristic): the detail an exchange needs to identify the account holder |
 | **Taint analysis** | Poison, Haircut and FIFO: how much of the stolen amount reached each address (UTXO-exact on Bitcoin) |
 | **Clustering** | Common-input ownership (union-find) and deposit-address reuse; labels propagate across a cluster |
@@ -16,7 +16,8 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | **Risk score** | 0–100 with reasons (sanctioned / scam / mixer exposure, CoinJoin and Tornado use) |
 | **Follow the funds** | Trace a specific payment hop by hop: exact coin (UTXO) tracing on Bitcoin, chronological amount-capped tracing on Ethereum. Every hop explains itself; stops at exchanges, deposit addresses and mixers |
 | **ENS names** | Verified primary ENS names on Ethereum addresses (reverse + forward check, so spoofed names are ignored) |
-| **Case files & exports** | Save and reopen investigations (JSON), CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
+| **Saved charts & exports** | Save a chart in your browser (layout, transactions, traces, notes, labels) and reopen it from the home page; case files (JSON) to move it between computers; CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
+| **Your own labels** | Name any address and set its category; your label overrides every other source wherever the address appears |
 
 Every heuristic is documented, with its limits, at `/methodology`.
 
@@ -43,7 +44,8 @@ Open http://localhost:3000. Bitcoin works without any key.
 3. **Transaction:** it appears as its own node with its inputs and outputs. Every input has **← Source**, every output **Trace →**.
 4. Click any address to inspect it (Relationships · Transactions · Details); click empty canvas to collapse the panel. Lines are labelled along the curve with amount, NZD value and date. On a transaction, **Trace →** follows that payment onward and **← Source** walks it back. Click any **line** to see the payments behind it.
 5. After a trace, **Trail / All** in the top bar switches between just the money trail and the full graph. The left **Case** panel shows where the funds ended up, taint analysis and clusters.
-6. **Export** (top bar): printable report, case file save/open, PNG, CSV, GraphML.
+6. **Save** (top bar) keeps the chart in this browser; reopen it from **Saved charts** on the home page. **Label** on an address sets your own name and category for it.
+7. **Export** (top bar): printable report, case file save/open, PNG, CSV, GraphML.
 
 ### Rate limits
 
@@ -87,6 +89,6 @@ lib/ens.ts         verified ENS names (ETH_RPC_URL)
 
 ## Credits
 
-Ideas and data from open-source projects: [pareto-xyz/tutela-app](https://github.com/pareto-xyz/tutela-app) (deposit reuse, Tornado reveals), [peterzen/heuristic](https://github.com/peterzen/heuristic) (CoinJoin fingerprints, risk model, source-of-funds walk), [s0md3v/Orbit](https://github.com/s0md3v/Orbit) (auto-trace, edge weighting, GraphML), [TrailBit-Labs/TaintTrail](https://github.com/TrailBit-Labs/TaintTrail) and [tintiron/taintedtx](https://github.com/tintiron/taintedtx) (taint models), [GraphSense TagPacks](https://github.com/graphsense/graphsense-tagpacks) (labels, MIT), [0xB10C OFAC list](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses). Code is reimplemented, not copied; no tutela code or data is included (it has no licence).
+Ideas and data from open-source projects: [pareto-xyz/tutela-app](https://github.com/pareto-xyz/tutela-app) (deposit reuse, Tornado reveals), [peterzen/heuristic](https://github.com/peterzen/heuristic) (CoinJoin fingerprints, risk model, source-of-funds walk), [s0md3v/Orbit](https://github.com/s0md3v/Orbit) (auto-trace, edge weighting, GraphML), [TrailBit-Labs/TaintTrail](https://github.com/TrailBit-Labs/TaintTrail) and [tintiron/taintedtx](https://github.com/tintiron/taintedtx) (taint models), [GraphSense TagPacks](https://github.com/graphsense/graphsense-tagpacks) (labels, MIT), [dawsbot/eth-labels](https://github.com/dawsbot/eth-labels) (Etherscan name tags, MIT), [0xB10C OFAC list](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses). Code is reimplemented, not copied; no tutela code or data is included (it has no licence).
 
 Heuristics are leads, not proof. Verify findings on a block explorer before acting on them.

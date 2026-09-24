@@ -29,6 +29,10 @@ export interface CaseFile {
   traced?: TracedFlow[]
   traceEnds?: TraceEnd[]
   taint?: { seed: string; method: TaintMethod; asset: string } | null
+  /** Node positions on the canvas, so a reopened chart keeps its layout */
+  positions?: Record<string, { x: number; y: number }>
+  /** Transactions drawn as their own lines */
+  itemizedIds?: string[]
 }
 
 export function parseCase(text: string): CaseFile {

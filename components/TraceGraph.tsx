@@ -48,7 +48,7 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
   })
 }
 
-type XY = { x: number; y: number }
+export type XY = { x: number; y: number }
 
 /**
  * Nodes already on screen stay exactly where they are (whether auto-placed or
@@ -123,6 +123,8 @@ interface Props {
   onHubClick: (txid: string) => void
   /** Click on empty canvas: deselect (collapses the side panel) */
   onPaneClick?: () => void
+  /** Where each node sits (auto-placed or dragged). Owned by the page so a saved chart keeps its layout. */
+  positions: Map<string, XY>
   onReady?: (api: GraphApi) => void
 }
 
@@ -139,10 +141,11 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
-  /** Where every node on the graph sits: auto-placed or dragged. Kept stable as nodes are added. */
-  const pinned = useRef<Map<string, { x: number; y: number }>>(new Map())
+  // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
+  const pinned = useRef(positions)
+  pinned.current = positions
   const nodeCount = useRef(0)
 
   const rawNodes: Node[] = useMemo(
@@ -235,7 +238,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           source: e.source,
           target: e.target,
           type: 'label',
-          data: { offset, line1: amountWithValue(e.amount, e.asset, prices), line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))' },
+          data: { offset, parallel: true, line1: amountWithValue(e.amount, e.asset, prices), line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))' },
           markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--accent))', width: 12, height: 12 },
           style: { stroke: 'rgb(var(--accent))', strokeWidth: 1.5, opacity: 0.85 },
         })

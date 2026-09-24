@@ -11,7 +11,7 @@ const SECTIONS: { id: string; title: string; body: string[]; limits: string; cre
     id: 'labels',
     title: 'Entity labels',
     body: [
-      'Addresses are matched against GraphSense TagPacks (exchanges, scams, ransomware, hacks, darknet markets, CoinJoin coordinators), the US Treasury OFAC SDN list of sanctioned addresses, and a small curated list. Ethereum addresses loaded onto the graph are also checked against Etherscan: public name tags when the API plan includes them (Pro Plus), otherwise a verified contract’s own name, shown as inferred because the deployer chose it. Every label links to its public source.',
+      'Addresses are matched against GraphSense TagPacks (exchanges, scams, ransomware, hacks, darknet markets, CoinJoin coordinators), Etherscan public name tags from the eth-labels dataset (exchange hot wallets and deposit addresses, phishing, exploits), the US Treasury OFAC SDN list of sanctioned addresses, and a small curated list. Ethereum addresses loaded onto the graph are also checked against Etherscan: public name tags when the API plan includes them (Pro Plus), otherwise a verified contract’s own name, shown as inferred because the deployer chose it. Every label links to its public source.',
       'BitMEX deposit addresses are recognised by their 3BMEX vanity prefix.',
     ],
     limits: 'Labels are only as good as their sources. No label does not mean clean. Most addresses in the world are unlabelled.',

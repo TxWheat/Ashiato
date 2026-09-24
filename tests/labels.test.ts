@@ -22,6 +22,11 @@ describe('label dataset', () => {
     expect(getLabel('0x0000000000000000000000000000000000000000', 'eth')?.type).toBe('service')
     expect(getLabel('0x000000000000000000000000000000000000dEaD', 'eth')?.name).toBe('Burn address')
   })
+  it('has Etherscan name tags for exchange hot wallets and deposit addresses (eth-labels)', () => {
+    // Only tagged on other EVM chains in the source; the same key controls it on Ethereum
+    expect(getLabel('0x9642b23ed1e01df1092b92641051881a322f5d4e', 'eth')).toMatchObject({ name: 'MEXC 16', type: 'exchange' })
+    expect(getLabel('0x000483c56fe99127fbd62da5d8b899a159116dc1', 'eth')).toMatchObject({ name: 'Bitget deposit address', type: 'deposit' })
+  })
   it('has the corrected Tornado pool names', () => {
     expect(getLabel('0x47ce0c6ed5b0ce3d3a51fdb1c52dc66a7c3c2936', 'eth')?.name).toBe('Tornado Cash 1 ETH pool')
   })

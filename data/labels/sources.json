@@ -403,5 +403,10 @@
   "title": "US Treasury OFAC SDN list (via 0xB10C mirror)",
   "url": "https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses",
   "license": "Public domain (US Gov) / MIT tooling"
+ },
+ {
+  "title": "eth-labels (Etherscan public name tags)",
+  "url": "https://github.com/dawsbot/eth-labels",
+  "license": "MIT"
  }
 ]
