@@ -16,7 +16,7 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | **Risk score** | 0–100 with reasons (sanctioned / scam / mixer exposure, CoinJoin and Tornado use) |
 | **Follow the funds** | Trace a specific payment hop by hop: exact coin (UTXO) tracing on Bitcoin, chronological amount-capped tracing on Ethereum. Every hop explains itself; stops at exchanges, deposit addresses and mixers |
 | **ENS names** | Verified primary ENS names on Ethereum addresses (reverse + forward check, so spoofed names are ignored) |
-| **Saved charts & exports** | Save a chart in your browser (layout, transactions, traces, notes, labels) and reopen it from the home page; case files (JSON) to move it between computers; CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
+| **Cases & exports** | Save a chart as a case in your browser (auto-saves; Save as for copies) (layout, transactions, traces, notes, labels) and reopen it from the home page; case files (JSON) to move it between computers; CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
 | **Your own labels** | Name any address and set its category; your label overrides every other source wherever the address appears |
 
 Every heuristic is documented, with its limits, at `/methodology`.
@@ -44,7 +44,7 @@ Open http://localhost:3000. Bitcoin works without any key.
 3. **Transaction:** it appears as its own node with its inputs and outputs. Every input has **← Source**, every output **Trace →**.
 4. Click any address to inspect it (Relationships · Transactions · Details); click empty canvas to collapse the panel. Lines are labelled along the curve with amount, NZD value and date. On a transaction, **Trace →** follows that payment onward and **← Source** walks it back. Click any **line** to see the payments behind it.
 5. After a trace, **Trail / All** in the top bar switches between just the money trail and the full graph. The left **Case** panel shows where the funds ended up, taint analysis and clusters.
-6. **Save** (top bar) keeps the chart in this browser; reopen it from **Saved charts** on the home page. **Label** on an address sets your own name and category for it.
+6. **Save case** (top bar) turns the chart into a named case, like Breadcrumbs. From then on it auto-saves after each change (toggle in the Save menu), **Save as new case…** makes a copy, and the case stays in the URL so a refresh carries on where you were. Reopen cases from **Your cases** on the home page. **Label** on an address sets your own name and category for it.
 7. **Export** (top bar): printable report, case file save/open, PNG, CSV, GraphML.
 
 ### Rate limits

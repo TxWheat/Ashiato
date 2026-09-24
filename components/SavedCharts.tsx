@@ -17,14 +17,14 @@ export default function SavedCharts() {
   if (!items?.length) return null
 
   const remove = async (c: SavedCaseMeta) => {
-    if (!confirm(`Delete the saved chart “${c.name}”? This can't be undone.`)) return
+    if (!confirm(`Delete the case “${c.name}”? This can't be undone.`)) return
     await deleteCase(c.id)
     setItems(items.filter(x => x.id !== c.id))
   }
 
   return (
     <div className="space-y-2">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-faint">Saved charts</div>
+      <div className="text-[10px] font-medium uppercase tracking-wider text-faint">Your cases</div>
       <ul className="border border-line divide-y divide-line max-h-56 overflow-y-auto bg-bg/60">
         {items.map(c => (
           <li key={c.id} className="flex items-center gap-3 px-3 py-2 hover:bg-panel">
@@ -35,7 +35,7 @@ export default function SavedCharts() {
                 {c.originKind === 'tx' ? 'tx ' : ''}{truncate(c.origin.address, 6)} · {c.addresses} address{c.addresses === 1 ? '' : 'es'} · {new Date(c.savedAt).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })}
               </div>
             </Link>
-            <button onClick={() => remove(c)} title="Delete saved chart" aria-label={`Delete ${c.name}`} className="p-1 text-faint hover:text-red-500">
+            <button onClick={() => remove(c)} title="Delete case" aria-label={`Delete ${c.name}`} className="p-1 text-faint hover:text-red-500">
               <Trash2 size={13} />
             </button>
           </li>

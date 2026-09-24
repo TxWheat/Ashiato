@@ -136,6 +136,20 @@ function TracePageInner() {
   const positionsRef = useRef(new Map<string, XY>())
   /** The browser-saved chart this view came from, so Save updates it */
   const [saved, setSaved] = useState<{ id: string; name: string } | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
+  const changeCount = useRef(0)
+  /** Set when state is replaced wholesale (open / reset) so it doesn't count as an edit */
+  const skipChange = useRef(false)
+  const [autosave, setAutosaveState] = useState(true)
+  useEffect(() => {
+    try { setAutosaveState(localStorage.getItem('cryptotracer.autosave') !== '0') } catch { /* storage blocked */ }
+  }, [])
+  const setAutosave = (on: boolean) => {
+    setAutosaveState(on)
+    try { localStorage.setItem('cryptotracer.autosave', on ? '1' : '0') } catch { /* storage blocked */ }
+  }
   const graphApi = useRef<GraphApi | null>(null)
 
   // Refs mirror state for use inside long-running async traces
@@ -223,6 +237,8 @@ function TracePageInner() {
   const resetState = () => {
     positionsRef.current.clear()
     setSaved(null)
+    setDirty(false)
+    setLastSavedAt(null)
     setKnownNow(new Map())
     setVisible(new Set())
     pagesRef.current = new Map()
@@ -276,11 +292,11 @@ function TracePageInner() {
       return
     }
     if (caseParam) {
+      if (saved?.id === caseParam) return // already open (just saved, or the URL was tidied)
       getSavedChart(caseParam)
         .then(r => {
-          if (!r) throw new Error('That saved chart no longer exists')
-          applyCase(parseCase(JSON.stringify(r.data)))
-          setSaved({ id: caseParam, name: r.name })
+          if (!r) throw new Error('That case no longer exists in this browser')
+          applyCase(parseCase(JSON.stringify(r.data)), { id: caseParam, name: r.name })
         })
         .catch(e => {
           setError(e instanceof Error ? e.message : 'Could not open the saved chart')
@@ -609,7 +625,15 @@ function TracePageInner() {
     if (c) download(`${fileBase}.case.json`, JSON.stringify(c), 'application/json')
   }
 
-  const applyCase = (c: CaseFile) => {
+  const caseUrl = (c: Pick<CaseFile, 'origin' | 'originKind'>, id?: string) =>
+    (c.originKind === 'tx' ? `/trace?tx=${c.origin.address}&chain=${c.origin.chain}` : `/trace?address=${encodeURIComponent(c.origin.address)}&chain=${c.origin.chain}`) +
+    (id ? `&case=${encodeURIComponent(id)}` : '')
+
+  const applyCase = (c: CaseFile, from?: { id: string; name: string }) => {
+    skipChange.current = true
+    setSaved(from ?? null)
+    setLastSavedAt(from ? Date.parse(c.savedAt) : null)
+    setDirty(false)
     positionsRef.current.clear()
     for (const [id, pos] of Object.entries(c.positions ?? {})) positionsRef.current.set(id, pos)
     setKnownNow(new Map(c.known.map(n => [n.address, n])))
@@ -627,9 +651,11 @@ function TracePageInner() {
     setInitialLoading(false)
     const isTx = c.originKind === 'tx'
     setSelection(isTx ? { kind: 'tx', id: c.origin.address } : { kind: 'address', id: c.origin.address })
-    if (c.origin.address !== originKey || params.get('case')) {
+    // Keep the case in the URL so a refresh or bookmark reopens (and keeps saving) the same case
+    const url = caseUrl(c, from?.id)
+    if (c.origin.address !== originKey || (params.get('case') ?? undefined) !== from?.id) {
       restoring.current = true
-      router.replace(isTx ? `/trace?tx=${c.origin.address}&chain=${c.origin.chain}` : `/trace?address=${encodeURIComponent(c.origin.address)}&chain=${c.origin.chain}`)
+      router.replace(url)
     }
   }
 
@@ -637,26 +663,65 @@ function TracePageInner() {
     try {
       const c = parseCase(await file.text())
       applyCase(c)
-      setSaved(null)
       flash(`Opened case saved ${new Date(c.savedAt).toLocaleString()}`)
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Could not open case file')
     }
   }
 
-  /** Save to this browser; saving again updates the same chart */
-  const saveChart = async (name: string) => {
+  /**
+   * Save the case in this browser. Saving again updates the same case; `asNew`
+   * (Save as…) copies it under a new name. Auto-save calls this quietly.
+   */
+  const saveChart = async (name: string, opts: { asNew?: boolean; quiet?: boolean } = {}) => {
     const c = buildCase()
     if (!c) return
-    const id = saved?.id ?? newCaseId()
+    const isNew = opts.asNew || !saved
+    const id = isNew ? newCaseId() : saved!.id
+    const counterAtSave = changeCount.current
+    setSaving(true)
     try {
       await saveChartToBrowser(id, name, c)
       setSaved({ id, name })
-      flash(`Saved “${name}”. Reopen it from the home page.`)
+      setLastSavedAt(Date.now())
+      if (changeCount.current === counterAtSave) setDirty(false)
+      if (isNew || params.get('case') !== id) {
+        restoring.current = true
+        router.replace(caseUrl(c, id))
+      }
+      if (!opts.quiet) flash(isNew ? `Case “${name}” created. It now saves automatically${autosave ? '' : ' when you press Save'}.` : `Saved “${name}”`)
     } catch (e) {
-      flash(e instanceof Error ? e.message : 'Could not save the chart')
+      flash(e instanceof Error ? e.message : 'Could not save the case')
+    } finally {
+      setSaving(false)
     }
   }
+  const saveRef = useRef(saveChart)
+  saveRef.current = saveChart
+
+  // Anything that changes the case marks it unsaved; auto-save writes it 1.5 s after the last change
+  const [layoutRev, setLayoutRev] = useState(0)
+  useEffect(() => {
+    if (skipChange.current) {
+      skipChange.current = false
+      return
+    }
+    changeCount.current++
+    setDirty(true)
+  }, [known, visible, pages, hubs, followedPairs, itemizedIds, traced, traceEnds, taint, layoutRev, myLabels])
+  useEffect(() => {
+    if (!autosave || !saved || !dirty || initialLoading) return
+    const t = setTimeout(() => saveRef.current(saved.name, { quiet: true }), 1500)
+    return () => clearTimeout(t)
+  }, [autosave, saved, dirty, initialLoading, layoutRev, known, visible, itemizedIds, traced])
+
+  // Warn before leaving a case with changes that auto-save won't catch
+  useEffect(() => {
+    if (!dirty || !saved || autosave) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty, saved, autosave])
 
   const openReport = () => {
     if (!originChain) return
@@ -842,7 +907,11 @@ function TracePageInner() {
             <SaveChartButton
               savedName={saved?.name}
               defaultName={`${nameOf(originKey) ?? truncate(originKey, 6)} · ${new Date().toLocaleDateString('en-NZ')}`}
-              onSave={saveChart}
+              status={saving ? 'saving' : !saved ? 'new' : dirty ? 'dirty' : 'saved'}
+              lastSavedAt={lastSavedAt}
+              autosave={autosave}
+              onAutosave={setAutosave}
+              onSave={(name, asNew) => saveChart(name, { asNew })}
             />
           )}
           <ExportMenu
@@ -923,6 +992,7 @@ function TracePageInner() {
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}
               positions={positionsRef.current}
+              onLayoutChange={() => setLayoutRev(v => v + 1)}
               onReady={api => (graphApi.current = api)}
             />
           )}

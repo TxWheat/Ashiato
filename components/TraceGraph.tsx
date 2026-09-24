@@ -125,6 +125,8 @@ interface Props {
   onPaneClick?: () => void
   /** Where each node sits (auto-placed or dragged). Owned by the page so a saved chart keeps its layout. */
   positions: Map<string, XY>
+  /** The user moved nodes (so the saved case needs updating) */
+  onLayoutChange?: () => void
   onReady?: (api: GraphApi) => void
 }
 
@@ -141,7 +143,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)
@@ -321,6 +323,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         onEdgesChange={onEdgesChange}
         onNodeDragStop={(_, node, dragged) => {
           for (const n of dragged?.length ? dragged : [node]) pinned.current.set(n.id, n.position)
+          onLayoutChange?.()
         }}
         onNodeClick={(_, n) => (n.type === 'tx' ? onHubClick((n.data as TxHubData).txid) : onNodeClick(n.id))}
         onPaneClick={onPaneClick}
