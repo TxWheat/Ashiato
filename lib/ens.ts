@@ -1,5 +1,5 @@
 import 'server-only'
-import { keccak_256 } from '@noble/hashes/sha3.js'
+import { keccak256 } from './keccak'
 
 // ENS primary-name lookup over plain JSON-RPC (batched, 4 round trips for any
 // number of addresses). Every name is forward-verified: anyone can set their
@@ -30,11 +30,11 @@ export function namehash(name: string): string {
   let node: Uint8Array = new Uint8Array(32)
   if (name) {
     for (const label of name.split('.').reverse()) {
-      const labelHash = keccak_256(new TextEncoder().encode(label))
+      const labelHash = keccak256(new TextEncoder().encode(label))
       const buf = new Uint8Array(64)
       buf.set(node, 0)
       buf.set(labelHash, 32)
-      node = keccak_256(buf)
+      node = keccak256(buf)
     }
   }
   return '0x' + hex(node)
