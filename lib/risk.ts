@@ -55,10 +55,12 @@ export function scoreRisk(
       // BTC inputs carry their own value; ETH inputs don't, so split evenly
       for (const i of ins) counterparties.push({ address: i.address, amount: i.amount ? (got * i.amount) / inTotal : got / ins.length })
     }
+    // Fake-token transfers (address poisoning) move no real value and say nothing about this address
+    if (tx.asset.endsWith('*')) continue
     for (const c of counterparties) {
       total.set(tx.asset, (total.get(tx.asset) ?? 0) + c.amount)
       const l = labelOf(c.address)
-      if (!l || EXPOSURE_WEIGHT[l.type] === undefined) continue
+      if (!l || l.inferredBy === 'address-poisoning' || EXPOSURE_WEIGHT[l.type] === undefined) continue
       const byType = risky.get(tx.asset) ?? new Map()
       const e = byType.get(l.type) ?? { value: 0, names: new Set<string>() }
       e.value += c.amount

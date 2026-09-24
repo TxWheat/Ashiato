@@ -4,12 +4,18 @@ export function nativeAsset(chain: Chain): string {
   return chain === 'btc' ? 'BTC' : 'ETH'
 }
 
+/** "USDT*" marks a look-alike token contract; show it plainly as fake */
+export function assetName(asset: string): string {
+  return asset.endsWith('*') ? `${asset.slice(0, -1)} (fake token)` : asset
+}
+
 export function fmtAmount(amount: number, asset: string, digits = 4): string {
-  if (amount === 0) return `0 ${asset}`
+  const name = assetName(asset)
+  if (amount === 0) return `0 ${name}`
   const min = 10 ** -digits
-  if (Math.abs(amount) < min) return `<${min} ${asset}`
+  if (Math.abs(amount) < min) return `<${min} ${name}`
   const stable = /^(USDT|USDC|DAI|BUSD|TUSD|USDP|FDUSD|PYUSD)$/.test(asset)
-  return `${amount.toLocaleString('en-US', { maximumFractionDigits: stable ? 2 : digits })} ${asset}`
+  return `${amount.toLocaleString('en-US', { maximumFractionDigits: stable ? 2 : digits })} ${name}`
 }
 
 export function fmtBalance(balance: number, chain: Chain): string {

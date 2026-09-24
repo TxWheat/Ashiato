@@ -23,8 +23,10 @@ import { EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
 import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
+import OffsetEdge from './OffsetEdge'
 
 const nodeTypes = { addressNode: AddressNode, tx: TxNode }
+const edgeTypes = { offset: OffsetEdge }
 
 const NODE_W = 196
 const NODE_H = 78
@@ -62,6 +64,8 @@ interface Props {
   followedPairs: Set<string>
   traced: TracedFlow[]
   hubs: TxHubData[]
+  /** Individual transactions drawn as their own lines (replacing the pair's relationship line) */
+  itemized: EdgeData[]
   taintByEdge?: Map<string, number>
   selected?: string | null
   selectedEdge?: string | null
@@ -76,7 +80,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   const pinned = useRef<Map<string, { x: number; y: number }>>(new Map())
   const nodeCount = useRef(0)
@@ -114,6 +118,14 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     }
     for (const k of tracedBy.keys()) if (!groups.has(k)) groups.set(k, [])
 
+    // Pairs shown as individual transactions drop their relationship line
+    const shownItems = itemized.filter(e => ids.has(e.source) && ids.has(e.target))
+    const itemizedPairs = new Set(shownItems.map(e => pairKey(e.source, e.target)))
+    for (const k of [...groups.keys()]) {
+      const [a, b] = k.split('->')
+      if (itemizedPairs.has(pairKey(a, b)) && !tracedBy.has(k)) groups.delete(k)
+    }
+
     const out: Edge[] = [...groups.entries()].map(([key, es]) => {
       const [source, target] = key.split('->')
       const tr = tracedBy.get(key)
@@ -147,6 +159,29 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       }
     })
 
+    // Individual transactions, fanned out so parallel lines don't overlap
+    const byPair = new Map<string, EdgeData[]>()
+    for (const e of shownItems) byPair.set(pairKey(e.source, e.target), [...(byPair.get(pairKey(e.source, e.target)) ?? []), e])
+    for (const list of byPair.values()) {
+      list.sort((x, y) => x.timestamp - y.timestamp)
+      list.forEach((e, i) => {
+        // Same visual side regardless of direction, so A→B and B→A lines interleave cleanly
+        const sign = e.source < e.target ? 1 : -1
+        const offset = (i - (list.length - 1) / 2) * 34 * sign
+        const date = e.timestamp ? new Date(e.timestamp * 1000).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }) : 'pending'
+        out.push({
+          id: `item:${e.id}`,
+          source: e.source,
+          target: e.target,
+          type: 'offset',
+          label: `${fmtAmount(e.amount, e.asset)} · ${date}`,
+          data: { offset, onSelect: () => onEdgeClick(e.source, e.target) },
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--accent))', width: 12, height: 12 },
+          style: { stroke: 'rgb(var(--accent))', strokeWidth: 1.5, opacity: 0.85 },
+        })
+      })
+    }
+
     // Searched transactions: inputs → tx node → outputs (only for addresses on the graph)
     for (const h of hubs) {
       const id = `tx:${h.txid}`
@@ -166,7 +201,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       h.outputs.forEach((o, k) => ids.has(o.address) && draw(id, o.address, o.amount, o.asset, `out${k}`))
     }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, hubs, taintByEdge, selectedEdge])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, taintByEdge, selectedEdge, onEdgeClick])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -231,6 +266,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           onReady?.({ exportPng, fitView: () => inst.fitView(FIT) })
         }}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         minZoom={0.05}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}

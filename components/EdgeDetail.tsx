@@ -1,124 +1,211 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { X, ExternalLink, ArrowRight, ArrowRightFromLine, ArrowLeftToLine } from 'lucide-react'
+import { X, ExternalLink, ArrowRight, ArrowLeft, ArrowRightFromLine, ArrowLeftToLine, Check } from 'lucide-react'
 import { Chain, EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
 import { explorerTxUrl, fiatValue, fmtAmount, fmtDate } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
+type Tab = 'relationship' | 'transactions'
+
 interface Props {
-  from: string
-  to: string
+  a: string
+  b: string
   chain: Chain
-  /** Per-transaction flows between the pair */
+  /** Per-transaction flows between the pair, both directions */
   rows: EdgeData[]
   traced: TracedFlow[]
   prices: Record<string, number>
   busy: boolean
+  /** Per-transaction ids currently drawn individually on the graph */
+  itemized: Set<string>
+  canLoadMore: boolean
+  loadingMore: boolean
+  initialTab?: Tab
   nameOf: (a: string) => string | undefined
   onSelect: (address: string) => void
   onTraceForward: (row: EdgeData) => void
   onTraceBack: (row: EdgeData) => void
+  onToggleItem: (id: string) => void
+  onItemize: (ids: string[] | null) => void
+  onLoadMore: () => void
   onClose: () => void
 }
 
-export default function EdgeDetail(p: Props) {
-  const rows = [...p.rows].sort((a, b) => b.timestamp - a.timestamp)
-  const totals = new Map<string, number>()
-  for (const r of rows) totals.set(r.asset, (totals.get(r.asset) ?? 0) + r.amount)
+function totals(rows: EdgeData[]) {
+  const m = new Map<string, number>()
+  for (const r of rows) m.set(r.asset, (m.get(r.asset) ?? 0) + r.amount)
+  return [...m]
+}
 
-  const Addr = ({ a }: { a: string }) => (
+export default function EdgeDetail(p: Props) {
+  const [tab, setTab] = useState<Tab>(p.initialTab ?? 'relationship')
+  const [order, setOrder] = useState<'newest' | 'oldest' | 'largest'>('newest')
+  const ab = p.rows.filter(r => r.source === p.a)
+  const ba = p.rows.filter(r => r.source === p.b)
+  const times = p.rows.map(r => r.timestamp).filter(Boolean)
+  const itemizedHere = p.rows.filter(r => p.itemized.has(r.id)).length
+
+  const sorted = useMemo(() => {
+    const r = [...p.rows]
+    if (order === 'newest') r.sort((x, y) => y.timestamp - x.timestamp)
+    else if (order === 'oldest') r.sort((x, y) => x.timestamp - y.timestamp)
+    else r.sort((x, y) => y.amount - x.amount)
+    return r
+  }, [p.rows, order])
+
+  const Name = ({ a }: { a: string }) => (
     <button onClick={() => p.onSelect(a)} className="text-left min-w-0 hover:text-accent" title={a}>
-      <div className="text-xs font-medium text-fg truncate">{p.nameOf(a) ?? truncate(a, 8)}</div>
+      <div className={clsx('text-xs font-medium text-fg truncate', !p.nameOf(a) && 'font-mono')}>{p.nameOf(a) ?? truncate(a, 8)}</div>
       {p.nameOf(a) && <div className="text-[10px] font-mono text-faint truncate">{truncate(a, 6)}</div>}
     </button>
   )
 
+  const Direction = ({ from, to, rows }: { from: string; to: string; rows: EdgeData[] }) => (
+    <div className="border border-line p-3 space-y-1.5">
+      <div className="flex items-center gap-2 text-[11px] text-faint">
+        <span className="truncate">{p.nameOf(from) ?? truncate(from, 6)}</span>
+        <ArrowRight size={11} className="flex-shrink-0" />
+        <span className="truncate">{p.nameOf(to) ?? truncate(to, 6)}</span>
+        <span className="ml-auto whitespace-nowrap">{rows.length} tx{rows.length === 1 ? '' : 's'}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="text-[12px] text-faint">Nothing in loaded data</div>
+      ) : (
+        totals(rows).map(([asset, amt]) => (
+          <div key={asset} className="text-sm font-mono text-fg">
+            {fmtAmount(amt, asset, 8)}
+            {fiatValue(amt, asset, p.prices) > 0 && <span className="text-[11px] text-faint"> · ${Math.round(fiatValue(amt, asset, p.prices)).toLocaleString('en-NZ')} NZD today</span>}
+          </div>
+        ))
+      )}
+    </div>
+  )
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between h-10 px-4 border-b border-line flex-shrink-0">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-faint">Flow between two addresses</span>
-        <button onClick={p.onClose} className="text-faint hover:text-fg p-1" aria-label="Close">
-          <X size={14} />
-        </button>
+      <div className="p-4 border-b border-line space-y-3 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-faint">Between two addresses</span>
+          <button onClick={p.onClose} className="text-faint hover:text-fg p-1" aria-label="Close"><X size={14} /></button>
+        </div>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <Name a={p.a} />
+          <span className="flex flex-col items-center text-faint"><ArrowRight size={12} /><ArrowLeft size={12} /></span>
+          <Name a={p.b} />
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 divide-y divide-line">
-        <section className="p-4 space-y-3">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-            <Addr a={p.from} />
-            <ArrowRight size={14} className="text-faint" />
-            <Addr a={p.to} />
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {[...totals].map(([asset, amt]) => (
-              <div key={asset} className="text-sm font-mono text-fg">
-                {fmtAmount(amt, asset, 8)}
-                {fiatValue(amt, asset, p.prices) > 0 && (
-                  <span className="text-[11px] text-faint"> · ${Math.round(fiatValue(amt, asset, p.prices)).toLocaleString('en-NZ')} NZD today</span>
-                )}
-              </div>
-            ))}
-          </div>
-          <p className="text-[11px] text-faint">{rows.length} transaction{rows.length === 1 ? '' : 's'} in loaded data</p>
-        </section>
+      <div className="flex border-b border-line flex-shrink-0 text-[12px] font-medium">
+        {(['relationship', 'transactions'] as Tab[]).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={clsx('flex-1 h-10 border-b-2 -mb-px capitalize', tab === t ? 'border-accent text-fg' : 'border-transparent text-faint hover:text-fg')}>
+            {t === 'transactions' ? `Transactions · ${p.rows.length}` : 'Relationship'}
+          </button>
+        ))}
+      </div>
 
-        {p.traced.length > 0 && (
-          <section className="p-4 space-y-2">
-            <div className="text-[10px] uppercase tracking-wider text-faint">Traced funds on this flow</div>
-            {p.traced.map((f, i) => (
-              <div key={i} className="border-l-2 border-accent pl-3">
-                <div className="text-xs font-mono text-accent">{fmtAmount(f.amount, f.asset, 8)} · hop {f.hop}</div>
-                <div className="text-[11px] text-muted leading-relaxed">{f.reason}</div>
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {tab === 'relationship' ? (
+          <div className="p-4 space-y-3">
+            <Direction from={p.a} to={p.b} rows={ab} />
+            <Direction from={p.b} to={p.a} rows={ba} />
+            {times.length > 0 && (
+              <div className="text-[11px] text-faint">
+                First seen {fmtDate(Math.min(...times))} · last seen {fmtDate(Math.max(...times))}
               </div>
-            ))}
-          </section>
-        )}
-
-        <section className="p-4">
-          <div className="text-[10px] uppercase tracking-wider text-faint mb-2">Transactions</div>
-          <p className="text-[11px] text-muted mb-3 leading-relaxed">
-            <b className="text-fg font-medium">Trace →</b> follows this exact payment onward. <b className="text-fg font-medium">← Source</b> walks back to where it came from.
-          </p>
-          <div className="space-y-2">
-            {rows.map(r => (
-              <div key={r.id} className="border border-line p-2.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-mono text-fg">{fmtAmount(r.amount, r.asset, 8)}</span>
-                  <span className="text-[10px] text-faint whitespace-nowrap">{fmtDate(r.timestamp)}</span>
-                </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <a
-                    href={explorerTxUrl(r.txid, p.chain)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-[10px] font-mono text-muted hover:text-accent"
-                  >
-                    {truncate(r.txid, 8)} <ExternalLink size={9} />
-                  </a>
-                  {r.isChange && <span className="text-[9px] px-1 bg-yellow-500/15 text-yellow-600">likely change</span>}
-                  <div className="ml-auto flex gap-1">
-                    <button
-                      onClick={() => p.onTraceBack(r)}
-                      disabled={p.busy}
-                      className={clsx('flex items-center gap-1 h-6 px-2 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40')}
-                    >
-                      <ArrowLeftToLine size={10} /> Source
-                    </button>
-                    <button
-                      onClick={() => p.onTraceForward(r)}
-                      disabled={p.busy}
-                      className="flex items-center gap-1 h-6 px-2 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40"
-                    >
-                      Trace <ArrowRightFromLine size={10} />
-                    </button>
+            )}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {itemizedHere > 0 ? (
+                <button onClick={() => p.onItemize(null)} className="h-8 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg">
+                  Show as one relationship line
+                </button>
+              ) : (
+                <button onClick={() => p.onItemize(p.rows.map(r => r.id))} disabled={!p.rows.length}
+                  className="h-8 px-3 text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
+                  Show each transaction on the graph
+                </button>
+              )}
+              {p.canLoadMore && (
+                <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-8 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
+                  {p.loadingMore ? 'Loading…' : 'Load more history'}
+                </button>
+              )}
+            </div>
+            {p.traced.length > 0 && (
+              <div className="pt-2 space-y-2">
+                <div className="text-[10px] uppercase tracking-wider text-faint">Traced funds on this relationship</div>
+                {p.traced.map((f, i) => (
+                  <div key={i} className="border-l-2 border-accent pl-3">
+                    <div className="text-xs font-mono text-accent">{fmtAmount(f.amount, f.asset, 8)} · hop {f.hop}</div>
+                    <div className="text-[11px] text-muted leading-relaxed">{f.reason}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10 text-[11px]">
+              <select value={order} onChange={e => setOrder(e.target.value as typeof order)} aria-label="Order"
+                className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="largest">Largest first</option>
+              </select>
+              <button onClick={() => p.onItemize(itemizedHere === p.rows.length ? null : p.rows.map(r => r.id))}
+                className="ml-auto h-7 px-2 font-medium bg-raised hover:bg-line text-fg">
+                {itemizedHere === p.rows.length && p.rows.length ? 'Hide all from graph' : 'Show all on graph'}
+              </button>
+            </div>
+            <p className="px-4 pt-3 text-[11px] text-faint leading-relaxed">
+              Tick a transaction to draw it on the graph as its own line. <b className="text-fg font-medium">Trace</b> follows it onward, <b className="text-fg font-medium">Source</b> walks it back.
+            </p>
+            {sorted.map(r => {
+              const on = p.itemized.has(r.id)
+              const out = r.source === p.a
+              return (
+                <div key={r.id} className="flex items-start gap-3 px-4 py-2.5 border-b border-line/60 hover:bg-panel">
+                  <button onClick={() => p.onToggleItem(r.id)} aria-label={on ? 'Remove from graph' : 'Show on graph'}
+                    className={clsx('mt-0.5 grid place-items-center w-4 h-4 border flex-shrink-0', on ? 'bg-accent border-accent text-accent-fg' : 'border-line hover:border-accent')}>
+                    {on && <Check size={11} />}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-faint whitespace-nowrap">{out ? '→' : '←'} {fmtDate(r.timestamp)}</span>
+                      <span className="ml-auto font-mono text-[12px] text-fg whitespace-nowrap">{fmtAmount(r.amount, r.asset, 8)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1">
+                      <a href={explorerTxUrl(r.txid, p.chain)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 font-mono text-[10px] text-faint hover:text-fg">
+                        {truncate(r.txid, 6)} <ExternalLink size={9} />
+                      </a>
+                      {r.isChange && <span className="text-[9px] px-1 bg-yellow-500/15 text-yellow-600">likely change</span>}
+                      <div className="ml-auto flex gap-1">
+                        <button onClick={() => p.onTraceBack(r)} disabled={p.busy}
+                          className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">
+                          <ArrowLeftToLine size={10} /> Source
+                        </button>
+                        <button onClick={() => p.onTraceForward(r)} disabled={p.busy}
+                          className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
+                          Trace <ArrowRightFromLine size={10} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              )
+            })}
+            {p.canLoadMore && (
+              <div className="p-3 flex justify-center">
+                <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-8 px-4 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
+                  {p.loadingMore ? 'Loading…' : 'Load more history for these addresses'}
+                </button>
               </div>
-            ))}
+            )}
           </div>
-        </section>
+        )}
       </div>
     </div>
   )

@@ -3,7 +3,7 @@ import { EntityLabel, RawTransaction } from '../types'
 import { rpcBatch, ethCall } from '../rpc'
 import { getLabel } from '../labels'
 import { lookupEnsNames } from '../ens'
-import { KNOWN_TOKENS, internalTransfersByHash, toUnits } from './eth'
+import { KNOWN_TOKENS, internalTransfersByHash, receiptViaEtherscan, toUnits } from './eth'
 
 // One Ethereum transaction and every value transfer inside it: the ETH value,
 // ERC-20 Transfer events from the receipt, and internal ETH transfers.
@@ -47,11 +47,16 @@ function decodeSymbol(result: string | undefined): string | null {
 export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
   const txid = hash.toLowerCase()
   const warnings: string[] = []
-  const [tx, receipt] = await rpcBatch<RpcTx & RpcReceipt>([
+  const [tx, rpcReceipt] = await rpcBatch<RpcTx & RpcReceipt>([
     { method: 'eth_getTransactionByHash', params: [txid] },
     { method: 'eth_getTransactionReceipt', params: [txid] },
   ]) as [RpcTx | undefined, RpcReceipt | undefined]
   if (!tx) throw new Error('Transaction not found on Ethereum mainnet')
+
+  // Token transfers live in the receipt logs; without it they would silently vanish
+  let receipt = rpcReceipt
+  if (!receipt?.logs) receipt = await receiptViaEtherscan<RpcReceipt>(txid).catch(() => undefined)
+  if (!receipt?.logs) warnings.push('Could not load this transaction\'s receipt, so token transfers (e.g. USDT) may be missing. Try again shortly.')
 
   const tokenLogs = (receipt?.logs ?? []).filter(l => l.topics[0] === TRANSFER_TOPIC && l.topics.length === 3)
   const tokens = [...new Set(tokenLogs.map(l => l.address.toLowerCase()))]
@@ -98,6 +103,12 @@ export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
     }
   } else {
     warnings.push('This transaction failed on-chain; no value moved')
+  }
+
+  // A zero-value call to a token contract is just the mechanism of a token transfer
+  const hasTokens = transfers.some(t => t.kind === 'token')
+  for (let i = transfers.length - 1; i >= 0; i--) {
+    if (hasTokens && transfers[i].kind === 'normal' && transfers[i].outputs[0].amount === 0) transfers.splice(i, 1)
   }
 
   const addrs = [...new Set(transfers.flatMap(t => [t.inputs[0].address, t.outputs[0].address]))]

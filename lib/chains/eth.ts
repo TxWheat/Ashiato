@@ -137,7 +137,7 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
     rawTxs.push(transfer(t.hash, t.from, t.to, v, symbol, t.timeStamp, 'token', undefined, t.logIndex))
   }
   if (spam) warnings.push(`${spam} zero-value token transfer(s) hidden (typical address-poisoning spam)`)
-  if (fake) warnings.push(`${fake} transfer(s) of look-alike tokens shown with * (not the real contract, likely scam tokens)`)
+  if (fake) warnings.push(`${fake} transfer(s) of fake tokens posing as real ones (e.g. a fake USDT contract). These are usually address-poisoning spam; no real funds moved`)
 
   rawTxs.sort((a, b) => b.timestamp - a.timestamp)
   const more = normal.length >= PAGE_SIZE || internal.length >= PAGE_SIZE || tokens.length >= PAGE_SIZE
@@ -162,6 +162,12 @@ async function fetchBalance(addr: string): Promise<number> {
   )
   if (body.status !== '1') throw new Error(`Etherscan: ${body.result || body.message}`)
   return toUnits(body.result, 18)
+}
+
+/** Transaction receipt via Etherscan's proxy module (fallback when the public RPC fails) */
+export async function receiptViaEtherscan<T>(hash: string): Promise<T | undefined> {
+  const body = await fetchJson<{ result?: T }>(url({ module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hash }), 600, 4, rateLimited)
+  return body.result ?? undefined
 }
 
 /** Internal ETH transfers made by one transaction (needs an Etherscan key) */

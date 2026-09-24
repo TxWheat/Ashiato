@@ -13,6 +13,7 @@ import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance,
 import { truncate } from '@/lib/detect-chain'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
+type SortKey = 'flow' | 'received' | 'sent' | 'txs' | 'recent'
 
 const RISK_BAR: Record<string, string> = {
   clean: 'bg-green-500', low: 'bg-lime-500', medium: 'bg-yellow-500', high: 'bg-orange-500', critical: 'bg-red-500',
@@ -24,6 +25,7 @@ const HEURISTIC_NAME: Record<string, string> = {
   'tornado-usage': 'Tornado Cash usage',
   'tornado-address-match': 'Tornado: address reuse',
   'tornado-gas-fingerprint': 'Tornado: gas-price fingerprint',
+  'address-poisoning': 'Address poisoning attempts',
 }
 
 interface Props {
@@ -60,14 +62,53 @@ export default function AddressInspector(p: Props) {
   const { node } = p
   const [copied, setCopied] = useState(false)
   const [filter, setFilter] = useState<'all' | 'in' | 'out'>('all')
+  const [sort, setSort] = useState<SortKey>('flow')
+  const [asset, setAsset] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [showSpam, setShowSpam] = useState(false)
   const type = node.label?.type ?? 'unknown'
   const style = ENTITY_STYLE[type]
   const title = node.label?.name ?? node.ens
 
-  const list = useMemo(
-    () => p.counterparties.filter(c => filter === 'all' || (filter === 'in' ? Object.keys(c.received).length : Object.keys(c.sent).length)),
-    [p.counterparties, filter]
+  const totalsByAsset = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of p.counterparties) for (const [k, v] of [...Object.entries(c.received), ...Object.entries(c.sent)]) m.set(k, (m.get(k) ?? 0) + v)
+    return m
+  }, [p.counterparties])
+  const isSpam = (c: Counterparty) =>
+    p.labelOf(c.address)?.inferredBy === 'address-poisoning' ||
+    [...Object.keys(c.received), ...Object.keys(c.sent)].every(x => x.endsWith('*'))
+  const spamCount = p.counterparties.filter(isSpam).length
+  const assets = useMemo(
+    () => [...new Set(p.counterparties.flatMap(c => [...Object.keys(c.received), ...Object.keys(c.sent)]))].filter(x => !x.endsWith('*')).sort(),
+    [p.counterparties]
   )
+
+  const list = useMemo(() => {
+    const min = parseFloat(minAmount) || 0
+    const recv = (c: Counterparty) => (asset ? c.received[asset] ?? 0 : 0)
+    const sent = (c: Counterparty) => (asset ? c.sent[asset] ?? 0 : 0)
+    // Across mixed assets, amounts aren't comparable, so rank by share of each asset's flow
+    const share = (rec: Record<string, number>) => {
+      let best = 0
+      for (const [k, v] of Object.entries(rec)) best = Math.max(best, v / (totalsByAsset.get(k) || 1))
+      return best
+    }
+    const score: Record<SortKey, (c: Counterparty) => number> = {
+      flow: c => (asset ? recv(c) + sent(c) : c.weight),
+      received: c => (asset ? recv(c) : share(c.received)),
+      sent: c => (asset ? sent(c) : share(c.sent)),
+      txs: c => c.txCount,
+      recent: c => c.lastSeen,
+    }
+    return p.counterparties
+      .filter(c => showSpam || !isSpam(c))
+      .filter(c => filter === 'all' || (filter === 'in' ? Object.keys(c.received).length : Object.keys(c.sent).length))
+      .filter(c => !asset || c.received[asset] !== undefined || c.sent[asset] !== undefined)
+      .filter(c => !asset || !min || Math.max(recv(c), sent(c)) >= min)
+      .sort((x, y) => score[sort](y) - score[sort](x))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.counterparties, filter, sort, asset, minAmount, showSpam])
   const notOnGraph = list.filter(c => !p.onGraph.has(c.address))
 
   const copy = () => {
@@ -141,19 +182,47 @@ export default function AddressInspector(p: Props) {
           </div>
         ) : p.tab === 'counterparties' ? (
           <div>
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10">
-              {(['all', 'in', 'out'] as const).map(f => (
-                <button key={f} onClick={() => setFilter(f)}
-                  className={clsx('h-6 px-2 text-[11px] font-medium', filter === f ? 'bg-raised text-fg' : 'text-faint hover:text-fg')}>
-                  {f === 'all' ? 'All' : f === 'in' ? 'Senders' : 'Recipients'}
-                </button>
-              ))}
-              {notOnGraph.length > 0 && (
-                <button onClick={() => p.onAdd(notOnGraph.slice(0, 5).map(c => c.address))}
-                  className="ml-auto h-6 px-2 text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg">
-                  Add top {Math.min(5, notOnGraph.length)}
-                </button>
-              )}
+            <div className="px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10 space-y-2">
+              <div className="flex items-center gap-1.5">
+                {(['all', 'in', 'out'] as const).map(f => (
+                  <button key={f} onClick={() => setFilter(f)}
+                    className={clsx('h-6 px-2 text-[11px] font-medium', filter === f ? 'bg-raised text-fg' : 'text-faint hover:text-fg')}>
+                    {f === 'all' ? 'All' : f === 'in' ? 'Senders' : 'Recipients'}
+                  </button>
+                ))}
+                {notOnGraph.length > 0 && (
+                  <button onClick={() => p.onAdd(notOnGraph.slice(0, 5).map(c => c.address))}
+                    className="ml-auto h-6 px-2 text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg">
+                    Add top {Math.min(5, notOnGraph.length)}
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <select value={sort} onChange={e => setSort(e.target.value as SortKey)} aria-label="Sort counterparties"
+                  className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent">
+                  <option value="flow">Largest flow</option>
+                  <option value="received">Most received from</option>
+                  <option value="sent">Most sent to</option>
+                  <option value="txs">Most transactions</option>
+                  <option value="recent">Most recent</option>
+                </select>
+                <select value={asset} onChange={e => setAsset(e.target.value)} aria-label="Asset"
+                  className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent">
+                  <option value="">All assets</option>
+                  {assets.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+                <input value={minAmount} onChange={e => setMinAmount(e.target.value.replace(/[^0-9.]/g, ''))} disabled={!asset}
+                  placeholder={asset ? `Min ${asset}` : 'Pick asset for min'} aria-label="Minimum amount" inputMode="decimal"
+                  className="h-7 w-full min-w-0 px-2 bg-panel border border-line text-fg placeholder:text-faint outline-none focus:border-accent disabled:opacity-50" />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-faint">
+                <span>{list.length} shown</span>
+                {spamCount > 0 && (
+                  <button onClick={() => setShowSpam(v => !v)} className="hover:text-fg underline underline-offset-2">
+                    {showSpam ? 'Hide' : 'Show'} {spamCount} poisoning / fake-token spam
+                  </button>
+                )}
+              </div>
             </div>
             {list.length === 0 && <p className="p-4 text-[12px] text-faint">No counterparties in the loaded transactions.</p>}
             {list.map(c => {

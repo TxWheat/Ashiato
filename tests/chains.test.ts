@@ -102,7 +102,7 @@ describe('traceEthAddress', () => {
     expect(r.rawTxs.find(t => t.txid === '0xc')!.asset).toBe('USDT*')
     expect(r.edges.find(e => e.asset === 'USDT')?.amount).toBe(2500)
     expect(r.warnings?.join(' ')).toMatch(/address-poisoning/)
-    expect(r.warnings?.join(' ')).toMatch(/look-alike/)
+    expect(r.warnings?.join(' ')).toMatch(/fake tokens/)
   })
 
   it('keeps several identical transfers inside one transaction (distinct logIndex)', async () => {

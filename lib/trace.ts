@@ -6,6 +6,7 @@ import { detectDepositAddress } from './heuristics/deposit'
 import { tornadoFindings } from './heuristics/eth/tornado'
 import { scoreRisk } from './risk'
 import { lookupEnsNames } from './ens'
+import { detectPoisoning } from './heuristics/eth/poisoning'
 
 /** Labels, heuristics, risk and graph for one page of an address's transactions */
 export async function assemble(opts: {
@@ -36,7 +37,12 @@ export async function assemble(opts: {
     }
   }
 
-  if (chain === 'eth') findings.push(...tornadoFindings(address, rawTxs, labelOf))
+  if (chain === 'eth') {
+    findings.push(...tornadoFindings(address, rawTxs, labelOf))
+    const poison = detectPoisoning(address, rawTxs)
+    for (const [a, l] of poison.labels) if (!labelOf(a)) labelCache.set(a, l)
+    if (poison.finding) findings.push(poison.finding)
+  }
 
   const cj = rawTxs.filter(t => t.coinjoin && t.inputs.some(i => i.address === address))
   if (cj.length) {

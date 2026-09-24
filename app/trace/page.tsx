@@ -106,6 +106,8 @@ function TracePageInner() {
   const [pages, setPages] = useState<Map<string, LoadedPage>>(new Map())
   const [hubs, setHubs] = useState<Map<string, TxLookup>>(new Map())
   const [followedPairs, setFollowedPairs] = useState<Set<string>>(new Set())
+  /** Per-transaction edge ids drawn individually instead of as a relationship line */
+  const [itemizedIds, setItemizedIds] = useState<Set<string>>(new Set())
   const [traced, setTraced] = useState<TracedFlow[]>([])
   const [traceEnds, setTraceEnds] = useState<TraceEnd[]>([])
   const [history, setHistory] = useState<Snapshot[]>([])
@@ -217,6 +219,7 @@ function TracePageInner() {
     setPages(pagesRef.current)
     setHubs(new Map())
     setFollowedPairs(new Set())
+    setItemizedIds(new Set())
     setTraced([])
     setTraceEnds([])
     setFocusTrace(false)
@@ -335,20 +338,21 @@ function TracePageInner() {
     if (selection?.kind === 'address') setFollowedPairs(prev => new Set([...prev, ...fresh.map(a => pairKey(selection.id, a))]))
   }
 
-  const loadMore = async () => {
-    if (selection?.kind !== 'address') return
-    const addr = selection.id
-    const cursor = pagesRef.current.get(addr)?.nextCursor
-    if (!cursor) return
+  /** Loads the next page of history for each address that has more */
+  const loadMoreFor = async (addrs: string[]) => {
     setLoadingMore(true)
     try {
-      absorb(await fetchTrace(addr, chainOf(addr), cursor), [], true)
+      for (const addr of addrs) {
+        const cursor = pagesRef.current.get(addr)?.nextCursor
+        if (cursor) absorb(await fetchTrace(addr, chainOf(addr), cursor), [], true)
+      }
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Failed to load more')
     } finally {
       setLoadingMore(false)
     }
   }
+  const loadMore = () => (selection?.kind === 'address' ? loadMoreFor([selection.id]) : undefined)
 
   const removeNode = (addr: string) => {
     snapshot()
@@ -536,15 +540,26 @@ function TracePageInner() {
   const selectedNode = selectedAddress ? graphNodes.find(n => n.address === selectedAddress) ?? known.get(selectedAddress) : undefined
   const selectedCounterparties = useMemo(() => (selectedAddress ? findCounterparties(selectedAddress, allEdges) : []), [selectedAddress, allEdges])
 
+  // Both directions between the selected pair
   const edgeRows = useMemo(() => {
     if (selection?.kind !== 'flow') return []
+    const { from: a, to: b } = selection
     const seen = new Set<string>()
     return perTx.filter(e => {
-      if (e.source !== selection.from || e.target !== selection.to || seen.has(e.id)) return false
+      const hit = (e.source === a && e.target === b) || (e.source === b && e.target === a)
+      if (!hit || seen.has(e.id)) return false
       seen.add(e.id)
       return true
     })
   }, [perTx, selection])
+
+  const itemizedEdges = useMemo(() => {
+    if (!itemizedIds.size) return []
+    const seen = new Set<string>()
+    return perTx.filter(e => itemizedIds.has(e.id) && !seen.has(e.id) && seen.add(e.id))
+  }, [perTx, itemizedIds])
+
+  const selectFlow = useCallback((from: string, to: string) => setSelection({ kind: 'flow', from, to }), [])
 
   const txForRow = (row: EdgeData): RawTransaction | undefined =>
     allTxs.find(t => t.txid === row.txid && t.asset === row.asset && t.inputs.some(i => i.address === row.source) && t.outputs.some(o => o.address === row.target))
@@ -656,11 +671,29 @@ function TracePageInner() {
     if (selection?.kind === 'flow') {
       return (
         <EdgeDetail
-          from={selection.from}
-          to={selection.to}
+          key={pairKey(selection.from, selection.to)}
+          a={selection.from}
+          b={selection.to}
           chain={originChain ?? 'btc'}
           rows={edgeRows}
-          traced={traced.filter(f => f.from === selection.from && f.to === selection.to)}
+          itemized={itemizedIds}
+          initialTab={edgeRows.some(r => itemizedIds.has(r.id)) ? 'transactions' : 'relationship'}
+          canLoadMore={!!(pages.get(selection.from)?.nextCursor || pages.get(selection.to)?.nextCursor)}
+          loadingMore={loadingMore}
+          onLoadMore={() => loadMoreFor([selection.from, selection.to])}
+          onToggleItem={id => setItemizedIds(prev => {
+            const n = new Set(prev)
+            if (n.has(id)) n.delete(id)
+            else n.add(id)
+            return n
+          })}
+          onItemize={ids => setItemizedIds(prev => {
+            const n = new Set(prev)
+            for (const r of edgeRows) n.delete(r.id)
+            for (const id of ids ?? []) n.add(id)
+            return n
+          })}
+          traced={traced.filter(f => (f.from === selection.from && f.to === selection.to) || (f.from === selection.to && f.to === selection.from))}
           prices={prices}
           busy={!!traceStatus}
           nameOf={nameOf}
@@ -809,12 +842,13 @@ function TracePageInner() {
               followedPairs={followedPairs}
               traced={traced}
               hubs={graphHubs}
+              itemized={itemizedEdges}
               taintByEdge={taintResult?.byEdge}
               selected={selectedAddress}
               selectedEdge={selection?.kind === 'flow' ? `${selection.from}->${selection.to}` : null}
               selectedHub={selection?.kind === 'tx' ? selection.id : null}
               onNodeClick={openAddress}
-              onEdgeClick={(from, to) => setSelection({ kind: 'flow', from, to })}
+              onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onReady={api => (graphApi.current = api)}
             />
