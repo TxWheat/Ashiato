@@ -1,127 +1,146 @@
-'use client'
+import Link from 'next/link'
+import SiteNav from '@/components/SiteNav'
+import SearchForm from '@/components/SearchForm'
+import { labelStats } from '@/lib/labels'
+import { Bitcoin, ShieldAlert, Droplets } from 'lucide-react'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { detectChain } from '@/lib/detect-chain'
-import { Search, AlertCircle, Github } from 'lucide-react'
+function EthGlyph({ size = 96 }: { size?: number }) {
+  return (
+    <svg width={size * 0.62} height={size} viewBox="0 0 62 100" aria-hidden>
+      <path d="M31 0 0 51l31 18 31-18z" fill="currentColor" opacity=".75" />
+      <path d="M31 0v69l31-18z" fill="currentColor" opacity=".45" />
+      <path d="M0 57l31 43 31-43-31 18z" fill="currentColor" opacity=".75" />
+    </svg>
+  )
+}
+
+const FEATURES = [
+  {
+    title: 'Exchange deposit addresses',
+    body: 'Spots the customer deposit address where stolen funds were cashed out, the detail an exchange needs to identify the account holder.',
+  },
+  {
+    title: 'Taint analysis',
+    body: 'Poison, haircut and FIFO models show how much of the stolen amount reached each address, traced exactly through Bitcoin UTXOs.',
+  },
+  {
+    title: 'Mixers & CoinJoins',
+    body: 'Fingerprints Whirlpool, Wasabi and JoinMarket rounds and runs the Tornado Cash address-reuse, gas-price and denomination reveals.',
+  },
+  {
+    title: 'Sanctions & risk',
+    body: 'Screens every address against the OFAC SDN list and 120k+ open-source labels, then scores 0–100 risk with the reasons shown.',
+  },
+]
 
 export default function Home() {
-  const [address, setAddress] = useState('')
-  const [error, setError] = useState('')
-  const router = useRouter()
-
-  const chain = detectChain(address)
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!chain) {
-      setError('Enter a valid BTC or ETH address')
-      return
-    }
-    setError('')
-    router.push(`/trace?address=${encodeURIComponent(address.trim())}&chain=${chain}`)
-  }
+  const stats = labelStats()
+  const tiles = [
+    { value: stats.btc.toLocaleString('en-US'), label: 'Bitcoin labels', dot: 'bg-orange-500' },
+    { value: stats.eth.toLocaleString('en-US'), label: 'Ethereum labels', dot: 'bg-violet-500' },
+    { value: stats.sanctioned.toLocaleString('en-US'), label: 'OFAC sanctioned addresses', dot: 'bg-red-500' },
+    { value: '$0', label: 'Cost. No sign-up, open source', dot: 'bg-green-500' },
+  ]
 
   return (
-    <div className="min-h-screen bg-[#020817] flex flex-col">
-      {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-4 border-b border-slate-900">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-cyan-400" />
-          <span className="text-sm font-semibold text-white">CryptoTracer</span>
-        </div>
-        <a
-          href="https://github.com/TxWheat/Cryptocurrency-Tracing-Tool"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-white transition-colors"
-        >
-          <Github size={14} />
-          Open source
-        </a>
-      </nav>
+    <div className="min-h-screen flex flex-col">
+      <SiteNav />
 
-      {/* Hero */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-24">
-        <div className="w-full max-w-xl">
-          <div className="mb-10 text-center">
-            <div className="inline-flex items-center gap-2 mb-5 px-3 py-1 rounded-full border border-slate-800 bg-slate-900/50">
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-[11px] text-slate-400 uppercase tracking-widest font-mono">
-                Free · No sign-up · Open source
+      <section className="grid lg:grid-cols-2 border-b border-line">
+        {/* Left: headline + search */}
+        <div className="relative flex flex-col justify-end gap-10 px-4 sm:px-10 pt-24 pb-14 lg:min-h-[640px] overflow-hidden">
+          <div
+            className="halftone absolute inset-0 pointer-events-none"
+            style={{ maskImage: 'radial-gradient(ellipse at 90% 30%, black, transparent 65%)', WebkitMaskImage: 'radial-gradient(ellipse at 90% 30%, black, transparent 65%)' }}
+          />
+          <h1 className="relative text-[56px] sm:text-[88px] leading-[0.95] font-light tracking-[-0.03em] text-fg">
+            Trace
+            <br />
+            the money
+          </h1>
+          <div className="relative space-y-6">
+            <p className="flex items-center gap-3 text-sm font-medium text-fg">
+              <span className="grid place-items-center w-5 h-5 rounded-full bg-fg">
+                <span className="w-1.5 h-1.5 rotate-45 bg-bg" />
               </span>
-            </div>
-
-            <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
-              Trace the money.
-            </h1>
-            <p className="text-slate-400 text-lg leading-relaxed">
-              Follow BTC and ETH transactions hop by hop.
-              <br />
-              Built for scam victims and independent investigators.
+              Free blockchain forensics for scam victims and investigators
+            </p>
+            <SearchForm />
+            <p className="text-xs text-faint">
+              Bitcoin works out of the box. Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
+              <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div className="relative">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none">
-                <Search size={17} />
-              </div>
-              <input
-                type="text"
-                value={address}
-                onChange={e => {
-                  setAddress(e.target.value)
-                  setError('')
-                }}
-                placeholder="Enter a BTC or ETH address..."
-                className="w-full bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-xl pl-11 pr-24 py-4 text-white placeholder-slate-700 outline-none transition-colors font-mono text-sm"
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-              />
-              {chain && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                  <span className={`text-[11px] px-2 py-1 rounded-md font-mono uppercase font-bold ${
-                    chain === 'btc'
-                      ? 'bg-orange-500/20 text-orange-400'
-                      : 'bg-blue-500/20 text-blue-400'
-                  }`}>
-                    {chain} detected
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {error && (
-              <div className="flex items-center gap-2 text-red-400 text-sm">
-                <AlertCircle size={14} />
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-black font-bold py-4 rounded-xl transition-colors text-sm"
-            >
-              Trace Address
-            </button>
-          </form>
-
-          <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-            {[
-              { label: 'Bitcoin', sub: 'BTC mainnet', color: 'text-orange-400' },
-              { label: 'Ethereum', sub: 'ETH mainnet', color: 'text-blue-400' },
-              { label: 'More chains', sub: 'Coming soon', color: 'text-slate-600' },
-            ].map(item => (
-              <div key={item.label} className="bg-slate-900/50 border border-slate-800 rounded-xl p-3">
-                <div className={`text-sm font-semibold ${item.color}`}>{item.label}</div>
-                <div className="text-xs text-slate-600 mt-0.5">{item.sub}</div>
-              </div>
-            ))}
-          </div>
         </div>
-      </div>
+
+        {/* Right: stat tiles on a hairline grid */}
+        <div className="grid grid-cols-2 lg:border-l border-t lg:border-t-0 border-line">
+          {tiles.map((t, i) => (
+            <div
+              key={t.label}
+              className={`flex flex-col justify-end p-5 sm:p-6 min-h-[130px] lg:min-h-0 ${i % 2 === 0 ? 'border-r border-line' : ''} ${i < 2 ? 'border-b border-line' : ''}`}
+            >
+              <div className="text-3xl sm:text-5xl font-medium tracking-tight text-fg">{t.value}</div>
+              <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm font-medium text-muted">
+                <span className={`w-2 h-2 rounded-full ${t.dot}`} />
+                {t.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid lg:grid-cols-2 border-b border-line">
+        <div className="grid grid-cols-2">
+          {[
+            { label: 'Bitcoin: UTXO-exact tracing', value: 'BTC', icon: <Bitcoin size={96} strokeWidth={1.25} />, dot: 'bg-orange-500' },
+            { label: 'Ethereum: ETH + ERC-20', value: 'ETH', icon: <EthGlyph />, dot: 'bg-violet-500' },
+            { label: 'Screened on every lookup', value: 'OFAC', icon: <ShieldAlert size={96} strokeWidth={1.25} />, dot: 'bg-red-500' },
+            { label: 'Poison · Haircut · FIFO', value: 'Taint', icon: <Droplets size={96} strokeWidth={1.25} />, dot: 'bg-green-500' },
+          ].map((t, i) => (
+            <div
+              key={t.label}
+              className={`flex flex-col justify-between gap-6 p-5 sm:p-6 min-h-[260px] sm:min-h-[340px] ${i % 2 === 0 ? 'border-r border-line' : ''} ${i < 2 ? 'border-b border-line' : ''}`}
+            >
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-fg">
+                <span className={`w-2 h-2 rounded-full ${t.dot}`} />
+                {t.label}
+              </div>
+              <div className="self-center text-faint">{t.icon}</div>
+              <div className="text-3xl sm:text-5xl font-medium tracking-tight text-fg">{t.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="relative flex flex-col items-center justify-center text-center gap-4 px-6 py-24 lg:border-l border-t lg:border-t-0 border-line overflow-hidden">
+          <div
+            className="halftone absolute inset-0 pointer-events-none"
+            style={{ maskImage: 'radial-gradient(ellipse at center, black 10%, transparent 75%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 10%, transparent 75%)' }}
+          />
+          <div className="relative text-2xl sm:text-4xl font-medium text-fg">Addresses identified</div>
+          <div className="relative text-[64px] sm:text-[120px] leading-none font-light tracking-[-0.04em] text-fg">
+            {(stats.btc + stats.eth).toLocaleString('en-US')}
+          </div>
+          <p className="relative text-xs sm:text-sm font-medium text-muted max-w-sm">
+            Exchanges, mixers, scams, ransomware, hacks and sanctioned wallets from open, source-linked datasets.
+          </p>
+        </div>
+      </section>
+
+      <section className="grid sm:grid-cols-2 lg:grid-cols-4">
+        {FEATURES.map((f, i) => (
+          <div key={f.title} className={`p-6 sm:p-8 border-b border-line ${i < 3 ? 'lg:border-r' : ''} ${i % 2 === 0 ? 'sm:border-r' : ''}`}>
+            <div className="text-[11px] font-mono text-faint mb-4">0{i + 1}</div>
+            <h2 className="text-lg font-medium text-fg mb-2">{f.title}</h2>
+            <p className="text-sm leading-relaxed text-muted">{f.body}</p>
+          </div>
+        ))}
+      </section>
+
+      <footer className="px-4 sm:px-10 py-6 text-xs text-faint flex flex-wrap gap-x-6 gap-y-2">
+        <span>Labels: GraphSense TagPacks (MIT), US Treasury OFAC SDN list</span>
+        <span>Data: Blockstream / mempool.space Esplora, Etherscan</span>
+        <span>Heuristics are leads, not proof. Verify before acting.</span>
+      </footer>
     </div>
   )
 }

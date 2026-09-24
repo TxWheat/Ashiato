@@ -1,0 +1,55 @@
+# chain	address	name	type  (types: exchange deposit mixer coinjoin sanctioned scam hack ransomware illicit darknet gambling defi miner service wallet)
+eth	0x3f5ce5fbfe3e9af3971dd833d26ba9b5c936f0be	Binance	exchange
+eth	0x28c6c06298d514db089934071355e5743bf21d60	Binance 14	exchange
+eth	0xdfd5293d8e347dfe59e90efd55b2956a1343963d	Binance 15	exchange
+eth	0x56eddb7aa87536c09ccc2793473599fd21a8b17f	Binance 16	exchange
+eth	0x21a31ee1afc51d94c2efccaa2092ad1028285549	Binance 17	exchange
+eth	0xd551234ae421e3bcba99a0da6d736074f22192ff	Binance 2	exchange
+eth	0x564286362092d8e7936f0549571a803b203aaced	Binance 3	exchange
+eth	0x503828976d22510aad0201ac7ec88293211d23da	Coinbase 2	exchange
+eth	0xdfa1ef9e5c99baaddb39eeaac47fe6b1d9ef1897	Coinbase 3	exchange
+eth	0xa090e606e30bd747d4e6245a1517ebe430f0057e	Coinbase Prime	exchange
+eth	0x2910543af39aba0cd09dbb2d50200b3e800a63d2	Kraken	exchange
+eth	0xae2d4617c862309a3d75a0ffb358c7a5009c673f	Kraken 2	exchange
+eth	0x43984d578803891dfa9706bdeee6078d80cfc79e	Kraken 3	exchange
+eth	0x6cc5f688a315f3dc28a7781717a9a798a59fda7b	OKX	exchange
+eth	0x236f9f97e0e62388479bf9e5ba4889e46b0273c3	OKX 2	exchange
+eth	0xa910f92acdaf488fa6ef02174fb86208ad7722ba	Poloniex	exchange
+eth	0x32be343b94f860124dc4fee278fdcbd38c102d88	Poloniex 2	exchange
+eth	0xab5c66752a9e8167967685f1450532fb96d5d24f	Huobi 1	exchange
+eth	0xdc76cd25977e0a5ae17155770273ad58648900d3	Huobi 2	exchange
+eth	0x7793cd85c11a924478d358d49b05b37e91b5810f	Huobi 3	exchange
+eth	0x77134cbc06cb00b66f4c7e623d5fdbf6777635ec	Bybit	exchange
+eth	0xf89d7b9c864f589bbf53a82105107622b35eaa40	Bybit 2	exchange
+eth	0xbe0eb53f46cd790cd13851d5eff43d12404d33e8	Binance Cold Wallet	exchange
+eth	0x7a250d5630b4cf539739df2c5dacb4c659f2488d	Uniswap V2 Router	defi
+eth	0xe592427a0aece92de3edee1f18e0157c05861564	Uniswap V3 Router	defi
+eth	0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45	Uniswap V3 Router 2	defi
+eth	0xc36442b4a4522e871399cd717abdd847ab11fe88	Uniswap V3 Positions	defi
+eth	0xdef1c0ded9bec7f1a1670819833240f027b25eff	0x Exchange Proxy	defi
+eth	0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f	SushiSwap Router	defi
+eth	0x00000000219ab540356cbb839cbe05303d7705fa	ETH2 Deposit Contract	defi
+eth	0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae	Ethereum Foundation	wallet
+eth	0xd4b88df4d29f5cedd6857912842cff3b20c8cfa3	Tornado Cash 100 DAI pool	mixer
+eth	0xfd8610d20aa15b7b2e3be39b396a1bc3516c7144	Tornado Cash 1000 DAI pool	mixer
+eth	0x07687e702b410fa43f4cb4af7fa097918ffd2730	Tornado Cash 10000 DAI pool	mixer
+eth	0x23773e65ed146a459791799d01336db287f25334	Tornado Cash 100000 DAI pool	mixer
+eth	0x12d66f87a04a9e220743712ce6d9bb1b5616b8fc	Tornado Cash 0.1 ETH pool	mixer
+eth	0x47ce0c6ed5b0ce3d3a51fdb1c52dc66a7c3c2936	Tornado Cash 1 ETH pool	mixer
+eth	0x910cbd523d972eb0a6f4cae4618ad62622b39dbf	Tornado Cash 10 ETH pool	mixer
+eth	0xa160cdab225685da1d56aa342ad8841c3b53f291	Tornado Cash 100 ETH pool	mixer
+eth	0xd96f2b1c14db8458374d9aca76e26c3d18364307	Tornado Cash 100 USDC pool	mixer
+eth	0x4736dcf1b7a3d580672cce6e7c65cd5cc9cfba9d	Tornado Cash 1000 USDC pool	mixer
+eth	0x169ad27a470d064dede56a2d3ff727986b15d52b	Tornado Cash 100 USDT pool	mixer
+eth	0x0836222f2b2b24a3f36f98668ed8f0b38d1a872f	Tornado Cash 1000 USDT pool	mixer
+eth	0x178169b423a011fff22b9e3f3abea13414ddd0f1	Tornado Cash 0.1 WBTC pool	mixer
+eth	0x610b717796ad172b316836ac95a2ffad065ceab4	Tornado Cash 1 WBTC pool	mixer
+eth	0xbb93e510bbcd0b7beb5a853875f9ec60275cf498	Tornado Cash 10 WBTC pool	mixer
+eth	0x22aaa7720ddd5388a3c0a3333430953c68f1849b	Tornado Cash 5000 cDAI pool	mixer
+eth	0x03893a7c7463ae47d46bc7f091665f1893656003	Tornado Cash 50000 cDAI pool	mixer
+eth	0x2717c5e28cf931547b621a5dddb772ab6a35b701	Tornado Cash 500000 cDAI pool	mixer
+eth	0xd21be7248e0197ee08e0c20d4a96debdac3d20af	Tornado Cash 5000000 cDAI pool	mixer
+eth	0x722122df12d4e14e13ac3b6895a86e84145b6967	Tornado Cash Proxy	mixer
+eth	0xd90e2f925da726b50c4ed8d0fb90ad053324f31b	Tornado Cash Router	mixer
+eth	0x94a1b5cdb22c43faab4abeb5c74999895464ddaf	Tornado Cash (legacy mixer)	mixer
+eth	0xb541fc07bc7619fd4062a54d96268525cbc6ffef	Tornado Cash (legacy mixer)	mixer

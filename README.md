@@ -1,127 +1,83 @@
-# Cryptocurrency Tracing Tool
+# CryptoTracer
 
-Free, open-source blockchain forensics for scam victims and independent investigators. Trace BTC and ETH transactions hop by hop — no sign-up, no paywalls.
+Free, open-source blockchain forensics for scam victims and independent investigators. Trace Bitcoin and Ethereum funds hop by hop, find the exchange deposit address where they were cashed out, and export a report you can hand to an exchange or the police. No sign-up, no paywall.
 
-Built as a no-bullshit alternative to tools like Chainalysis and TRM Labs that charge $50k+/year.
+## What it does
 
-## Features
+| | |
+|---|---|
+| **Bitcoin + Ethereum** | BTC via Esplora (Blockstream / mempool.space), ETH + ERC-20 tokens + internal transfers via Etherscan API V2 |
+| **122k+ entity labels** | GraphSense TagPacks (exchanges, scams, ransomware, hacks, darknet, CoinJoin) + the OFAC sanctions list, each with a source link |
+| **Exchange deposit addresses** | Detects the customer deposit address funds were swept from (tutela / FC'20 heuristic): the detail an exchange needs to identify the account holder |
+| **Taint analysis** | Poison, Haircut and FIFO: how much of the stolen amount reached each address (UTXO-exact on Bitcoin) |
+| **Clustering** | Common-input ownership (union-find) and deposit-address reuse; labels propagate across a cluster |
+| **CoinJoin & mixers** | Whirlpool, Wasabi 1/2 and JoinMarket fingerprints; Tornado Cash address-match, gas-price and multi-denomination reveals |
+| **Change detection** | Address reuse, round amounts, script type, unnecessary input, each with a confidence score |
+| **Risk score** | 0–100 with reasons (sanctioned / scam / mixer exposure, CoinJoin and Tornado use) |
+| **Auto-trace** | Follow the money N hops forward, or walk back to the source of funds; stops at exchanges and mixers |
+| **Case files & exports** | Save and reopen investigations (JSON), CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
 
-- **BTC + ETH tracing** — follow fund flows across Bitcoin and Ethereum
-- **Visual transaction graph** — interactive force-directed graph with auto-layout
-- **Entity tagging** — automatically identifies exchanges, mixers, DeFi protocols, and flagged addresses
-- **Click to expand** — drill into any node to trace further hops
-- **Explorer links** — one click to Blockstream (BTC) or Etherscan (ETH)
-- **No account required** — completely free, runs locally or self-hosted
+Every heuristic is documented, with its limits, at `/methodology`.
 
-## Screenshots
+## Getting started
 
-> Coming soon
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- A free [Etherscan API key](https://etherscan.io/apis) (for ETH tracing — BTC works without any key)
-
-### Install
+Requires Node.js 20+.
 
 ```bash
 git clone https://github.com/TxWheat/Cryptocurrency-Tracing-Tool.git
 cd Cryptocurrency-Tracing-Tool
 npm install
-```
-
-### Configure
-
-```bash
-cp .env.local.example .env.local
-```
-
-Open `.env.local` and add your Etherscan API key:
-
-```
-ETHERSCAN_API_KEY=your_key_here
-```
-
-### Run
-
-```bash
+cp .env.local.example .env.local   # add ETHERSCAN_API_KEY for Ethereum
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open http://localhost:3000. Bitcoin works without any key.
 
-## How It Works
+> **Windows PowerShell 5:** run the commands one per line (`&&` is not supported). Use `copy` in place of `cp`.
 
-1. Enter a BTC or ETH address — chain is auto-detected
-2. The tool fetches recent transactions via free public APIs
-3. Counterparty addresses are extracted and laid out as a graph
-4. Known entities (exchanges, mixers, etc.) are tagged automatically
-5. Click any node to inspect it or expand it to trace the next hop
+## How to use it
 
-### Data Sources
+1. Paste a BTC or ETH address. The chain is auto-detected.
+2. Click a node to see its label, risk score, findings and cluster.
+3. **Transactions** lists its activity: **Follow** any sender or recipient to add them to the graph. **Load older transactions** pages back through history.
+4. **Auto-trace out** follows the largest outflows; **Source of funds** walks back along the largest inputs.
+5. On the address that received the stolen funds, click **Taint from here**, then choose Haircut / FIFO / Poison in the sidebar.
+6. **Report** opens a printable summary (Print → Save as PDF). **Save case** stores the investigation on your computer.
 
-| Chain | Source | Cost |
-|-------|--------|------|
-| Bitcoin | [Blockstream API](https://blockstream.info/api/) | Free, no key |
-| Ethereum | [Etherscan API](https://etherscan.io/apis) | Free tier |
+## Development
 
-### Node Colours
-
-| Colour | Meaning |
-|--------|---------|
-| Cyan | Origin address (your starting point) |
-| Green | Known exchange |
-| Red | Flagged / scam address |
-| Orange | Mixer / tumbler (e.g. Tornado Cash) |
-| Purple | DeFi protocol |
-| Grey | Unknown wallet |
-
-## Entity Database
-
-Known addresses are stored in [`data/labels.json`](data/labels.json). Currently includes:
-
-- Major exchanges: Binance, Coinbase, Kraken, OKX, Huobi, Bybit, Poloniex
-- Mixers: Tornado Cash pools
-- DeFi: Uniswap V2/V3, SushiSwap, 0x
-
-To add an address, edit `data/labels.json`:
-
-```json
-"0xYourAddressHere": {
-  "name": "Exchange Name",
-  "type": "exchange"
-}
+```bash
+npm test            # vitest: heuristics, taint, labels, chain clients (mocked upstream)
+npm run lint
+npm run typecheck
+npm run build
 ```
 
-Valid types: `exchange` | `mixer` | `scam` | `defi` | `wallet` | `unknown`
+### Refreshing labels
 
-## Tech Stack
+```bash
+git clone --depth 1 https://github.com/graphsense/graphsense-tagpacks.git /tmp/tagpacks
+git clone --depth 1 -b lists https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses.git /tmp/ofac
+npm run labels:build -- --tagpacks /tmp/tagpacks --ofac /tmp/ofac
+```
 
-- [Next.js 15](https://nextjs.org/) — framework + API routes
-- [ReactFlow](https://reactflow.dev/) — transaction graph
-- [Dagre](https://github.com/dagrejs/dagre) — automatic graph layout
-- [Tailwind CSS](https://tailwindcss.com/) — styling
+Hand-maintained labels live in `data/labels/curated.tsv`.
 
-## Roadmap
+### Layout
 
-- [ ] BSC / Polygon support
-- [ ] Multi-hop tracing (configurable depth)
-- [ ] PDF report export (for police / exchange fraud reports)
-- [ ] CIOH clustering (Bitcoin common-input-ownership heuristic)
-- [ ] Bulk address import from CSV
-- [ ] OFAC sanctions list integration
-- [ ] Community scam address submissions
+```
+lib/chains/        Esplora + Etherscan V2 clients (paginated, cached, rate-limited)
+lib/heuristics/    change, coinjoin, cluster, deposit-address, tornado
+lib/taint.ts       poison / haircut / FIFO
+lib/risk.ts        0–100 risk score
+lib/autotrace.ts   hop-limited crawler
+lib/labels.ts      label lookup (server only)
+app/api/[chain]/[address]          trace one page of an address
+app/api/screen/[chain]/[address]   JSON risk screening
+```
 
-## Contributing
+## Credits
 
-PRs welcome. If you know of a scam address that should be in the label database, open an issue or submit a PR to `data/labels.json`.
+Ideas and data from open-source projects: [pareto-xyz/tutela-app](https://github.com/pareto-xyz/tutela-app) (deposit reuse, Tornado reveals), [peterzen/heuristic](https://github.com/peterzen/heuristic) (CoinJoin fingerprints, risk model, source-of-funds walk), [s0md3v/Orbit](https://github.com/s0md3v/Orbit) (auto-trace, edge weighting, GraphML), [TrailBit-Labs/TaintTrail](https://github.com/TrailBit-Labs/TaintTrail) and [tintiron/taintedtx](https://github.com/tintiron/taintedtx) (taint models), [GraphSense TagPacks](https://github.com/graphsense/graphsense-tagpacks) (labels, MIT), [0xB10C OFAC list](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses). Code is reimplemented, not copied; no tutela code or data is included (it has no licence).
 
-## Disclaimer
-
-This tool is for investigative and educational purposes. It only reads publicly available on-chain data. No private keys, no wallets, no transactions are ever submitted.
-
-## License
-
-MIT
+Heuristics are leads, not proof. Verify findings on a block explorer before acting on them.

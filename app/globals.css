@@ -2,6 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens (Railgun-inspired): charcoal surfaces, hairline dividers,
+   one indigo accent. Stored as RGB channels so Tailwind opacity modifiers work. */
+:root {
+  --bg: 35 35 35;
+  --panel: 42 42 42;
+  --raised: 52 52 52;
+  --line: 66 66 66;
+  --fg: 244 244 244;
+  --muted: 168 168 168;
+  --faint: 118 118 118;
+  --accent: 91 79 230;
+  --accent-hover: 110 99 240;
+  --accent-fg: 255 255 255;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: 242 242 240;
+  --panel: 250 250 249;
+  --raised: 232 232 229;
+  --line: 212 212 208;
+  --fg: 24 24 24;
+  --muted: 88 88 88;
+  --faint: 140 140 140;
+  --accent: 84 71 222;
+  --accent-hover: 70 57 205;
+  --accent-fg: 255 255 255;
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -11,14 +41,36 @@ body {
   height: 100%;
 }
 
-/* Override ReactFlow default styles for dark theme */
-.react-flow__controls-button {
-  background: #0f172a !important;
-  border-color: #1e293b !important;
-  fill: #94a3b8 !important;
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
 }
 
+code,
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Halftone dot field, as on railgun.org */
+.halftone {
+  background-image: radial-gradient(rgb(var(--fg) / 0.1) 1px, transparent 1.3px);
+  background-size: 7px 7px;
+}
+
+/* ReactFlow chrome */
+.react-flow__controls {
+  box-shadow: none !important;
+}
+.react-flow__controls-button {
+  background: rgb(var(--panel)) !important;
+  border-color: rgb(var(--line)) !important;
+  fill: rgb(var(--muted)) !important;
+}
 .react-flow__controls-button:hover {
-  background: #1e293b !important;
-  fill: #f8fafc !important;
+  background: rgb(var(--raised)) !important;
+  fill: rgb(var(--fg)) !important;
+}
+.react-flow__edge-textbg {
+  fill: rgb(var(--panel));
 }
