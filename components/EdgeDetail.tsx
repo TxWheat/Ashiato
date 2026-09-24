@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { X, ExternalLink, ArrowRight, ArrowLeft, ArrowRightFromLine, ArrowLeftToLine, Check } from 'lucide-react'
+import { X, EyeOff, ExternalLink, ArrowRight, ArrowLeft, ArrowRightFromLine, ArrowLeftToLine, Check } from 'lucide-react'
 import { Chain, EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
 import { explorerTxUrl, fiatValue, fmtAmount, fmtDate } from '@/lib/format'
@@ -32,6 +32,8 @@ interface Props {
   onItemize: (ids: string[] | null) => void
   onLoadMore: () => void
   onClose: () => void
+  /** Remove this link from the graph (both directions); the addresses stay */
+  onHide: () => void
 }
 
 /** Contract-sent ETH: Etherscan lists these under "Internal Transactions", not "Transactions" */
@@ -98,7 +100,13 @@ export default function EdgeDetail(p: Props) {
       <div className="p-4 border-b border-line space-y-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-medium uppercase tracking-wider text-faint">Between two addresses</span>
-          <button onClick={p.onClose} className="text-faint hover:text-fg p-1" aria-label="Close"><X size={14} /></button>
+          <div className="flex items-center gap-1">
+            <button onClick={p.onHide} title="Hide this link from the graph (Delete key). The addresses stay; restore it from “hidden links” on the graph."
+              className="flex items-center gap-1 h-6 px-2 text-[11px] font-medium bg-raised hover:bg-line text-fg">
+              <EyeOff size={11} /> Hide link
+            </button>
+            <button onClick={p.onClose} className="text-faint hover:text-fg p-1" aria-label="Close"><X size={14} /></button>
+          </div>
         </div>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <Name a={p.a} />

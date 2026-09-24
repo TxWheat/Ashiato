@@ -155,6 +155,8 @@ export default function AddressInspector(p: Props) {
   const [sort, setSort] = useState<SortKey>('amount')
   const [asset, setAsset] = useState('')
   const [minAmount, setMinAmount] = useState('')
+  const [query, setQuery] = useState('')
+  const [shown, setShown] = useState(150)
   const [showSpam, setShowSpam] = useState(false)
   const [editing, setEditing] = useState(false)
   const type = node.label?.type ?? 'unknown'
@@ -201,13 +203,25 @@ export default function AddressInspector(p: Props) {
       txs: c => countOf(c),
       recent: c => lastOf(c),
     }
+    const q = query.trim().toLowerCase()
     return visibleCps
       .filter(c => Object.keys(sideOf(c)).length)
+      .filter(c => !q || c.address.toLowerCase().includes(q) || (p.nameOf(c.address) ?? '').toLowerCase().includes(q))
       .filter(c => !asset || sideOf(c)[asset] !== undefined)
       .filter(c => !asset || !min || amt(c) >= min)
       .sort((x, y) => score[sort](y) - score[sort](x))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.counterparties, filter, sort, asset, minAmount, showSpam, p.prices])
+  }, [p.counterparties, filter, sort, asset, minAmount, showSpam, p.prices, query])
+  // How far back the loaded history reaches: relationships only cover what's loaded
+  const loadedTimes = (p.page?.rawTxs ?? []).map(t => t.timestamp).filter(Boolean)
+  const oldestLoaded = loadedTimes.length ? Math.min(...loadedTimes) : 0
+  const q = query.trim().toLowerCase()
+  const otherSideHits = q && !list.length
+    ? visibleCps.filter(c => Object.keys(sideOf(c, filter === 'in' ? 'out' : 'in')).length && (c.address.toLowerCase().includes(q) || (p.nameOf(c.address) ?? '').toLowerCase().includes(q))).length
+    : 0
+  const hiddenSpamHits = q && !showSpam
+    ? p.counterparties.filter(c => isSpam(c) && (c.address.toLowerCase().includes(q) || (p.nameOf(c.address) ?? '').toLowerCase().includes(q))).length
+    : 0
   const notOnGraph = list.filter(c => !p.onGraph.has(c.address))
 
   const copy = () => {
@@ -300,6 +314,8 @@ export default function AddressInspector(p: Props) {
                   </button>
                 ))}
               </div>
+              <input value={query} onChange={e => { setQuery(e.target.value); setShown(150) }} placeholder="Find an address or name…" aria-label="Find a relationship"
+                className="w-full h-7 px-2 text-[11px] bg-panel border border-line text-fg placeholder:text-faint outline-none focus:border-accent" />
               <div className="flex items-center gap-1.5 text-[11px]">
                 <select value={sort} onChange={e => setSort(e.target.value as SortKey)} aria-label="Sort counterparties"
                   className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent">
@@ -338,8 +354,22 @@ export default function AddressInspector(p: Props) {
                 </button>
               ) : <span className="w-7 text-center">Add</span>}
             </div>
-            {list.length === 0 && <p className="p-4 text-[12px] text-faint">No {filter === 'in' ? 'incoming' : 'outgoing'} transactions loaded.</p>}
-            {list.map(c => {
+            {list.length === 0 && (
+              <div className="p-4 space-y-2 text-[12px] text-faint">
+                <p>{q ? `No ${filter === 'in' ? 'incoming' : 'outgoing'} relationship matches “${query.trim()}” in the loaded history.` : `No ${filter === 'in' ? 'incoming' : 'outgoing'} transactions loaded.`}</p>
+                {otherSideHits > 0 && (
+                  <button onClick={() => setFilter(filter === 'in' ? 'out' : 'in')} className="underline underline-offset-2 hover:text-fg">
+                    {otherSideHits} match{otherSideHits === 1 ? '' : 'es'} in {filter === 'in' ? 'outgoing' : 'incoming'} transactions
+                  </button>
+                )}
+                {hiddenSpamHits > 0 && (
+                  <button onClick={() => setShowSpam(true)} className="block underline underline-offset-2 hover:text-fg">
+                    {hiddenSpamHits} match{hiddenSpamHits === 1 ? '' : 'es'} hidden as spam, show
+                  </button>
+                )}
+              </div>
+            )}
+            {list.slice(0, shown).map(c => {
               const l = p.labelOf(c.address)
               const on = p.onGraph.has(c.address)
               return (
@@ -362,6 +392,25 @@ export default function AddressInspector(p: Props) {
                 </div>
               )
             })}
+            {list.length > shown && (
+              <div className="p-3 flex justify-center">
+                <button onClick={() => setShown(n => n + 300)} className="h-7 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg">
+                  Show {Math.min(300, list.length - shown)} more of {list.length - shown}
+                </button>
+              </div>
+            )}
+            <div className="px-4 py-3 border-t border-line text-[11px] text-faint space-y-2">
+              <p>
+                Relationships come from the {p.page?.rawTxs.length ?? 0} transactions loaded so far
+                {oldestLoaded ? `, back to ${fmtDate(oldestLoaded).split(' ').slice(0, 3).join(' ')}` : ''}.
+                {p.page?.nextCursor ? ' Older counterparties appear when you load more.' : ' That is the full history.'}
+              </p>
+              {p.page?.nextCursor && (
+                <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-7 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
+                  {p.loadingMore ? 'Loading…' : 'Load more history'}
+                </button>
+              )}
+            </div>
           </div>
         ) : p.tab === 'transactions' ? (
           <TxList {...p} />

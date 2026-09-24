@@ -10,7 +10,8 @@ import { etherscanLabel } from './eth-labels'
 // Override with ETHERSCAN_API_URL for a compatible proxy or tests
 const BASE = process.env.ETHERSCAN_API_URL || 'https://api.etherscan.io/v2/api'
 const CHAIN_ID = 1
-const PAGE_SIZE = 50
+// Per list (normal, internal, token): 3 calls load up to 1,500 rows. Etherscan caps page × offset at 10,000.
+const PAGE_SIZE = 500
 
 // Real contracts for commonly spoofed tokens. Scam airdrops mint look-alike
 // "USDT" tokens; a symbol from any other contract is shown as e.g. "USDT*".

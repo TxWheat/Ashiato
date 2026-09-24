@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick, EyeOff } from 'lucide-react'
 import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, TxIO, TxLookup, transferKey } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
@@ -112,6 +112,8 @@ function TracePageInner() {
   const [followedPairs, setFollowedPairs] = useState<Set<string>>(new Set())
   /** Per-transaction edge ids drawn individually instead of as a relationship line */
   const [itemizedIds, setItemizedIds] = useState<Set<string>>(new Set())
+  /** Address pairs whose link the user hid from the graph */
+  const [hiddenLinks, setHiddenLinks] = useState<Set<string>>(new Set())
   const [traced, setTraced] = useState<TracedFlow[]>([])
   const [traceEnds, setTraceEnds] = useState<TraceEnd[]>([])
   const [history, setHistory] = useState<Snapshot[]>([])
@@ -246,6 +248,7 @@ function TracePageInner() {
     setHubs(new Map())
     setFollowedPairs(new Set())
     setItemizedIds(new Set())
+    setHiddenLinks(new Set())
     setTraced([])
     setTraceEnds([])
     setFocusTrace(false)
@@ -551,8 +554,13 @@ function TracePageInner() {
 
   const graphEdges = useMemo(() => {
     const ids = new Set(graphNodes.map(n => n.address))
-    return allEdges.filter(e => ids.has(e.source) && ids.has(e.target))
-  }, [allEdges, graphNodes])
+    return allEdges.filter(e => ids.has(e.source) && ids.has(e.target) && !hiddenLinks.has(pairKey(e.source, e.target)))
+  }, [allEdges, graphNodes, hiddenLinks])
+  const graphTraced = useMemo(() => traced.filter(f => !hiddenLinks.has(pairKey(f.from, f.to))), [traced, hiddenLinks])
+  const hideLink = (a: string, b: string) => {
+    setHiddenLinks(prev => new Set(prev).add(pairKey(a, b)))
+    setSelection(null)
+  }
 
   // The searched transaction stays visible in Trail view: it is where the trail starts
   const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
@@ -587,8 +595,22 @@ function TracePageInner() {
   const itemizedEdges = useMemo(() => {
     if (!itemizedIds.size) return []
     const seen = new Set<string>()
-    return perTx.filter(e => itemizedIds.has(e.id) && !seen.has(e.id) && seen.add(e.id))
-  }, [perTx, itemizedIds])
+    return perTx.filter(e => itemizedIds.has(e.id) && !hiddenLinks.has(pairKey(e.source, e.target)) && !seen.has(e.id) && seen.add(e.id))
+  }, [perTx, itemizedIds, hiddenLinks])
+
+  // Delete / Backspace hides the selected link
+  useEffect(() => {
+    if (selection?.kind !== 'flow') return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !/INPUT|TEXTAREA|SELECT/.test(t.tagName) && !t.isContentEditable) {
+        e.preventDefault()
+        hideLink(selection.from, selection.to)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selection])
 
   const selectFlow = useCallback((from: string, to: string) => setSelection({ kind: 'flow', from, to }), [])
 
@@ -617,6 +639,7 @@ function TracePageInner() {
           taint,
           positions: Object.fromEntries([...positionsRef.current].filter(([a]) => visible.has(a) || hubs.has(a.replace(/^tx:/, '')))),
           itemizedIds: [...itemizedIds],
+          hiddenLinks: [...hiddenLinks],
         }
       : null
 
@@ -643,6 +666,7 @@ function TracePageInner() {
     setHubs(new Map((c.hubs ?? []).map(h => [h.txid, h])))
     setFollowedPairs(new Set(c.followedPairs))
     setItemizedIds(new Set(c.itemizedIds ?? []))
+    setHiddenLinks(new Set(c.hiddenLinks ?? []))
     setTraced(c.traced ?? [])
     setTraceEnds(c.traceEnds ?? [])
     setTaint(c.taint ?? null)
@@ -708,12 +732,12 @@ function TracePageInner() {
     }
     changeCount.current++
     setDirty(true)
-  }, [known, visible, pages, hubs, followedPairs, itemizedIds, traced, traceEnds, taint, layoutRev, myLabels])
+  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, traced, traceEnds, taint, layoutRev, myLabels])
   useEffect(() => {
     if (!autosave || !saved || !dirty || initialLoading) return
     const t = setTimeout(() => saveRef.current(saved.name, { quiet: true }), 1500)
     return () => clearTimeout(t)
-  }, [autosave, saved, dirty, initialLoading, layoutRev, known, visible, itemizedIds, traced])
+  }, [autosave, saved, dirty, initialLoading, layoutRev, known, visible, itemizedIds, hiddenLinks, traced])
 
   // Warn before leaving a case with changes that auto-save won't catch
   useEffect(() => {
@@ -755,6 +779,13 @@ function TracePageInner() {
               snapshot()
               showOnGraph([other])
             }
+            // Opening a relationship on purpose brings its link back if it was hidden
+            setHiddenLinks(prev => {
+              if (!prev.has(pairKey(a, other))) return prev
+              const next = new Set(prev)
+              next.delete(pairKey(a, other))
+              return next
+            })
             setSelection({ kind: 'flow', from: a, to: other })
           }}
           onShowTx={tx => {
@@ -837,6 +868,7 @@ function TracePageInner() {
             else flash('Transaction not loaded')
           }}
           onClose={() => setSelection(null)}
+          onHide={() => hideLink(selection.from, selection.to)}
         />
       )
     }
@@ -979,7 +1011,7 @@ function TracePageInner() {
               nodes={graphNodes}
               edges={graphEdges}
               followedPairs={followedPairs}
-              traced={traced}
+              traced={graphTraced}
               hubs={graphHubs}
               itemized={itemizedEdges}
               prices={prices}
@@ -1000,6 +1032,13 @@ function TracePageInner() {
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
               Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>. To follow money, open a transaction and press <b className="text-fg font-medium">Trace</b>. Click empty space to hide the panel.
+            </div>
+          )}
+
+          {hiddenLinks.size > 0 && !initialLoading && !error && (
+            <div className="absolute left-4 top-4 z-10 flex items-center gap-2 bg-panel border border-line px-3 h-8 text-[11px] text-muted">
+              <EyeOff size={12} /> {hiddenLinks.size} hidden link{hiddenLinks.size === 1 ? '' : 's'}
+              <button onClick={() => setHiddenLinks(new Set())} className="font-medium text-fg underline underline-offset-2 hover:text-accent">Show all</button>
             </div>
           )}
 

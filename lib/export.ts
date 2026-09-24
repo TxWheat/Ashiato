@@ -33,6 +33,8 @@ export interface CaseFile {
   positions?: Record<string, { x: number; y: number }>
   /** Transactions drawn as their own lines */
   itemizedIds?: string[]
+  /** Links (address pairs) the user hid from the graph */
+  hiddenLinks?: string[]
 }
 
 export function parseCase(text: string): CaseFile {
