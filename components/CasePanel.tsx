@@ -214,7 +214,7 @@ export default function CasePanel(p: CasePanelProps) {
           <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-dashed border-faint" />Likely change</div>
           <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-accent" />Traced / followed funds</div>
           <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-red-500" />Tainted flow</div>
-          <p className="text-[10px] text-faint pt-1">Thicker lines carry more value. Click any line to see its transactions. Dashed borders are inferred labels.</p>
+          <p className="text-[10px] text-faint pt-1">Thicker lines carry more value. Click any line to see its transactions. Dashed borders are inferred labels. With an address selected, <span className="text-green-500">green</span> boxes paid it and <span className="text-red-500">red</span> boxes were paid by it.</p>
         </div>
       </Section>
 

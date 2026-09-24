@@ -34,6 +34,14 @@ const HEURISTIC_NAME: Record<string, string> = {
 }
 
 interface Props {
+  /** Full-history load in progress for this address */
+  bulk?: { loaded: number; total?: number } | null
+  /** Another address's full history is loading (one at a time) */
+  bulkBusy?: boolean
+  onLoadAll?: () => void
+  onCancelBulk?: () => void
+  /** The panel is wide enough for table layouts */
+  wide?: boolean
   /**
    * Load another address's own history. Every transaction between two addresses is
    * in both histories, so a quiet counterparty reveals its relationship with a busy
@@ -80,6 +88,41 @@ interface Props {
 function amounts(rec: Record<string, number>, prices: Record<string, number>) {
   const { shown, rest } = topAssets(Object.entries(rec), prices)
   return shown.map(([asset, amt]) => fmtCompact(amt, asset)).join(' + ') + (rest ? ` +${rest} token${rest === 1 ? '' : 's'}` : '')
+}
+
+/** Load more / Load all, with progress while a full-history load runs */
+function HistoryControls(p: Props) {
+  const loaded = p.page?.rawTxs.length ?? 0
+  const total = p.node.chain === 'btc' && p.node.txCount > 0 ? p.node.txCount : undefined
+  if (p.bulk) {
+    const pct = p.bulk.total ? Math.min(100, Math.round((p.bulk.loaded / p.bulk.total) * 100)) : undefined
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2 text-[11px] text-muted">
+          <span className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          Loading full history… {p.bulk.loaded.toLocaleString()}{p.bulk.total ? ` of ${p.bulk.total.toLocaleString()}` : ''}
+          <button onClick={p.onCancelBulk} className="ml-auto h-6 px-2 text-[10px] font-medium bg-raised hover:bg-line text-fg">Stop</button>
+        </div>
+        {pct !== undefined && <div className="h-1 bg-raised"><div className="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} /></div>}
+      </div>
+    )
+  }
+  if (!p.page?.nextCursor) return null
+  const requests = total ? Math.ceil((total - loaded) / 25) : undefined
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-7 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
+        {p.loadingMore ? 'Loading…' : 'Load more history'}
+      </button>
+      {p.onLoadAll && (
+        <button onClick={p.onLoadAll} disabled={p.bulkBusy} title={p.bulkBusy ? 'Another address is loading its full history' : requests ? `About ${requests.toLocaleString()} requests to the block explorer` : 'Keeps loading until the full history is in'}
+          className="h-7 px-3 text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-50">
+          Load all{total ? ` ${total.toLocaleString()} transactions` : ' history'}
+        </button>
+      )}
+      {requests !== undefined && requests > 100 && <span className="text-[10px] text-faint">≈ {requests.toLocaleString()} requests, may take a few minutes</span>}
+    </div>
+  )
 }
 
 const LABEL_TYPES = (Object.keys(ENTITY_STYLE) as EntityType[]).filter(t => t !== 'unknown')
@@ -443,11 +486,7 @@ export default function AddressInspector(p: Props) {
                 {oldestLoaded ? `, back to ${fmtDate(oldestLoaded).split(' ').slice(0, 3).join(' ')}` : ''}.
                 {p.page?.nextCursor ? ' Older counterparties appear when you load more.' : ' That is the full history.'}
               </p>
-              {p.page?.nextCursor && (
-                <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-7 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
-                  {p.loadingMore ? 'Loading…' : 'Load more history'}
-                </button>
-              )}
+              <HistoryControls {...p} />
             </div>
           </div>
         ) : p.tab === 'transactions' ? (
@@ -461,8 +500,74 @@ export default function AddressInspector(p: Props) {
 }
 
 function TxList(p: Props) {
-  const txs = p.page?.rawTxs ?? []
+  const txs = p.page?.rawTxs
   const me = p.node.address
+  const [q, setQ] = useState('')
+  const [dirFilter, setDirFilter] = useState<'all' | 'in' | 'out'>('all')
+  const [onChartOnly, setOnChartOnly] = useState(false)
+  const [shown, setShown] = useState(150)
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+
+  const rows = useMemo(() => (txs ?? []).map(tx => {
+    const sent = tx.inputs.some(x => x.address === me)
+    const got = tx.outputs.some(x => x.address === me)
+    const dir: 'in' | 'out' | 'self' = sent && got && !tx.outputs.some(o => o.address !== me && !o.isChange) ? 'self' : sent ? 'out' : 'in'
+    const amount = dir === 'in'
+      ? tx.outputs.filter(o => o.address === me).reduce((s, o) => s + o.amount, 0)
+      : tx.outputs.filter(o => o.address !== me && !o.isChange).reduce((s, o) => s + o.amount, 0)
+    const others = dir === 'in' ? [...new Set(tx.inputs.map(x => x.address))].filter(a => a !== me) : [...new Set(tx.outputs.filter(o => o.address !== me && !o.isChange).map(o => o.address))]
+    return { tx, dir, amount, others }
+  }), [txs, me])
+
+  const needle = q.trim().toLowerCase()
+  // Date range in local time, inclusive of both days; pending (no timestamp) only without a range
+  const fromTs = from ? new Date(`${from}T00:00:00`).getTime() / 1000 : -Infinity
+  const toTs = to ? new Date(`${to}T23:59:59`).getTime() / 1000 : Infinity
+  const loadedTimes = rows.map(r => r.tx.timestamp).filter(Boolean)
+  const oldest = loadedTimes.length ? Math.min(...loadedTimes) : 0
+  const filtered = rows.filter(r =>
+    (dirFilter === 'all' || r.dir === dirFilter) &&
+    ((!from && !to) || (r.tx.timestamp >= fromTs && r.tx.timestamp <= toTs && r.tx.timestamp > 0)) &&
+    (!onChartOnly || r.others.some(a => p.onGraph.has(a))) &&
+    (!needle || r.tx.txid.toLowerCase().includes(needle) || r.others.some(a => a.toLowerCase().includes(needle) || (p.nameOf(a) ?? '').toLowerCase().includes(needle))))
+
+  const Addr = ({ a }: { a: string }) => (
+    <button onClick={() => p.onOpen(a)} title={a}
+      className={clsx('truncate hover:text-accent', !p.nameOf(a) && 'font-mono', p.onGraph.has(a) ? 'text-fg font-medium' : 'text-fg')}>
+      {p.nameOf(a) ?? truncate(a, 6)}
+      {p.onGraph.has(a) && <CheckCircle2 size={10} className="inline ml-1 -mt-0.5 text-accent" />}
+    </button>
+  )
+
+  const Actions = ({ tx, dir }: { tx: RawTransaction; dir: string }) => (
+    <div className="flex items-center gap-1 flex-shrink-0">
+      <a href={explorerTxUrl(tx.txid, tx.chain)} target="_blank" rel="noopener noreferrer" title={tx.txid} className="flex items-center gap-1 h-6 px-1.5 font-mono text-[10px] text-faint hover:text-fg">
+        {tx.txid.replace(/^0x/, '').slice(0, 8)}… <ExternalLink size={9} />
+      </a>
+      <button onClick={() => p.onShowTx(tx)} title="Draw this transaction on the graph as its own line"
+        className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg">
+        <Plus size={10} /> Graph
+      </button>
+      {dir !== 'out' && (
+        <button onClick={() => p.onTraceTx(tx, 'backward')} disabled={p.tracing} title="Walk these funds back to their source"
+          className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">
+          <ArrowLeftToLine size={10} /> Source
+        </button>
+      )}
+      {dir !== 'in' && (
+        <button onClick={() => p.onTraceTx(tx, 'forward')} disabled={p.tracing} title="Follow this payment onward"
+          className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
+          Trace <ArrowRightFromLine size={10} />
+        </button>
+      )}
+    </div>
+  )
+
+  const DirTag = ({ dir }: { dir: string }) => (
+    <span className={clsx('text-[9px] font-semibold uppercase px-1.5 py-0.5 text-center', dir === 'in' ? 'bg-green-500/20 text-green-500' : dir === 'out' ? 'bg-red-500/20 text-red-500' : 'bg-raised text-muted')}>{dir}</span>
+  )
+
   return (
     <div>
       {!!p.page?.warnings?.length && (
@@ -470,65 +575,111 @@ function TxList(p: Props) {
           {p.page.warnings.map((w, i) => <div key={i} className="flex gap-1.5"><AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{w}</div>)}
         </div>
       )}
-      {txs.length === 0 && <p className="p-4 text-[12px] text-faint">No transactions found.</p>}
-      {txs.map((tx, i) => {
-        const sent = tx.inputs.some(x => x.address === me)
-        const got = tx.outputs.some(x => x.address === me)
-        const dir = sent && got && !tx.outputs.some(o => o.address !== me && !o.isChange) ? 'self' : sent ? 'out' : 'in'
-        const amount = dir === 'in'
-          ? tx.outputs.filter(o => o.address === me).reduce((s, o) => s + o.amount, 0)
-          : tx.outputs.filter(o => o.address !== me && !o.isChange).reduce((s, o) => s + o.amount, 0)
-        const others = dir === 'in' ? [...new Set(tx.inputs.map(x => x.address))].filter(a => a !== me) : tx.outputs.filter(o => o.address !== me && !o.isChange).map(o => o.address)
-        const first = others[0]
-        return (
-          <div key={`${transferKey(tx)}:${i}`} className="px-4 py-3 border-b border-line/60 hover:bg-panel">
-            <div className="flex items-center gap-2">
-              <span className={clsx('text-[9px] font-medium uppercase px-1.5 py-0.5', dir === 'in' ? 'bg-green-500/15 text-green-500' : dir === 'out' ? 'bg-red-500/15 text-red-500' : 'bg-raised text-muted')}>{dir}</span>
-              <span className="text-[11px] text-faint">{fmtDate(tx.timestamp)}</span>
-              {tx.coinjoin && <span className="text-[9px] px-1 bg-orange-500/15 text-orange-500" title={tx.coinjoin.reasons.join('; ')}>{tx.coinjoin.kind} CoinJoin</span>}
-              {tx.kind === 'internal' ? <InternalBadge /> : tx.kind === 'token' && <span className="text-[9px] px-1 bg-raised text-faint">token</span>}
-              <span className={clsx('ml-auto font-mono text-[12px]', dir === 'in' ? 'text-green-500' : dir === 'out' ? 'text-fg' : 'text-muted')}>
-                {dir === 'in' ? '+' : dir === 'out' ? '−' : ''}{fmtAmount(amount, tx.asset, 8)}
-              </span>
-            </div>
-            <div className="mt-1.5 flex items-center gap-2 text-[11px]">
-              <span className="text-faint">{dir === 'in' ? 'from' : 'to'}</span>
-              {first ? (
-                <button onClick={() => p.onOpen(first)} className={clsx('truncate text-fg hover:text-accent', !p.nameOf(first) && 'font-mono')} title={first}>
-                  {p.nameOf(first) ?? truncate(first, 6)}
-                </button>
-              ) : <span className="text-faint">itself</span>}
-              {others.length > 1 && <span className="text-faint whitespace-nowrap">+{others.length - 1} more</span>}
-              <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-                <a href={explorerTxUrl(tx.txid, tx.chain)} target="_blank" rel="noopener noreferrer" title={tx.txid} className="flex items-center gap-1 h-6 px-1.5 font-mono text-[10px] text-faint hover:text-fg">
-                  {tx.txid.slice(0, 8)}… <ExternalLink size={9} />
-                </a>
-                <button onClick={() => p.onShowTx(tx)} title="Draw this transaction on the graph as its own line"
-                  className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg">
-                  <Plus size={10} /> Graph
-                </button>
-                {dir !== 'out' && (
-                  <button onClick={() => p.onTraceTx(tx, 'backward')} disabled={p.tracing} title="Walk these funds back to their source"
-                    className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">
-                    <ArrowLeftToLine size={10} /> Source
-                  </button>
-                )}
-                {dir !== 'in' && (
-                  <button onClick={() => p.onTraceTx(tx, 'forward')} disabled={p.tracing} title="Follow this payment onward"
-                    className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
-                    Trace <ArrowRightFromLine size={10} />
-                  </button>
-                )}
+      <div className="px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10 space-y-2">
+        <input value={q} onChange={e => { setQ(e.target.value); setShown(150) }} placeholder="Find an address, name or tx hash…" aria-label="Find a transaction"
+          className="w-full h-7 px-2 text-[11px] bg-panel border border-line text-fg placeholder:text-faint outline-none focus:border-accent" />
+        <div className="flex items-center gap-2 text-[11px]">
+          <div className="flex border border-line">
+            {(['all', 'in', 'out'] as const).map(d => (
+              <button key={d} onClick={() => setDirFilter(d)}
+                className={clsx('h-6 px-2.5 font-medium uppercase text-[10px]', dirFilter === d ? (d === 'in' ? 'bg-green-500/20 text-green-500' : d === 'out' ? 'bg-red-500/20 text-red-500' : 'bg-raised text-fg') : 'text-faint hover:text-fg')}>
+                {d}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-1.5 text-faint cursor-pointer">
+            <input type="checkbox" checked={onChartOnly} onChange={e => setOnChartOnly(e.target.checked)} className="accent-[rgb(var(--accent))]" />
+            On chart only
+          </label>
+          <span className="ml-auto text-[10px] text-faint">{filtered.length} of {rows.length}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
+          <span>From</span>
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)} aria-label="From date"
+            className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent" />
+          <span>to</span>
+          <input type="date" value={to} onChange={e => setTo(e.target.value)} aria-label="To date"
+            className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent" />
+          {(from || to) && <button onClick={() => { setFrom(''); setTo('') }} className="underline underline-offset-2 hover:text-fg">Clear</button>}
+        </div>
+        {from && oldest > 0 && fromTs < oldest && p.page?.nextCursor && (
+          <p className="text-[10px] text-yellow-600">
+            Loaded history only reaches back to {fmtDate(oldest).split(' ').slice(0, 3).join(' ')}. Load more (or Load all) to cover the start of this range.
+          </p>
+        )}
+      </div>
+      {filtered.length === 0 && <p className="p-4 text-[12px] text-faint">{rows.length ? 'No loaded transactions match.' : 'No transactions found.'}</p>}
+
+      {p.wide && filtered.length > 0 && (
+        <div className="grid grid-cols-[150px_52px_minmax(0,1fr)_170px_auto] gap-x-3 px-4 py-1.5 border-b border-line text-[10px] uppercase tracking-wider text-faint">
+          <span>Date</span><span>Dir</span><span>Address</span><span className="text-right">Amount</span><span className="text-right pr-1">Tx · actions</span>
+        </div>
+      )}
+
+      {filtered.slice(0, shown).map(({ tx, dir, amount, others }, i) => {
+        const onChart = others.some(a => p.onGraph.has(a))
+        const tint = clsx(
+          dir === 'in' ? (onChart ? 'bg-green-500/[0.12] border-l-2 border-l-green-500' : 'bg-green-500/[0.04] border-l-2 border-l-transparent')
+            : dir === 'out' ? (onChart ? 'bg-red-500/[0.12] border-l-2 border-l-red-500' : 'bg-red-500/[0.04] border-l-2 border-l-transparent')
+              : 'border-l-2 border-l-transparent',
+        )
+        const value = fiatValue(amount, tx.asset, p.prices)
+        const amountCell = (
+          <span className={clsx('font-mono text-[12px] whitespace-nowrap', dir === 'in' ? 'text-green-500' : dir === 'out' ? 'text-fg' : 'text-muted')}>
+            {dir === 'in' ? '+' : dir === 'out' ? '−' : ''}{fmtAmount(amount, tx.asset, 8)}
+          </span>
+        )
+        const badges = (
+          <>
+            {tx.coinjoin && <span className="text-[9px] px-1 bg-orange-500/15 text-orange-500" title={tx.coinjoin.reasons.join('; ')}>{tx.coinjoin.kind} CoinJoin</span>}
+            {tx.kind === 'internal' ? <InternalBadge /> : tx.kind === 'token' && <span className="text-[9px] px-1 bg-raised text-faint">token</span>}
+          </>
+        )
+        if (p.wide) {
+          return (
+            <div key={`${transferKey(tx)}:${i}`} className={clsx('grid grid-cols-[150px_52px_minmax(0,1fr)_170px_auto] gap-x-3 items-center px-4 py-2 border-b border-line/60 hover:bg-panel', tint)}>
+              <span className="text-[11px] text-faint">{tx.timestamp ? fmtDate(tx.timestamp) : 'pending'}</span>
+              <DirTag dir={dir} />
+              <div className="flex items-center gap-2 min-w-0 text-[11px]">
+                {others.length ? others.slice(0, 3).map(a => <Addr key={a} a={a} />) : <span className="text-faint">itself</span>}
+                {others.length > 3 && <span className="text-faint whitespace-nowrap">+{others.length - 3} more</span>}
+                {badges}
               </div>
+              <div className="text-right leading-tight">
+                {amountCell}
+                {value > 0 && <div className="text-[10px] text-faint">≈ {fmtFiatShort(value)} NZD</div>}
+              </div>
+              <Actions tx={tx} dir={dir} />
+            </div>
+          )
+        }
+        return (
+          <div key={`${transferKey(tx)}:${i}`} className={clsx('px-4 py-3 border-b border-line/60 hover:bg-panel', tint)}>
+            <div className="flex items-center gap-2">
+              <DirTag dir={dir} />
+              <span className="text-[11px] text-faint">{tx.timestamp ? fmtDate(tx.timestamp) : 'pending'}</span>
+              {badges}
+              <span className="ml-auto">{amountCell}</span>
+            </div>
+            <div className="mt-1.5 flex items-center gap-2 text-[11px] min-w-0">
+              <span className="text-faint">{dir === 'in' ? 'from' : 'to'}</span>
+              {others[0] ? <Addr a={others[0]} /> : <span className="text-faint">itself</span>}
+              {others.length > 1 && <span className="text-faint whitespace-nowrap">+{others.length - 1} more</span>}
+              <div className="ml-auto"><Actions tx={tx} dir={dir} /></div>
             </div>
           </div>
         )
       })}
-      {p.page?.nextCursor && (
+      {filtered.length > shown && (
         <div className="p-3 flex justify-center">
-          <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-8 px-4 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
-            {p.loadingMore ? 'Loading…' : 'Load older transactions'}
+          <button onClick={() => setShown(n => n + 300)} className="h-7 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg">
+            Show {Math.min(300, filtered.length - shown)} more
           </button>
+        </div>
+      )}
+      {(p.page?.nextCursor || p.bulk) && (
+        <div className="p-3">
+          <HistoryControls {...p} />
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactFlow, {
   Node,
   Edge,
@@ -150,12 +150,49 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   pinned.current = positions
   const nodeCount = useRef(0)
 
+  // Highlight the selected address's counterparties: green paid it, red were paid by it
+  const relation = useMemo(() => {
+    const m = new Map<string, 'in' | 'out' | 'both'>()
+    if (!selected) return m
+    for (const e of edgeData) {
+      if (e.isChange) continue
+      const other: string | null = e.target === selected ? e.source : e.source === selected ? e.target : null
+      if (!other || other === selected) continue
+      const r: 'in' | 'out' = e.target === selected ? 'in' : 'out'
+      const ex = m.get(other)
+      m.set(other, ex && ex !== r ? 'both' : r)
+    }
+    return m
+  }, [edgeData, selected])
+
+  // Newly added addresses pulse for a few seconds so they're easy to spot
+  const seenIds = useRef<Set<string> | null>(null)
+  const [fresh, setFresh] = useState<Set<string>>(new Set())
+  const freshTimers = useRef<ReturnType<typeof setTimeout>[]>([])
+  useEffect(() => {
+    const ids = nodeData.map(n => n.address)
+    if (!seenIds.current) {
+      seenIds.current = new Set(ids)
+      return
+    }
+    const added = ids.filter(id => !seenIds.current!.has(id))
+    for (const id of ids) seenIds.current.add(id)
+    if (!added.length) return
+    setFresh(prev => new Set([...prev, ...added]))
+    // Not cleared when nodeData changes again (labels and pages keep arriving); only on unmount
+    freshTimers.current.push(setTimeout(() => setFresh(prev => new Set([...prev].filter(id => !added.includes(id)))), 3500))
+  }, [nodeData])
+  useEffect(() => () => freshTimers.current.forEach(clearTimeout), [])
+
   const rawNodes: Node[] = useMemo(
     () => [
-      ...nodeData.map(n => ({ id: n.address, type: 'addressNode', position: { x: 0, y: 0 }, data: n, selected: n.address === selected })),
+      ...nodeData.map(n => ({
+        id: n.address, type: 'addressNode', position: { x: 0, y: 0 }, selected: n.address === selected,
+        data: { ...n, view: { ...n.view, relation: relation.get(n.address), fresh: fresh.has(n.address) } },
+      })),
       ...hubs.map(h => ({ id: `tx:${h.txid}`, type: 'tx', position: { x: 0, y: 0 }, data: h, selected: h.txid === selectedHub })),
     ],
-    [nodeData, hubs, selected, selectedHub]
+    [nodeData, hubs, selected, selectedHub, relation, fresh]
   )
 
   const rawEdges: Edge[] = useMemo(() => {

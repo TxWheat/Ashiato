@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick, EyeOff } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick, EyeOff, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, TxIO, TxLookup, transferKey } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
@@ -46,6 +46,8 @@ interface Snapshot {
 const STOP_AT: EntityType[] = ['exchange', 'deposit', 'mixer', 'coinjoin', 'sanctioned', 'defi']
 /** Older pages loaded per address while following funds */
 const MAX_EXTRA_PAGES = 5
+/** BTC addresses with at most this many transactions load their full history automatically */
+const AUTO_FULL_HISTORY_BTC = 500
 /** Participants of a searched transaction put on the graph straight away (per side) */
 const TX_PARTICIPANTS = 6
 
@@ -136,6 +138,38 @@ function TracePageInner() {
   const restoring = useRef(false)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
+  // Right panel width: drag to resize, or expand for a wide table view (remembered)
+  const [panelW, setPanelW] = useState(400)
+  const [panelExpanded, setPanelExpanded] = useState(false)
+  const [resizing, setResizing] = useState(false)
+  useEffect(() => {
+    try {
+      const w = Number(localStorage.getItem('cryptotracer.panelWidth'))
+      if (w >= 320) setPanelW(w)
+    } catch { /* storage blocked */ }
+  }, [])
+  const panelCss = panelExpanded ? 'min(1180px, 78vw)' : `min(${panelW}px, 70vw)`
+  const panelWide = panelExpanded || panelW >= 680
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setResizing(true)
+    const move = (ev: MouseEvent) => {
+      const w = Math.max(320, Math.min(window.innerWidth * 0.8, window.innerWidth - ev.clientX))
+      setPanelExpanded(false)
+      setPanelW(Math.round(w))
+    }
+    const up = () => {
+      setResizing(false)
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      setPanelW(w => {
+        try { localStorage.setItem('cryptotracer.panelWidth', String(w)) } catch { /* storage blocked */ }
+        return w
+      })
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
   /** The browser-saved chart this view came from, so Save updates it */
   const [saved, setSaved] = useState<{ id: string; name: string } | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -388,6 +422,49 @@ function TracePageInner() {
     showOnGraph(fresh)
     if (selection?.kind === 'address') setFollowedPairs(prev => new Set([...prev, ...fresh.map(a => pairKey(selection.id, a))]))
   }
+
+  // ── Full history ─────────────────────────────────────────────────────────
+  // Small Bitcoin addresses load their whole history automatically; big ones
+  // (thousands of txs = hundreds of 25-tx Esplora requests) on request, with progress.
+  const [bulk, setBulk] = useState<{ addr: string; loaded: number; total?: number } | null>(null)
+  const bulkCancel = useRef(false)
+  const bulkBusy = useRef(false)
+  const autoLoaded = useRef(new Set<string>())
+
+  const loadAllFor = useCallback(async (addr: string) => {
+    if (bulkBusy.current) return
+    bulkBusy.current = true
+    bulkCancel.current = false
+    const chain = knownRef.current.get(addr)?.chain ?? originChain ?? 'btc'
+    const total = chain === 'btc' ? knownRef.current.get(addr)?.txCount : undefined
+    try {
+      let page = pagesRef.current.get(addr)
+      setBulk({ addr, loaded: page?.rawTxs.length ?? 0, total })
+      while (page?.nextCursor && !bulkCancel.current) {
+        absorb(await fetchTrace(addr, chain, page.nextCursor), [], true)
+        page = pagesRef.current.get(addr)
+        setBulk({ addr, loaded: page?.rawTxs.length ?? 0, total })
+      }
+    } catch (e) {
+      flash(e instanceof Error ? `Stopped loading history: ${e.message}` : 'Stopped loading history')
+    } finally {
+      bulkBusy.current = false
+      setBulk(null)
+    }
+  }, [absorb, originChain, flash])
+
+  useEffect(() => {
+    if (bulkBusy.current) return
+    for (const [addr, page] of pages) {
+      const n = known.get(addr)
+      if (!page.nextCursor || n?.chain !== 'btc' || autoLoaded.current.has(addr)) continue
+      if (n.txCount > 0 && n.txCount <= AUTO_FULL_HISTORY_BTC) {
+        autoLoaded.current.add(addr)
+        loadAllFor(addr)
+        return // one at a time; the next runs when this one's pages land
+      }
+    }
+  }, [pages, known, loadAllFor])
 
   /** Loads the next page of history for each address that has more */
   const loadMoreFor = async (addrs: string[]) => {
@@ -852,6 +929,11 @@ function TracePageInner() {
           }}
           onRemove={() => removeNode(a)}
           onLoadMore={loadMore}
+          wide={panelWide}
+          bulk={bulk?.addr === a ? bulk : null}
+          bulkBusy={!!bulk && bulk.addr !== a}
+          onLoadAll={() => loadAllFor(a)}
+          onCancelBulk={() => { bulkCancel.current = true }}
           onLookupAddress={async other => {
             if (!(await ensurePage(other))) throw new Error('lookup failed')
           }}
@@ -1092,12 +1174,33 @@ function TracePageInner() {
           <aside
             aria-hidden={!selection}
             className={clsx(
-              'flex-shrink-0 bg-bg overflow-hidden transition-[width] duration-200 ease-out',
-              selection ? 'w-[400px] max-w-[45vw] border-l border-line' : 'w-0'
+              'relative flex-shrink-0 bg-bg overflow-hidden',
+              !resizing && 'transition-[width] duration-200 ease-out',
+              selection && 'border-l border-line'
             )}
+            style={{ width: selection ? panelCss : 0 }}
           >
-            {/* Fixed inner width so content doesn't reflow while the panel slides */}
-            {selection && <div className="w-[400px] max-w-[45vw] h-full flex flex-col min-h-0">{inspector}</div>}
+            {selection && (
+              <>
+                {/* Drag to resize; the grip toggles a wide, table-style view */}
+                <div
+                  onMouseDown={startResize}
+                  onDoubleClick={() => setPanelExpanded(v => !v)}
+                  className="absolute left-0 top-0 h-full w-1.5 z-20 cursor-col-resize hover:bg-accent/40"
+                  title="Drag to resize · double-click to expand"
+                />
+                <button
+                  onClick={() => setPanelExpanded(v => !v)}
+                  className="absolute left-0 top-1/2 -translate-y-1/2 z-30 grid place-items-center w-3 h-12 bg-panel border border-l-0 border-line text-faint hover:text-fg hover:border-accent"
+                  title={panelExpanded ? 'Shrink the panel' : 'Expand the panel (bigger transaction and relationship tables)'}
+                  aria-label={panelExpanded ? 'Shrink panel' : 'Expand panel'}
+                >
+                  {panelExpanded ? <ChevronsRight size={12} /> : <ChevronsLeft size={12} />}
+                </button>
+                {/* Fixed inner width so content doesn't reflow while the panel slides */}
+                <div className="h-full flex flex-col min-h-0" style={{ width: panelCss }}>{inspector}</div>
+              </>
+            )}
           </aside>
         )}
       </div>

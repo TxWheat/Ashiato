@@ -12,6 +12,10 @@ export interface AddressNodeData extends NodeData {
     taintAsset?: string
     isTaintSeed?: boolean
     loading?: boolean
+    /** Relative to the selected address: sent it funds (in), received from it (out), or both */
+    relation?: 'in' | 'out' | 'both'
+    /** Just added to the chart */
+    fresh?: boolean
   }
 }
 
@@ -35,9 +39,24 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
         data.isOrigin ? 'border-accent border-2' : labelled ? `${style.border} border-2` : 'border-line',
         data.label?.inferredBy && 'border-dashed',
         selected && 'ring-2 ring-accent/60',
+        data.view.relation === 'in' && 'shadow-[0_0_0_2px_rgb(34_197_94),0_0_22px_rgb(34_197_94/0.45)]',
+        data.view.relation === 'out' && 'shadow-[0_0_0_2px_rgb(239_68_68),0_0_22px_rgb(239_68_68/0.45)]',
+        data.view.relation === 'both' && 'shadow-[0_0_0_2px_rgb(234_179_8),0_0_22px_rgb(234_179_8/0.45)]',
+        data.view.fresh && 'node-fresh',
         data.view.loading && 'animate-pulse'
       )}
     >
+      {data.view.relation && (
+        <span
+          className={clsx(
+            'absolute -top-2.5 left-2 px-1.5 text-[9px] font-semibold uppercase tracking-wider text-white',
+            data.view.relation === 'in' ? 'bg-green-500' : data.view.relation === 'out' ? 'bg-red-500' : 'bg-yellow-500'
+          )}
+          title={data.view.relation === 'in' ? 'Sent funds to the selected address' : data.view.relation === 'out' ? 'Received funds from the selected address' : 'Sent and received funds with the selected address'}
+        >
+          {data.view.relation === 'in' ? 'in' : data.view.relation === 'out' ? 'out' : 'in + out'}
+        </span>
+      )}
       <Handle type="target" position={Position.Left} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
 
       <div className="flex items-center gap-1.5 mb-1.5 text-[9px] font-medium uppercase tracking-wider">
