@@ -394,8 +394,13 @@ function TracePageInner() {
     setLoadingMore(true)
     try {
       for (const addr of addrs) {
-        const cursor = pagesRef.current.get(addr)?.nextCursor
-        if (cursor) absorb(await fetchTrace(addr, chainOf(addr), cursor), [], true)
+        // Esplora returns only 25 BTC transactions per call, so fetch 4 pages per click
+        const pagesPerClick = chainOf(addr) === 'btc' ? 4 : 1
+        for (let i = 0; i < pagesPerClick; i++) {
+          const cursor = pagesRef.current.get(addr)?.nextCursor
+          if (!cursor) break
+          absorb(await fetchTrace(addr, chainOf(addr), cursor), [], true)
+        }
       }
     } catch (e) {
       flash(e instanceof Error ? e.message : 'Failed to load more')
@@ -404,6 +409,40 @@ function TracePageInner() {
     }
   }
   const loadMore = () => (selection?.kind === 'address' ? loadMoreFor([selection.id]) : undefined)
+
+  /**
+   * Every transaction between A and B is in both histories, so once either side's
+   * full history is loaded the relationship is complete. Otherwise load the side
+   * that's missing first (cheap), then older pages of both.
+   */
+  const pairHistory = (a: string, b: string) => {
+    const full = [a, b].find(x => pages.get(x) && !pages.get(x)!.nextCursor)
+    const count = (x: string) => pages.get(x)?.rawTxs.length ?? 0
+    const nm = (x: string) => nameOf(x) ?? truncate(x, 6)
+    if (full) {
+      return {
+        canLoadMore: false,
+        historyNote: `All transactions between these addresses are loaded: ${nm(full)}'s full history (${count(full)} transactions) is loaded.`,
+        onLoadMore: () => {},
+      }
+    }
+    const missing = [a, b].filter(x => !pages.get(x))
+    return {
+      canLoadMore: true,
+      historyNote: missing.length
+        ? `${missing.map(nm).join(' and ')}'s history isn't loaded yet; it may hold more transactions between them.`
+        : `Only the latest ${count(a)} of ${nm(a)}'s and ${count(b)} of ${nm(b)}'s transactions are loaded. Load more fetches older ones for both.`,
+      onLoadMore: async () => {
+        if (!missing.length) return loadMoreFor([a, b].filter(x => pages.get(x)?.nextCursor))
+        setLoadingMore(true)
+        try {
+          for (const x of missing) await ensurePage(x)
+        } finally {
+          setLoadingMore(false)
+        }
+      },
+    }
+  }
 
   const removeNode = (addr: string) => {
     snapshot()
@@ -813,6 +852,9 @@ function TracePageInner() {
           }}
           onRemove={() => removeNode(a)}
           onLoadMore={loadMore}
+          onLookupAddress={async other => {
+            if (!(await ensurePage(other))) throw new Error('lookup failed')
+          }}
           myLabel={myLabelOf(a)}
           baseLabel={known.get(a)?.label ?? btcLabels.current.get(a)}
           onSaveLabel={l => setMyLabel(selectedNode.chain, a, l)}
@@ -837,9 +879,8 @@ function TracePageInner() {
           rows={edgeRows}
           itemized={itemizedIds}
           initialTab={edgeRows.some(r => itemizedIds.has(r.id)) ? 'transactions' : 'relationship'}
-          canLoadMore={!!(pages.get(selection.from)?.nextCursor || pages.get(selection.to)?.nextCursor)}
+          {...pairHistory(selection.from, selection.to)}
           loadingMore={loadingMore}
-          onLoadMore={() => loadMoreFor([selection.from, selection.to])}
           onToggleItem={id => setItemizedIds(prev => {
             const n = new Set(prev)
             if (n.has(id)) n.delete(id)

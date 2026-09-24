@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
@@ -12,7 +12,7 @@ import { Counterparty, FlowSummary } from '@/lib/counterparties'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { LoadedPage } from '@/lib/export'
 import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue, MAJOR_ASSETS, topAssets } from '@/lib/format'
-import { truncate } from '@/lib/detect-chain'
+import { truncate, detectChain, normaliseAddress } from '@/lib/detect-chain'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
 
@@ -34,6 +34,12 @@ const HEURISTIC_NAME: Record<string, string> = {
 }
 
 interface Props {
+  /**
+   * Load another address's own history. Every transaction between two addresses is
+   * in both histories, so a quiet counterparty reveals its relationship with a busy
+   * address without paging through thousands of the busy one's transactions.
+   */
+  onLookupAddress?: (address: string) => Promise<void>
   /** Your own label for this address (overrides every other source) */
   myLabel?: MyLabel
   /** The label from datasets / heuristics, shown when you edit */
@@ -157,6 +163,7 @@ export default function AddressInspector(p: Props) {
   const [minAmount, setMinAmount] = useState('')
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(150)
+  const [lookup, setLookup] = useState<{ address: string; state: 'loading' | 'done' | 'failed' } | null>(null)
   const [showSpam, setShowSpam] = useState(false)
   const [editing, setEditing] = useState(false)
   const type = node.label?.type ?? 'unknown'
@@ -219,6 +226,29 @@ export default function AddressInspector(p: Props) {
   const otherSideHits = q && !list.length
     ? visibleCps.filter(c => Object.keys(sideOf(c, filter === 'in' ? 'out' : 'in')).length && (c.address.toLowerCase().includes(q) || (p.nameOf(c.address) ?? '').toLowerCase().includes(q))).length
     : 0
+  // A pasted full address that isn't in the loaded relationships: fetch its own history
+  const pasted = (() => {
+    const raw = query.trim()
+    const chain = raw ? detectChain(raw) : null
+    return chain === node.chain ? normaliseAddress(raw, chain) : null
+  })()
+  const pastedFound = !!pasted && p.counterparties.some(c => c.address === pasted)
+  useEffect(() => {
+    if (!pasted || pastedFound || pasted === node.address || !p.onLookupAddress) return
+    if (lookup?.address === pasted) return
+    setLookup({ address: pasted, state: 'loading' })
+    p.onLookupAddress(pasted)
+      .then(() => setLookup({ address: pasted, state: 'done' }))
+      .catch(() => setLookup({ address: pasted, state: 'failed' }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasted, pastedFound])
+  // Show the match in whichever direction it is
+  useEffect(() => {
+    if (!pastedFound || !pasted) return
+    const c = p.counterparties.find(x => x.address === pasted)
+    if (c && !Object.keys(sideOf(c)).length) setFilter(filter === 'in' ? 'out' : 'in')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastedFound, pasted])
   const hiddenSpamHits = q && !showSpam
     ? p.counterparties.filter(c => isSpam(c) && (c.address.toLowerCase().includes(q) || (p.nameOf(c.address) ?? '').toLowerCase().includes(q))).length
     : 0
@@ -258,7 +288,7 @@ export default function AddressInspector(p: Props) {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
           <span className="text-faint">Balance <span className="font-mono text-fg">{node.isExpanded || node.isOrigin ? fmtBalance(node.balance, node.chain) : '…'}</span></span>
-          <span className="text-faint">Txs <span className="text-fg">{p.page ? `${p.page.rawTxs.length} loaded` : '…'}{node.chain === 'btc' && node.txCount > 0 ? ` / ${node.txCount.toLocaleString()}` : ''}</span></span>
+          <span className="text-faint">Txs <span className="text-fg">{p.page ? `${p.page.rawTxs.length.toLocaleString()} loaded` : '…'}{node.chain === 'btc' && node.txCount > 0 ? ` of ${node.txCount.toLocaleString()} on-chain` : ''}</span></span>
           {node.risk && (
             <span className="flex items-center gap-1.5 text-faint">
               Risk
@@ -356,7 +386,15 @@ export default function AddressInspector(p: Props) {
             </div>
             {list.length === 0 && (
               <div className="p-4 space-y-2 text-[12px] text-faint">
-                <p>{q ? `No ${filter === 'in' ? 'incoming' : 'outgoing'} relationship matches “${query.trim()}” in the loaded history.` : `No ${filter === 'in' ? 'incoming' : 'outgoing'} transactions loaded.`}</p>
+                {pasted && lookup?.address === pasted && lookup.state === 'loading' ? (
+                  <p className="flex items-center gap-2"><span className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" /> Not in the loaded history. Loading {truncate(pasted, 6)}’s own history to find transactions between them…</p>
+                ) : pasted && lookup?.address === pasted && lookup.state === 'done' ? (
+                  <p>No transactions between these addresses in {truncate(pasted, 6)}’s loaded history. If it’s also a busy address, open it and load more of its history.</p>
+                ) : pasted && lookup?.address === pasted && lookup.state === 'failed' ? (
+                  <p>Could not load {truncate(pasted, 6)}’s history. Try again in a moment.</p>
+                ) : (
+                  <p>{q ? `No ${filter === 'in' ? 'incoming' : 'outgoing'} relationship matches “${query.trim()}” in the loaded history. Paste a full address to look it up directly.` : `No ${filter === 'in' ? 'incoming' : 'outgoing'} transactions loaded.`}</p>
+                )}
                 {otherSideHits > 0 && (
                   <button onClick={() => setFilter(filter === 'in' ? 'out' : 'in')} className="underline underline-offset-2 hover:text-fg">
                     {otherSideHits} match{otherSideHits === 1 ? '' : 'es'} in {filter === 'in' ? 'outgoing' : 'incoming'} transactions

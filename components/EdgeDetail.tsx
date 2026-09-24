@@ -22,6 +22,8 @@ interface Props {
   /** Per-transaction ids currently drawn individually on the graph */
   itemized: Set<string>
   canLoadMore: boolean
+  /** Whether every transaction between the pair is already loaded, and why / what Load more would do */
+  historyNote?: string
   loadingMore: boolean
   initialTab?: Tab
   nameOf: (a: string) => string | undefined
@@ -151,6 +153,7 @@ export default function EdgeDetail(p: Props) {
                 </button>
               )}
             </div>
+            {p.historyNote && <p className="text-[11px] text-faint leading-relaxed">{p.historyNote}</p>}
             {p.traced.length > 0 && (
               <div className="pt-2 space-y-2">
                 <div className="text-[10px] uppercase tracking-wider text-faint">Traced funds on this relationship</div>
@@ -215,11 +218,14 @@ export default function EdgeDetail(p: Props) {
                 </div>
               )
             })}
-            {p.canLoadMore && (
-              <div className="p-3 flex justify-center">
-                <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-8 px-4 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
-                  {p.loadingMore ? 'Loading…' : 'Load more history for these addresses'}
-                </button>
+            {(p.canLoadMore || p.historyNote) && (
+              <div className="p-3 space-y-2 text-center">
+                {p.historyNote && <p className="text-[11px] text-faint leading-relaxed text-left">{p.historyNote}</p>}
+                {p.canLoadMore && (
+                  <button onClick={p.onLoadMore} disabled={p.loadingMore} className="h-8 px-4 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-50">
+                    {p.loadingMore ? 'Loading…' : 'Load more history'}
+                  </button>
+                )}
               </div>
             )}
           </div>
