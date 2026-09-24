@@ -47,7 +47,9 @@ Open http://localhost:3000. Bitcoin works without any key.
 
 ### Rate limits
 
-The free Etherscan tier allows about 3 calls per second. The app spaces its calls and retries when Etherscan says the limit was hit. If you upgrade your Etherscan plan, set `ETHERSCAN_RPS` in `.env.local` (e.g. `ETHERSCAN_RPS=10`). ENS names and single-transaction lookups use a free public Ethereum node (`ETH_RPC_URL`), not your Etherscan quota.
+The free Etherscan tier allows about 3 calls per second. The app spaces its calls and retries when Etherscan says the limit was hit. If you upgrade your Etherscan plan, set `ETHERSCAN_RPS` in `.env.local` (e.g. `ETHERSCAN_RPS=10`).
+
+**Etherscan name tags.** For addresses the offline label files don't know, each address you load onto the graph is checked with Etherscan: its public name tag (e.g. "Privacy Pools: Deposit", with labels like "Mixer") via the nametag API, which is only on Etherscan's **Pro Plus** plan. The app tries it once and stops if your key can't use it; set `ETHERSCAN_NAMETAGS=0` to skip it entirely. On any plan, verified contracts fall back to their contract name (proxies resolved to their implementation). Those names are chosen by the deployer, so they show as inferred (dashed border). ENS names and single-transaction lookups use a free public Ethereum node (`ETH_RPC_URL`), not your Etherscan quota.
 
 ## Development
 

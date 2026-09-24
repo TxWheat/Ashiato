@@ -2,6 +2,8 @@ import 'server-only'
 import { RawTransaction, TraceResult } from '../types'
 import { fetchJson } from '../http'
 import { assemble } from '../trace'
+import { getLabel } from '../labels'
+import { etherscanLabel } from './eth-labels'
 
 // Etherscan API V2 (V1 was shut down on 2025-08-15). One key covers 60+ EVM
 // chains via `chainid`; we use Ethereum mainnet.
@@ -59,7 +61,7 @@ function apiKey(): string {
   return key
 }
 
-function url(params: Record<string, string | number>): string {
+export function etherscanUrl(params: Record<string, string | number>): string {
   const qs = new URLSearchParams({ chainid: String(CHAIN_ID) })
   for (const [k, v] of Object.entries(params)) qs.set(k, String(v))
   qs.set('apikey', apiKey())
@@ -67,11 +69,11 @@ function url(params: Record<string, string | number>): string {
 }
 
 /** Etherscan reports rate limiting as a normal 200 response */
-const rateLimited = (b: { status?: string; result?: unknown }) =>
+export const etherscanRateLimited = (b: { status?: string; result?: unknown }) =>
   b?.status === '0' && typeof b.result === 'string' && /rate limit|max calls/i.test(b.result)
 
 async function etherscan<T>(params: Record<string, string | number>, ttl = 120): Promise<T[]> {
-  const body = await fetchJson<EtherscanResponse<T>>(url(params), ttl, 4, rateLimited)
+  const body = await fetchJson<EtherscanResponse<T>>(etherscanUrl(params), ttl, 4, etherscanRateLimited)
   if (body.status === '1' && Array.isArray(body.result)) return body.result
   if (/no transactions found|no records found/i.test(body.message) || (Array.isArray(body.result) && body.result.length === 0)) return []
   throw new Error(`Etherscan: ${typeof body.result === 'string' ? body.result : body.message}`)
@@ -84,6 +86,8 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
   const warnings: string[] = []
 
   const balanceRes = await fetchBalance(addr)
+  // Name tag / contract name for addresses the offline label files don't know (first page only)
+  const extraLabel = !cursor && !getLabel(addr, 'eth') ? etherscanLabel(addr) : Promise.resolve(undefined)
   const [normal, internal, tokens] = await Promise.all([
     etherscan<NormalTx>({ ...list, action: 'txlist' }),
     etherscan<InternalTx>({ ...list, action: 'txlistinternal' }).catch(e => {
@@ -150,15 +154,16 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
     rawTxs,
     nextCursor: more ? String(page + 1) : undefined,
     warnings,
+    extraLabel: await extraLabel,
   })
 }
 
 async function fetchBalance(addr: string): Promise<number> {
   const body = await fetchJson<{ status: string; message: string; result: string }>(
-    url({ module: 'account', action: 'balance', address: addr, tag: 'latest' }),
+    etherscanUrl({ module: 'account', action: 'balance', address: addr, tag: 'latest' }),
     60,
     4,
-    rateLimited
+    etherscanRateLimited
   )
   if (body.status !== '1') throw new Error(`Etherscan: ${body.result || body.message}`)
   return toUnits(body.result, 18)
@@ -166,7 +171,7 @@ async function fetchBalance(addr: string): Promise<number> {
 
 /** Transaction receipt via Etherscan's proxy module (fallback when the public RPC fails) */
 export async function receiptViaEtherscan<T>(hash: string): Promise<T | undefined> {
-  const body = await fetchJson<{ result?: T }>(url({ module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hash }), 600, 4, rateLimited)
+  const body = await fetchJson<{ result?: T }>(etherscanUrl({ module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hash }), 600, 4, etherscanRateLimited)
   return body.result ?? undefined
 }
 

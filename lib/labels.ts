@@ -32,8 +32,8 @@ function load() {
   return cache
 }
 
-// Protocol addresses that public datasets sometimes mislabel (e.g. the zero address
-// tagged as a scam because blacklisted tokens were minted from it)
+// Protocol addresses that public datasets mislabel (e.g. the zero address tagged as
+// a scam because blacklisted tokens were minted from it) or miss entirely
 const SPECIAL: Record<string, EntityLabel> = {
   '0x0000000000000000000000000000000000000000': { name: 'Null address (token mint / burn)', type: 'service', source: 'Ethereum convention' },
   '0x000000000000000000000000000000000000dead': { name: 'Burn address', type: 'service', source: 'Ethereum convention' },
@@ -42,6 +42,8 @@ const SPECIAL: Record<string, EntityLabel> = {
   '0x6b175474e89094c44da98b954eedeac495271d0f': { name: 'Maker: DAI contract', type: 'service', source: 'Token contract' },
   '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { name: 'WETH contract', type: 'service', source: 'Token contract' },
   '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { name: 'WBTC contract', type: 'service', source: 'Token contract' },
+  // Mixers missing from the public datasets (from Etherscan public name tags)
+  '0x6818809eefce719e480a7526d76bd3e561526b46': { name: 'Privacy Pools: Deposit', type: 'mixer', source: 'Etherscan public name tag', sourceUrl: 'https://etherscan.io/address/0x6818809eefce719e480a7526d76bd3e561526b46' },
 }
 
 export function getLabel(address: string, chain: Chain): EntityLabel | undefined {

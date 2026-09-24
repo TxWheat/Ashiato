@@ -93,7 +93,8 @@ describe('traceEthAddress', () => {
     ])
     const r = await traceEthAddress(ADDR.toUpperCase().replace('0X', '0x'))
     const etherscanCalls = calls.filter(u => u.includes('etherscan'))
-    expect(etherscanCalls.length).toBe(4)
+    // balance + txlist + txlistinternal + tokentx, plus a best-effort label lookup
+    expect(etherscanCalls.filter(u => /module=account/.test(u)).length).toBe(4)
     expect(etherscanCalls.every(u => u.startsWith('https://api.etherscan.io/v2/api?chainid=1&'))).toBe(true)
     expect(r.address).toBe(ADDR)
     expect(r.balance).toBe(1.5)

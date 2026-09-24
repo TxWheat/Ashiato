@@ -17,6 +17,8 @@ export async function assemble(opts: {
   rawTxs: RawTransaction[]
   nextCursor?: string
   warnings?: string[]
+  /** Online label (e.g. Etherscan name tag) for the address itself when the offline files have none */
+  extraLabel?: EntityLabel
 }): Promise<TraceResult> {
   const { address, chain, rawTxs } = opts
   const labelCache = new Map<string, EntityLabel | undefined>()
@@ -26,6 +28,7 @@ export async function assemble(opts: {
   }
 
   const findings: Finding[] = []
+  if (opts.extraLabel && !labelOf(address)) labelCache.set(address, opts.extraLabel)
   let entity = labelOf(address)
 
   const deposit = detectDepositAddress(address, chain, rawTxs, labelOf)
