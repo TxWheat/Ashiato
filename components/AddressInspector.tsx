@@ -9,14 +9,14 @@ import { EntityLabel, NodeData, RawTransaction, transferKey } from '@/lib/types'
 import { Counterparty, FlowSummary } from '@/lib/counterparties'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { LoadedPage } from '@/lib/export'
-import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate } from '@/lib/format'
+import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
 
 /** Assets that are never airdrop spam */
 const MAJOR = new Set(['ETH', 'BTC', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
-type SortKey = 'flow' | 'received' | 'sent' | 'txs' | 'recent'
+type SortKey = 'amount' | 'txs' | 'recent'
 
 const RISK_BAR: Record<string, string> = {
   clean: 'bg-green-500', low: 'bg-lime-500', medium: 'bg-yellow-500', high: 'bg-orange-500', critical: 'bg-red-500',
@@ -32,6 +32,8 @@ const HEURISTIC_NAME: Record<string, string> = {
 }
 
 interface Props {
+  /** Today's NZD prices, used to rank counterparties across different assets */
+  prices: Record<string, number>
   node: NodeData
   page?: LoadedPage
   loading: boolean
@@ -99,8 +101,8 @@ function FlowBoxes({ summary }: { summary: FlowSummary }) {
 export default function AddressInspector(p: Props) {
   const { node } = p
   const [copied, setCopied] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'in' | 'out'>('all')
-  const [sort, setSort] = useState<SortKey>('flow')
+  const [filter, setFilter] = useState<'in' | 'out'>('in')
+  const [sort, setSort] = useState<SortKey>('amount')
   const [asset, setAsset] = useState('')
   const [minAmount, setMinAmount] = useState('')
   const [showSpam, setShowSpam] = useState(false)
@@ -124,10 +126,18 @@ export default function AddressInspector(p: Props) {
     [p.counterparties]
   )
 
+  /** The side of the relationship the current tab is about */
+  const sideOf = (c: Counterparty, f = filter) => (f === 'in' ? c.received : c.sent)
+  const countOf = (c: Counterparty, f = filter) => (f === 'in' ? c.receivedCount : c.sentCount)
+  const lastOf = (c: Counterparty) => (filter === 'in' ? c.lastReceived : c.lastSent)
+  /** NZD value today of what moved on the selected side (unpriced tokens count as 0) */
+  const valueOf = (c: Counterparty) => Object.entries(sideOf(c)).reduce((v, [k, a]) => v + fiatValue(a, k, p.prices), 0)
+  const visibleCps = p.counterparties.filter(c => showSpam || !isSpam(c))
+  const dirCount = (f: 'in' | 'out') => visibleCps.filter(c => Object.keys(sideOf(c, f)).length).length
+
   const list = useMemo(() => {
     const min = parseFloat(minAmount) || 0
-    const recv = (c: Counterparty) => (asset ? c.received[asset] ?? 0 : 0)
-    const sent = (c: Counterparty) => (asset ? c.sent[asset] ?? 0 : 0)
+    const amt = (c: Counterparty) => (asset ? sideOf(c)[asset] ?? 0 : 0)
     // Across mixed assets, amounts aren't comparable, so rank by share of each asset's flow
     const share = (rec: Record<string, number>) => {
       let best = 0
@@ -135,20 +145,18 @@ export default function AddressInspector(p: Props) {
       return best
     }
     const score: Record<SortKey, (c: Counterparty) => number> = {
-      flow: c => (asset ? recv(c) + sent(c) : c.weight),
-      received: c => (asset ? recv(c) : share(c.received)),
-      sent: c => (asset ? sent(c) : share(c.sent)),
-      txs: c => c.txCount,
-      recent: c => c.lastSeen,
+      // Priced flows rank by NZD value; ones with no price (unknown tokens) go after, by share of that token's flow
+      amount: c => (asset ? amt(c) : valueOf(c) > 0 ? 1e15 + valueOf(c) : share(sideOf(c))),
+      txs: c => countOf(c),
+      recent: c => lastOf(c),
     }
-    return p.counterparties
-      .filter(c => showSpam || !isSpam(c))
-      .filter(c => filter === 'all' || (filter === 'in' ? Object.keys(c.received).length : Object.keys(c.sent).length))
-      .filter(c => !asset || c.received[asset] !== undefined || c.sent[asset] !== undefined)
-      .filter(c => !asset || !min || Math.max(recv(c), sent(c)) >= min)
+    return visibleCps
+      .filter(c => Object.keys(sideOf(c)).length)
+      .filter(c => !asset || sideOf(c)[asset] !== undefined)
+      .filter(c => !asset || !min || amt(c) >= min)
       .sort((x, y) => score[sort](y) - score[sort](x))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.counterparties, filter, sort, asset, minAmount, showSpam])
+  }, [p.counterparties, filter, sort, asset, minAmount, showSpam, p.prices])
   const notOnGraph = list.filter(c => !p.onGraph.has(c.address))
 
   const copy = () => {
@@ -223,10 +231,10 @@ export default function AddressInspector(p: Props) {
           <div>
             <div className="px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10 space-y-2">
               <div className="flex items-center gap-1.5">
-                {(['all', 'in', 'out'] as const).map(f => (
-                  <button key={f} onClick={() => setFilter(f)}
+                {(['in', 'out'] as const).map(f => (
+                  <button key={f} onClick={() => setFilter(f)} title={f === 'in' ? 'Addresses that sent funds to this one' : 'Addresses this one sent funds to'}
                     className={clsx('h-6 px-2 text-[11px] font-medium', filter === f ? 'bg-raised text-fg' : 'text-faint hover:text-fg')}>
-                    {f === 'all' ? 'All' : f === 'in' ? 'Senders' : 'Recipients'}
+                    {f === 'in' ? 'Senders' : 'Recipients'} · {dirCount(f)}
                   </button>
                 ))}
                 {notOnGraph.length > 0 && (
@@ -239,9 +247,7 @@ export default function AddressInspector(p: Props) {
               <div className="flex items-center gap-1.5 text-[11px]">
                 <select value={sort} onChange={e => setSort(e.target.value as SortKey)} aria-label="Sort counterparties"
                   className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent">
-                  <option value="flow">Largest flow</option>
-                  <option value="received">Most received from</option>
-                  <option value="sent">Most sent to</option>
+                  <option value="amount">{filter === 'in' ? 'Most received' : 'Most sent'}{asset ? ` (${asset})` : ' (NZD value)'}</option>
                   <option value="txs">Most transactions</option>
                   <option value="recent">Most recent</option>
                 </select>
@@ -263,7 +269,7 @@ export default function AddressInspector(p: Props) {
                 )}
               </div>
             </div>
-            {list.length === 0 && <p className="p-4 text-[12px] text-faint">No counterparties in the loaded transactions.</p>}
+            {list.length === 0 && <p className="p-4 text-[12px] text-faint">{filter === 'in' ? 'No senders' : 'No recipients'} in the loaded transactions.</p>}
             {list.map(c => {
               const l = p.labelOf(c.address)
               const on = p.onGraph.has(c.address)
@@ -272,11 +278,13 @@ export default function AddressInspector(p: Props) {
                   <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', l ? ENTITY_STYLE[l.type].dot : 'bg-line')} />
                   <button onClick={() => p.onOpenRelationship(c.address)} className="min-w-0 flex-1 text-left" title={`Open the relationship with ${c.address}`}>
                     <div className={clsx('text-[12px] text-fg truncate', !p.nameOf(c.address) && 'font-mono')}>{p.nameOf(c.address) ?? truncate(c.address, 8)}</div>
-                    <div className="text-[10px] text-faint">{c.txCount} tx{c.txCount === 1 ? '' : 's'} · last {fmtDate(c.lastSeen).split(' ').slice(0, 3).join(' ')}</div>
+                    <div className="text-[10px] text-faint">{countOf(c)} tx{countOf(c) === 1 ? '' : 's'} · last {fmtDate(lastOf(c)).split(' ').slice(0, 3).join(' ')}</div>
                   </button>
                   <div className="text-right font-mono text-[11px] leading-tight">
-                    {Object.keys(c.received).length > 0 && <div className="text-green-500" title="Received from them">↓ {amounts(c.received)} <span className="text-faint">({c.receivedCount})</span></div>}
-                    {Object.keys(c.sent).length > 0 && <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent)} <span className="text-faint">({c.sentCount})</span></div>}
+                    {filter === 'in'
+                      ? <div className="text-green-500" title="Received from them">↓ {amounts(c.received)}</div>
+                      : <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent)}</div>}
+                    {valueOf(c) > 0 && <div className="text-[10px] text-faint" title="Value at today's prices">≈ {fmtFiatShort(valueOf(c))} NZD</div>}
                   </div>
                   <button onClick={() => !on && p.onAdd([c.address])} disabled={on} title={on ? 'On the graph' : 'Add to graph'}
                     className={clsx('grid place-items-center w-7 h-7 flex-shrink-0', on ? 'text-accent' : 'bg-raised hover:bg-accent hover:text-accent-fg text-fg')}>

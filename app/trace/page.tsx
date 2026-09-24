@@ -615,6 +615,7 @@ function TracePageInner() {
       return (
         <AddressInspector
           node={selectedNode}
+          prices={prices}
           page={pages.get(a)}
           loading={loadingAddrs.has(a)}
           loadingMore={loadingMore}

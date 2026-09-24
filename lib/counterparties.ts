@@ -10,6 +10,8 @@ export interface Counterparty {
   receivedCount: number
   sentCount: number
   lastSeen: number
+  lastReceived: number
+  lastSent: number
   /** Largest share of any single asset's flow; used for ranking */
   weight: number
 }
@@ -23,12 +25,17 @@ export function counterparties(address: string, edges: EdgeData[]): Counterparty
   const map = new Map<string, Counterparty>()
   for (const e of mine) {
     const other = e.source === address ? e.target : e.source
-    const c = map.get(other) ?? { address: other, received: {}, sent: {}, txCount: 0, receivedCount: 0, sentCount: 0, lastSeen: 0, weight: 0 }
+    const c = map.get(other) ?? { address: other, received: {}, sent: {}, txCount: 0, receivedCount: 0, sentCount: 0, lastSeen: 0, lastReceived: 0, lastSent: 0, weight: 0 }
     const side = e.source === address ? c.sent : c.received
     side[e.asset] = (side[e.asset] ?? 0) + e.amount
     c.txCount += e.txCount ?? 1
-    if (e.source === address) c.sentCount += e.txCount ?? 1
-    else c.receivedCount += e.txCount ?? 1
+    if (e.source === address) {
+      c.sentCount += e.txCount ?? 1
+      c.lastSent = Math.max(c.lastSent, e.timestamp)
+    } else {
+      c.receivedCount += e.txCount ?? 1
+      c.lastReceived = Math.max(c.lastReceived, e.timestamp)
+    }
     c.lastSeen = Math.max(c.lastSeen, e.timestamp)
     c.weight = Math.max(c.weight, e.amount / (totals.get(e.asset) || 1))
     map.set(other, c)
