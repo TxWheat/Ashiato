@@ -18,6 +18,32 @@ export function fmtAmount(amount: number, asset: string, digits = 4): string {
   return `${amount.toLocaleString('en-US', { maximumFractionDigits: stable ? 2 : digits })} ${name}`
 }
 
+/** Short amounts for graph labels: 1.2K, 224K, 3.4M; small values keep precision */
+export function fmtCompact(amount: number, asset: string): string {
+  const name = assetName(asset)
+  const a = Math.abs(amount)
+  if (a >= 1000) return `${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(amount)} ${name}`
+  if (a === 0) return `0 ${name}`
+  if (a < 0.0001) return `<0.0001 ${name}`
+  return `${amount.toLocaleString('en-US', { maximumFractionDigits: a >= 1 ? 2 : 4 })} ${name}`
+}
+
+export function fmtFiatShort(v: number): string {
+  if (v <= 0) return ''
+  return v >= 1000
+    ? `$${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(v)}`
+    : `$${v.toLocaleString('en-US', { maximumFractionDigits: v >= 10 ? 0 : 2 })}`
+}
+
+export function fmtDateTime(ts: number): string {
+  if (!ts) return 'pending'
+  return new Date(ts * 1000).toLocaleString('en-NZ', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+export function fmtDay(ts: number): string {
+  return ts ? new Date(ts * 1000).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : 'pending'
+}
+
 export function fmtBalance(balance: number, chain: Chain): string {
   return fmtAmount(balance, nativeAsset(chain), chain === 'btc' ? 8 : 6)
 }

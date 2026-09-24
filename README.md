@@ -39,9 +39,9 @@ Open http://localhost:3000. Bitcoin works without any key.
 ## How to use it
 
 1. Paste a BTC/ETH **address** or a **transaction hash** (BTC txid, or ETH `0x…` hash) into the search box.
-2. **Address:** the graph starts with just that address. The right-hand panel lists its **Counterparties** (who it paid and was paid by, largest first). Press **+** to add one to the graph, or **Add top 5**.
+2. **Address:** the graph starts with just that address. The right-hand panel shows Incoming/Outgoing totals and its **Relationships** (who it paid and was paid by, filterable by asset, amount and count; spam like address poisoning and airdrops hidden by default). Press **+** to add one to the graph, or click the row to open the relationship.
 3. **Transaction:** it appears as its own node with its inputs and outputs. Every input has **← Source**, every output **Trace →**.
-4. Click any address to inspect it (Counterparties · Transactions · Details). On a transaction, **Trace →** follows that payment onward and **← Source** walks it back. Click any **line** to see the payments behind it.
+4. Click any address to inspect it (Relationships · Transactions · Details); click empty canvas to collapse the panel. Lines are labelled along the curve with amount, NZD value and date. On a transaction, **Trace →** follows that payment onward and **← Source** walks it back. Click any **line** to see the payments behind it.
 5. After a trace, **Trail / All** in the top bar switches between just the money trail and the full graph. The left **Case** panel shows where the funds ended up, taint analysis and clusters.
 6. **Export** (top bar): printable report, case file save/open, PNG, CSV, GraphML.
 

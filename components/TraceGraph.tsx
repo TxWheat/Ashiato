@@ -21,12 +21,12 @@ import dagre from 'dagre'
 import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
-import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
+import { ENTITY_STYLE, fiatValue, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
-import OffsetEdge from './OffsetEdge'
+import LabelEdge from './OffsetEdge'
 
 const nodeTypes = { addressNode: AddressNode, tx: TxNode }
-const edgeTypes = { offset: OffsetEdge }
+const edgeTypes = { label: LabelEdge }
 
 const NODE_W = 196
 const NODE_H = 78
@@ -48,9 +48,10 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
   })
 }
 
-/** Short on-canvas label; dates, fiat and tx hashes live in the flow panel (click the edge) */
-function edgeLabel(e: EdgeData): string {
-  return fmtAmount(e.amount, e.asset) + (e.txCount && e.txCount > 1 ? ` ×${e.txCount}` : '')
+/** "2.15K USDT ($2.9K NZD)" */
+function amountWithValue(amount: number, asset: string, prices: Record<string, number>): string {
+  const fiat = fmtFiatShort(fiatValue(amount, asset, prices))
+  return `${fmtCompact(amount, asset)}${fiat ? ` (${fiat} NZD)` : ''}`
 }
 
 export interface GraphApi {
@@ -66,6 +67,7 @@ interface Props {
   hubs: TxHubData[]
   /** Individual transactions drawn as their own lines (replacing the pair's relationship line) */
   itemized: EdgeData[]
+  prices: Record<string, number>
   taintByEdge?: Map<string, number>
   selected?: string | null
   selectedEdge?: string | null
@@ -73,14 +75,25 @@ interface Props {
   onNodeClick: (address: string) => void
   onEdgeClick: (from: string, to: string) => void
   onHubClick: (txid: string) => void
+  /** Click on empty canvas: deselect (collapses the side panel) */
+  onPaneClick?: () => void
   onReady?: (api: GraphApi) => void
+}
+
+function stylesheetsReadable() {
+  try {
+    for (const sheet of Array.from(document.styleSheets)) void sheet.cssRules
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   const pinned = useRef<Map<string, { x: number; y: number }>>(new Map())
   const nodeCount = useRef(0)
@@ -136,22 +149,23 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const weight = es.length ? Math.max(...es.map(x => Math.log1p(x.amount) / Math.log1p(maxByAsset.get(x.asset) || 1))) : 0.6
       const width = isChange ? 1 : tr ? 2.5 + 2 * Math.min(1, weight) : 1 + 3 * Math.min(1, Math.max(0, weight))
       const color = tainted ? TAINT : tr || followed ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--muted))'
-      const label = tr
-        ? [...tr].map(([asset, amt]) => `${fmtAmount(amt, asset)} traced`).join(' | ')
+      // Breadcrumbs-style label written along the line: amount (value) · count, then dates
+      const txs = es.reduce((n, x) => n + (x.txCount ?? 1), 0)
+      const first = Math.min(...es.map(x => x.firstTimestamp || x.timestamp).filter(Boolean))
+      const last = Math.max(...es.map(x => x.timestamp))
+      const line1 = tr
+        ? [...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')
         : tainted
-          ? `${fmtAmount(taint!, es[0]?.asset ?? '')} tainted`
-          : es.map(edgeLabel).join(' | ')
+          ? `${fmtCompact(taint!, es[0]?.asset ?? '')} tainted`
+          : `${es.map(x => amountWithValue(x.amount, x.asset, prices)).join(' + ')}${txs > 1 ? ` · ${txs} txs` : ''}`
+      const line2 = !es.length ? '' : txs === 1 ? fmtDateTime(last) : isFinite(first) && fmtDay(first) !== fmtDay(last) ? `${fmtDay(first)} → ${fmtDay(last)}` : fmtDay(last)
       const isSel = selectedEdge === key
       return {
         id: key,
         source,
         target,
-        label,
-        interactionWidth: 24,
-        labelStyle: { fill: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', fontSize: 11, fontWeight: tr || tainted || isSel ? 600 : 500, cursor: 'pointer' },
-        labelBgStyle: { fill: 'rgb(var(--panel))', fillOpacity: 0.95, stroke: isSel ? 'rgb(var(--accent))' : 'none' },
-        labelBgPadding: [6, 4] as [number, number],
-        labelBgBorderRadius: 2,
+        type: 'label',
+        data: { line1, line2, color: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', bold: !!tr || tainted || isSel },
         animated: !!tr || followed || tainted,
         zIndex: tr ? 2 : 1,
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
@@ -168,14 +182,12 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         // Same visual side regardless of direction, so A→B and B→A lines interleave cleanly
         const sign = e.source < e.target ? 1 : -1
         const offset = (i - (list.length - 1) / 2) * 34 * sign
-        const date = e.timestamp ? new Date(e.timestamp * 1000).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' }) : 'pending'
         out.push({
           id: `item:${e.id}`,
           source: e.source,
           target: e.target,
-          type: 'offset',
-          label: `${fmtAmount(e.amount, e.asset)} · ${date}`,
-          data: { offset, onSelect: () => onEdgeClick(e.source, e.target) },
+          type: 'label',
+          data: { offset, line1: amountWithValue(e.amount, e.asset, prices), line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))' },
           markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--accent))', width: 12, height: 12 },
           style: { stroke: 'rgb(var(--accent))', strokeWidth: 1.5, opacity: 0.85 },
         })
@@ -190,10 +202,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           id: `${id}:${k}`,
           source: from,
           target: to,
-          label: fmtAmount(amount, asset),
-          labelStyle: { fill: 'rgb(var(--fg))', fontSize: 11, fontWeight: 500 },
-          labelBgStyle: { fill: 'rgb(var(--panel))', fillOpacity: 0.95 },
-          labelBgPadding: [6, 4] as [number, number],
+          type: 'label',
+          data: { line1: amountWithValue(amount, asset, prices) },
           markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--muted))', width: 14, height: 14 },
           style: { stroke: 'rgb(var(--muted))', strokeWidth: 1.5, strokeDasharray: '6 3' },
         })
@@ -201,7 +211,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       h.outputs.forEach((o, k) => ids.has(o.address) && draw(id, o.address, o.amount, o.asset, `out${k}`))
     }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, taintByEdge, selectedEdge, onEdgeClick])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selectedEdge])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -226,7 +236,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const c of changes) {
-        if (c.type === 'position' && c.dragging === false && c.position) pinned.current.set(c.id, c.position)
+        // Remember where the user put a node; the final drag event can omit the position
+        if (c.type === 'position' && c.position) pinned.current.set(c.id, c.position)
       }
       onNodesChange(changes)
     },
@@ -244,6 +255,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     const bg = getComputedStyle(document.body).backgroundColor
     return toPng(viewport, {
       backgroundColor: bg,
+      // html-to-image reads every stylesheet to embed fonts; an unreadable one
+      // (cross-origin without CORS, or failed to load) raises SecurityError
+      skipFonts: !stylesheetsReadable(),
       width: w,
       height: h,
       style: { width: `${w}px`, height: `${h}px`, transform: `translate(${x}px, ${y}px) scale(${zoom})` },
@@ -257,7 +271,11 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         edges={edges}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDragStop={(_, node, dragged) => {
+          for (const n of dragged?.length ? dragged : [node]) pinned.current.set(n.id, n.position)
+        }}
         onNodeClick={(_, n) => (n.type === 'tx' ? onHubClick((n.data as TxHubData).txid) : onNodeClick(n.id))}
+        onPaneClick={onPaneClick}
         onEdgeClick={(_, e) => {
           if (!e.id.startsWith('tx:')) onEdgeClick(e.source, e.target)
         }}

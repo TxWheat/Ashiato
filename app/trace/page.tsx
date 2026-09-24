@@ -1,5 +1,6 @@
 'use client'
 
+import { clsx } from 'clsx'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -8,7 +9,7 @@ import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick } from 'lucide-react'
 import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, TxIO, TxLookup, transferKey } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
-import { counterparties as findCounterparties } from '@/lib/counterparties'
+import { counterparties as findCounterparties, flowSummary } from '@/lib/counterparties'
 import { clusterAddresses } from '@/lib/heuristics/cluster'
 import { tornadoLinks as findTornadoLinks } from '@/lib/heuristics/eth/tornado'
 import { runTaint, TaintMethod } from '@/lib/taint'
@@ -638,6 +639,21 @@ function TracePageInner() {
           loading={loadingAddrs.has(a)}
           loadingMore={loadingMore}
           counterparties={selectedCounterparties}
+          summary={flowSummary(a, allEdges)}
+          onOpenRelationship={other => {
+            if (!visible.has(other)) {
+              snapshot()
+              showOnGraph([other])
+            }
+            setSelection({ kind: 'flow', from: a, to: other })
+          }}
+          onShowTx={tx => {
+            // Draw this transaction's legs that touch the address as individual lines
+            const legs = perTx.filter(e => e.txid === tx.txid && e.asset === tx.asset && (e.source === a || e.target === a))
+            if (!legs.length) return
+            addToGraph(legs.map(e => (e.source === a ? e.target : e.source)))
+            setItemizedIds(prev => new Set([...prev, ...legs.map(e => e.id)]))
+          }}
           onGraph={visible}
           tab={tab}
           canRemove={a !== originAddress}
@@ -843,6 +859,7 @@ function TracePageInner() {
               traced={traced}
               hubs={graphHubs}
               itemized={itemizedEdges}
+              prices={prices}
               taintByEdge={taintResult?.byEdge}
               selected={selectedAddress}
               selectedEdge={selection?.kind === 'flow' ? `${selection.from}->${selection.to}` : null}
@@ -850,13 +867,14 @@ function TracePageInner() {
               onNodeClick={openAddress}
               onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
+              onPaneClick={() => setSelection(null)}
               onReady={api => (graphApi.current = api)}
             />
           )}
 
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
-              Add counterparties from the <b className="text-fg font-medium">Counterparties</b> list on the right with <b className="text-fg font-medium">+</b>, or press <b className="text-fg font-medium">Trace out</b>.
+              Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>, or press <b className="text-fg font-medium">Trace out</b>. Click empty space to hide the panel.
             </div>
           )}
 
@@ -866,7 +884,16 @@ function TracePageInner() {
         </main>
 
         {!initialLoading && !error && (
-          <aside className="w-[400px] max-w-[45vw] flex-shrink-0 border-l border-line bg-bg flex flex-col min-h-0">{inspector}</aside>
+          <aside
+            aria-hidden={!selection}
+            className={clsx(
+              'flex-shrink-0 bg-bg overflow-hidden transition-[width] duration-200 ease-out',
+              selection ? 'w-[400px] max-w-[45vw] border-l border-line' : 'w-0'
+            )}
+          >
+            {/* Fixed inner width so content doesn't reflow while the panel slides */}
+            {selection && <div className="w-[400px] max-w-[45vw] h-full flex flex-col min-h-0">{inspector}</div>}
+          </aside>
         )}
       </div>
     </div>

@@ -6,13 +6,16 @@ import {
   Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle,
 } from 'lucide-react'
 import { EntityLabel, NodeData, RawTransaction, transferKey } from '@/lib/types'
-import { Counterparty } from '@/lib/counterparties'
+import { Counterparty, FlowSummary } from '@/lib/counterparties'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { LoadedPage } from '@/lib/export'
-import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtDate } from '@/lib/format'
+import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
+
+/** Assets that are never airdrop spam */
+const MAJOR = new Set(['ETH', 'BTC', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
 type SortKey = 'flow' | 'received' | 'sent' | 'txs' | 'recent'
 
 const RISK_BAR: Record<string, string> = {
@@ -47,6 +50,11 @@ interface Props {
   onOpen: (address: string) => void
   onTrace: (direction: 'forward' | 'backward') => void
   onTraceTx: (tx: RawTransaction, direction: 'forward' | 'backward') => void
+  summary: FlowSummary
+  /** Open the relationship (flow panel) between this address and a counterparty */
+  onOpenRelationship: (address: string) => void
+  /** Draw one transaction on the graph as its own line */
+  onShowTx: (tx: RawTransaction) => void
   onTaint: () => void
   onRemove: () => void
   onLoadMore: () => void
@@ -55,7 +63,38 @@ interface Props {
 }
 
 function amounts(rec: Record<string, number>) {
-  return Object.entries(rec).map(([asset, amt]) => fmtAmount(amt, asset)).join(' + ')
+  return Object.entries(rec).map(([asset, amt]) => fmtCompact(amt, asset)).join(' + ')
+}
+
+/** Breadcrumbs-style node visualizer: totals in and out, per asset, with transaction counts */
+function FlowBoxes({ summary }: { summary: FlowSummary }) {
+  const box = (title: string, rec: FlowSummary['incoming'], tone: string) => {
+    const rows = Object.entries(rec)
+    const major = rows.filter(([a]) => MAJOR.has(a)).sort((x, y) => y[1].count - x[1].count)
+    const other = rows.filter(([a]) => !MAJOR.has(a))
+    return (
+      <div className="border border-line p-2.5 min-w-0">
+        <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">{title}</div>
+        {rows.length === 0 && <div className="text-[11px] text-faint">None loaded</div>}
+        {major.map(([asset, v]) => (
+          <div key={asset} className={clsx('text-[12px] font-mono truncate', tone)}>
+            {fmtCompact(v.amount, asset)} <span className="text-faint">({v.count})</span>
+          </div>
+        ))}
+        {other.length > 0 && (
+          <div className="text-[10px] text-faint mt-0.5" title={other.map(([a, v]) => `${fmtCompact(v.amount, a)} (${v.count})`).join('\n')}>
+            + {other.length} other token{other.length === 1 ? '' : 's'}
+          </div>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {box('Incoming txs', summary.incoming, 'text-green-500')}
+      {box('Outgoing txs', summary.outgoing, 'text-fg')}
+    </div>
+  )
 }
 
 export default function AddressInspector(p: Props) {
@@ -75,9 +114,11 @@ export default function AddressInspector(p: Props) {
     for (const c of p.counterparties) for (const [k, v] of [...Object.entries(c.received), ...Object.entries(c.sent)]) m.set(k, (m.get(k) ?? 0) + v)
     return m
   }, [p.counterparties])
+  // Poisoning, fake tokens, and unsolicited airdrops of unknown tokens (never sent back)
   const isSpam = (c: Counterparty) =>
     p.labelOf(c.address)?.inferredBy === 'address-poisoning' ||
-    [...Object.keys(c.received), ...Object.keys(c.sent)].every(x => x.endsWith('*'))
+    [...Object.keys(c.received), ...Object.keys(c.sent)].every(x => x.endsWith('*')) ||
+    (!Object.keys(c.sent).length && !p.labelOf(c.address) && Object.keys(c.received).every(x => !MAJOR.has(x)))
   const spamCount = p.counterparties.filter(isSpam).length
   const assets = useMemo(
     () => [...new Set(p.counterparties.flatMap(c => [...Object.keys(c.received), ...Object.keys(c.sent)]))].filter(x => !x.endsWith('*')).sort(),
@@ -159,12 +200,13 @@ export default function AddressInspector(p: Props) {
           <ActionBtn onClick={p.onTaint} icon={<Droplets size={12} />} title="Treat this address's funds as stolen and see where they went">Taint</ActionBtn>
           {p.canRemove && <ActionBtn onClick={p.onRemove} icon={<Trash2 size={12} />} title="Remove from graph" />}
         </div>
+        <FlowBoxes summary={p.summary} />
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-line flex-shrink-0 text-[12px] font-medium">
         {([
-          ['counterparties', `Counterparties${p.counterparties.length ? ` · ${p.counterparties.length}` : ''}`],
+          ['counterparties', `Relationships${p.counterparties.length ? ` · ${p.counterparties.length}` : ''}`],
           ['transactions', `Transactions${p.page ? ` · ${p.page.rawTxs.length}` : ''}`],
           ['details', 'Details'],
         ] as [AddressTab, string][]).map(([id, label]) => (
@@ -219,7 +261,7 @@ export default function AddressInspector(p: Props) {
                 <span>{list.length} shown</span>
                 {spamCount > 0 && (
                   <button onClick={() => setShowSpam(v => !v)} className="hover:text-fg underline underline-offset-2">
-                    {showSpam ? 'Hide' : 'Show'} {spamCount} poisoning / fake-token spam
+                    {showSpam ? 'Hide' : 'Show'} {spamCount} spam (poisoning, fake tokens, airdrops)
                   </button>
                 )}
               </div>
@@ -231,13 +273,13 @@ export default function AddressInspector(p: Props) {
               return (
                 <div key={c.address} className="flex items-center gap-3 px-4 py-2.5 border-b border-line/60 hover:bg-panel">
                   <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', l ? ENTITY_STYLE[l.type].dot : 'bg-line')} />
-                  <button onClick={() => p.onOpen(c.address)} className="min-w-0 flex-1 text-left" title={c.address}>
+                  <button onClick={() => p.onOpenRelationship(c.address)} className="min-w-0 flex-1 text-left" title={`Open the relationship with ${c.address}`}>
                     <div className={clsx('text-[12px] text-fg truncate', !p.nameOf(c.address) && 'font-mono')}>{p.nameOf(c.address) ?? truncate(c.address, 8)}</div>
                     <div className="text-[10px] text-faint">{c.txCount} tx{c.txCount === 1 ? '' : 's'} · last {fmtDate(c.lastSeen).split(' ').slice(0, 3).join(' ')}</div>
                   </button>
                   <div className="text-right font-mono text-[11px] leading-tight">
-                    {Object.keys(c.received).length > 0 && <div className="text-green-500" title="Received from">↓ {amounts(c.received)}</div>}
-                    {Object.keys(c.sent).length > 0 && <div className="text-red-500" title="Sent to">↑ {amounts(c.sent)}</div>}
+                    {Object.keys(c.received).length > 0 && <div className="text-green-500" title="Received from them">↓ {amounts(c.received)} <span className="text-faint">({c.receivedCount})</span></div>}
+                    {Object.keys(c.sent).length > 0 && <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent)} <span className="text-faint">({c.sentCount})</span></div>}
                   </div>
                   <button onClick={() => !on && p.onAdd([c.address])} disabled={on} title={on ? 'On the graph' : 'Add to graph'}
                     className={clsx('grid place-items-center w-7 h-7 flex-shrink-0', on ? 'text-accent' : 'bg-raised hover:bg-accent hover:text-accent-fg text-fg')}>
@@ -300,6 +342,10 @@ function TxList(p: Props) {
                 <a href={explorerTxUrl(tx.txid, tx.chain)} target="_blank" rel="noopener noreferrer" title={tx.txid} className="flex items-center gap-1 h-6 px-1.5 font-mono text-[10px] text-faint hover:text-fg">
                   {tx.txid.slice(0, 8)}… <ExternalLink size={9} />
                 </a>
+                <button onClick={() => p.onShowTx(tx)} title="Draw this transaction on the graph as its own line"
+                  className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg">
+                  <Plus size={10} /> Graph
+                </button>
                 {dir !== 'out' && (
                   <button onClick={() => p.onTraceTx(tx, 'backward')} disabled={p.tracing} title="Walk these funds back to their source"
                     className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">

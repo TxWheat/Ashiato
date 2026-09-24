@@ -57,10 +57,11 @@ export function aggregateEdges(perTx: Iterable<EdgeData>): EdgeData[] {
     const id = `${e.source}--${e.target}--${e.asset}`
     const ex = pairs.get(id)
     if (!ex) {
-      pairs.set(id, { ...e, id, txCount: 1, txids: [e.txid] })
+      pairs.set(id, { ...e, id, txCount: 1, txids: [e.txid], firstTimestamp: e.timestamp })
     } else {
       ex.amount += e.amount
       ex.timestamp = Math.max(ex.timestamp, e.timestamp)
+      if (e.timestamp && (!ex.firstTimestamp || e.timestamp < ex.firstTimestamp)) ex.firstTimestamp = e.timestamp
       if (!ex.txids!.includes(e.txid)) ex.txids!.push(e.txid)
       ex.txCount = ex.txids!.length
       ex.isChange = !!ex.isChange && !!e.isChange

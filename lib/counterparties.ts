@@ -7,6 +7,8 @@ export interface Counterparty {
   /** asset → amount sent to this counterparty */
   sent: Record<string, number>
   txCount: number
+  receivedCount: number
+  sentCount: number
   lastSeen: number
   /** Largest share of any single asset's flow; used for ranking */
   weight: number
@@ -21,13 +23,37 @@ export function counterparties(address: string, edges: EdgeData[]): Counterparty
   const map = new Map<string, Counterparty>()
   for (const e of mine) {
     const other = e.source === address ? e.target : e.source
-    const c = map.get(other) ?? { address: other, received: {}, sent: {}, txCount: 0, lastSeen: 0, weight: 0 }
+    const c = map.get(other) ?? { address: other, received: {}, sent: {}, txCount: 0, receivedCount: 0, sentCount: 0, lastSeen: 0, weight: 0 }
     const side = e.source === address ? c.sent : c.received
     side[e.asset] = (side[e.asset] ?? 0) + e.amount
     c.txCount += e.txCount ?? 1
+    if (e.source === address) c.sentCount += e.txCount ?? 1
+    else c.receivedCount += e.txCount ?? 1
     c.lastSeen = Math.max(c.lastSeen, e.timestamp)
     c.weight = Math.max(c.weight, e.amount / (totals.get(e.asset) || 1))
     map.set(other, c)
   }
   return [...map.values()].sort((a, b) => b.weight - a.weight)
+}
+
+export interface FlowSummary {
+  /** asset → { amount, count } */
+  incoming: Record<string, { amount: number; count: number }>
+  outgoing: Record<string, { amount: number; count: number }>
+}
+
+/** Node-visualizer totals: everything that came in and went out, per asset (fake tokens excluded) */
+export function flowSummary(address: string, edges: EdgeData[]): FlowSummary {
+  const incoming: FlowSummary['incoming'] = {}
+  const outgoing: FlowSummary['outgoing'] = {}
+  for (const e of edges) {
+    if (e.asset.endsWith('*') || e.source === e.target) continue
+    const side = e.target === address ? incoming : e.source === address && !e.isChange ? outgoing : null
+    if (!side) continue
+    const s = side[e.asset] ?? { amount: 0, count: 0 }
+    s.amount += e.amount
+    s.count += e.txCount ?? 1
+    side[e.asset] = s
+  }
+  return { incoming, outgoing }
 }

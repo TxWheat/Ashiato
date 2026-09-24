@@ -118,6 +118,8 @@ export interface EdgeData {
   chain: Chain
   isChange?: boolean
   txCount?: number
+  /** Aggregated edges: earliest transaction time (timestamp is the latest) */
+  firstTimestamp?: number
 }
 
 export interface TraceResult {
