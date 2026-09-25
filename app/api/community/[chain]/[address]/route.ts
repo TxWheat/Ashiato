@@ -6,6 +6,9 @@ import { ATTEST_CHAIN } from '@/lib/attest/config'
 
 // Community labels (EAS attestations) for an address, with votes and trust scores.
 // Public and CORS-open so wallets and other tools (e.g. a MetaMask Snap) can read it.
+// Traces can take a while on free APIs; Vercel cuts functions off at the default otherwise
+export const maxDuration = 60
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ chain: string; address: string }> }) {
   const { chain, address } = await params
   const addr = decodeURIComponent(address).trim()

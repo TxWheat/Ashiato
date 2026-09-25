@@ -3,7 +3,7 @@ import { EntityLabel, RawTransaction } from '../types'
 import { rpcBatch, ethCall } from '../rpc'
 import { getLabel } from '../labels'
 import { lookupEnsNames } from '../ens'
-import { KNOWN_TOKENS, internalTransfersByHash, receiptViaEtherscan, toUnits } from './eth'
+import { tokenAsset, internalTransfersByHash, receiptViaEtherscan, toUnits } from './eth'
 
 // One Ethereum transaction and every value transfer inside it: the ETH value,
 // ERC-20 Transfer events from the receipt, and internal ETH transfers.
@@ -69,9 +69,7 @@ export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
 
   const tokenInfo = new Map<string, { symbol: string; decimals: number }>()
   tokens.forEach((t, i) => {
-    let symbol = (decodeSymbol(meta[i * 2] as string) ?? 'TOKEN').replace(/[^\w.$-]/g, '').slice(0, 12) || 'TOKEN'
-    const real = KNOWN_TOKENS[symbol.toUpperCase()]
-    if (real && real !== t) symbol = `${symbol}*`
+    const symbol = tokenAsset(decodeSymbol(meta[i * 2] as string) ?? 'TOKEN', t)
     const d = meta[i * 2 + 1] as string | undefined
     tokenInfo.set(t, { symbol, decimals: d && d !== '0x' ? Number(hexToBig(d)) : 18 })
   })
