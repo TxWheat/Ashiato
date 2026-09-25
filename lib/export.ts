@@ -40,7 +40,7 @@ export interface CaseFile {
   /** What the client said they paid, and whether it checked out on-chain */
   clientPayments?: CheckedPayment[]
   /** Cross-chain swaps added to the graph; `via` is the service's node it leaves from */
-  bridgeHops?: (CrossChainHop & { via: string })[]
+  bridgeHops?: (CrossChainHop & { via: string; sender?: string; bridge?: string })[]
 }
 
 export function parseCase(text: string): CaseFile {

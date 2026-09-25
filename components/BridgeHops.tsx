@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowRight, ExternalLink, Plus, Shuffle } from 'lucide-react'
+import { ArrowRight, ExternalLink, Plus, Shuffle, X } from 'lucide-react'
 import { CrossChainHop, chainDisplay, hopTxUrl, statusOk, statusText } from '@/lib/bridges/types'
 import { fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
@@ -17,13 +17,14 @@ interface Props {
   added: Set<string>
   /** `matched`: the swap is one of this link's transactions (else another swap by the same wallet) */
   onAdd: (hop: CrossChainHop, matched: boolean) => void
+  onRemove: (orderId: string) => void
 }
 
 const norm = (h: string) => h.toLowerCase().replace(/^0x/, '')
 const when = (t?: number) => (t ? new Date(t * 1000).toLocaleString('en-NZ', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '')
 
 /** Where money sent into a cross-chain swap service came out, from the service's own order records */
-export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, added, onAdd }: Props) {
+export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, added, onAdd, onRemove }: Props) {
   const [hops, setHops] = useState<CrossChainHop[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showOthers, setShowOthers] = useState(false)
@@ -65,7 +66,7 @@ export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, a
           No Bridgers order matches these transactions{others.length ? '' : ', and this wallet has no other Bridgers swaps'}. It may have used a different service behind the same contract.
         </p>
       )}
-      {matched.map(h => <Hop key={h.orderId} h={h} added={added} onAdd={x => onAdd(x, true)} />)}
+      {matched.map(h => <Hop key={h.orderId} h={h} added={added} onRemove={onRemove} onAdd={x => onAdd(x, true)} />)}
       {related.length > 0 && (
         <div className="space-y-2">
           <div className="text-faint pt-1">
@@ -73,7 +74,7 @@ export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, a
             {related.some(h => h.fromChainName !== matched[0]?.fromChainName) ? ' from another chain' : ''}
             {relatedTotal && <> · total received <b className="text-fg font-medium font-mono">{[...relatedTotal].map(([a, v]) => fmtAmount(v, a, 2)).join(' + ')}</b></>}
           </div>
-          {related.map(h => <Hop key={h.orderId} h={h} added={added} onAdd={x => onAdd(x, false)} />)}
+          {related.map(h => <Hop key={h.orderId} h={h} added={added} onRemove={onRemove} onAdd={x => onAdd(x, false)} />)}
         </div>
       )}
       {unrelated.length > 0 && (
@@ -81,14 +82,14 @@ export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, a
           <button onClick={() => setShowOthers(v => !v)} className="text-faint hover:text-fg underline underline-offset-2">
             {showOthers ? 'Hide' : 'Show'} {unrelated.length} other Bridgers swap{unrelated.length === 1 ? '' : 's'} from this wallet
           </button>
-          {showOthers && <div className="mt-2 space-y-2">{unrelated.map(h => <Hop key={h.orderId} h={h} added={added} onAdd={x => onAdd(x, false)} />)}</div>}
+          {showOthers && <div className="mt-2 space-y-2">{unrelated.map(h => <Hop key={h.orderId} h={h} added={added} onRemove={onRemove} onAdd={x => onAdd(x, false)} />)}</div>}
         </div>
       )}
     </div>
   )
 }
 
-function Hop({ h, added: addedIds, onAdd }: { h: CrossChainHop; added: Set<string>; onAdd: (h: CrossChainHop) => void }) {
+function Hop({ h, added: addedIds, onAdd, onRemove }: { h: CrossChainHop; added: Set<string>; onAdd: (h: CrossChainHop) => void; onRemove: (orderId: string) => void }) {
   const inUrl = h.depositUrl || hopTxUrl(h.fromChainName, h.fromHash)
   const outUrl = h.toHash ? h.receiveUrl || hopTxUrl(h.toChainName, h.toHash) : undefined
   const added = addedIds.has(h.orderId)
@@ -111,11 +112,18 @@ function Hop({ h, added: addedIds, onAdd }: { h: CrossChainHop; added: Set<strin
         {outUrl ? (
           <a href={outUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-fg">Received tx {truncate(h.toHash!, 5)} <ExternalLink size={9} /></a>
         ) : <span>{h.toHash ? `Received tx ${truncate(h.toHash, 5)}` : 'Not paid out yet'}</span>}
-        <button onClick={() => onAdd(h)} disabled={added || !h.toChain}
-          title={h.toChain ? 'Put the destination on the graph and keep tracing there' : `${chainDisplay(h.toChainName)} isn't traceable in Ashiato yet`}
-          className="ml-auto inline-flex items-center gap-1 h-6 px-2 whitespace-nowrap text-[10px] font-medium bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-40">
-          <Plus size={10} /> {added ? 'On graph' : 'Add to graph'}
-        </button>
+        {added ? (
+          <button onClick={() => onRemove(h.orderId)} title="Take this swap's line off the graph"
+            className="ml-auto inline-flex items-center gap-1 h-6 px-2 whitespace-nowrap text-[10px] font-medium bg-raised hover:bg-line text-fg">
+            <X size={10} /> Remove
+          </button>
+        ) : (
+          <button onClick={() => onAdd(h)} disabled={!h.toChain}
+            title={h.toChain ? 'Put the destination on the graph and keep tracing there' : `${chainDisplay(h.toChainName)} isn't traceable in Ashiato yet`}
+            className="ml-auto inline-flex items-center gap-1 h-6 px-2 whitespace-nowrap text-[10px] font-medium bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-40">
+            <Plus size={10} /> Add to graph
+          </button>
+        )}
       </div>
     </div>
   )

@@ -36,7 +36,7 @@ interface Props {
   onClose: () => void
   /** Remove this link from the graph (both directions); the addresses stay */
   onHide: () => void
-  /** Shown first on the Relationship tab (e.g. where a cross-chain swap went) */
+  /** Shown above the tabs (e.g. where a cross-chain swap went) */
   extra?: React.ReactNode
 }
 
@@ -119,6 +119,9 @@ export default function EdgeDetail(p: Props) {
         </div>
       </div>
 
+      {/* Above the tabs so it shows whichever tab opens (e.g. where a cross-chain swap went) */}
+      {p.extra && <div className="px-4 pt-3 pb-3 border-b border-line flex-shrink-0 max-h-[45%] overflow-y-auto">{p.extra}</div>}
+
       <div className="flex border-b border-line flex-shrink-0 text-[12px] font-medium">
         {(['relationship', 'transactions'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -131,7 +134,6 @@ export default function EdgeDetail(p: Props) {
       <div className="flex-1 overflow-y-auto min-h-0">
         {tab === 'relationship' ? (
           <div className="p-4 space-y-3">
-            {p.extra}
             <Direction from={p.a} to={p.b} rows={ab} />
             <Direction from={p.b} to={p.a} rows={ba} />
             {times.length > 0 && (
@@ -140,7 +142,9 @@ export default function EdgeDetail(p: Props) {
               </div>
             )}
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {itemizedHere > 0 ? (
+              {p.rows.length <= 1 && itemizedHere === 0 ? (
+                <span className="text-[11px] text-faint self-center">One transaction: the line already shows it.</span>
+              ) : itemizedHere > 0 ? (
                 <button onClick={() => p.onItemize(null)} className="h-8 px-3 text-[11px] font-medium bg-raised hover:bg-line text-fg">
                   Show as one relationship line
                 </button>
