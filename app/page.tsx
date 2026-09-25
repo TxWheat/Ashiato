@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import SiteNav from '@/components/SiteNav'
 import SearchForm from '@/components/SearchForm'
-import SavedCharts from '@/components/SavedCharts'
+import { SignInPanel } from '@/components/SignIn'
 import { labelStats } from '@/lib/labels'
 import { Bitcoin, ShieldAlert, Droplets } from 'lucide-react'
 
@@ -71,10 +71,7 @@ export default function Home() {
               Paste an address or a transaction hash. Bitcoin and Tron (TRX + USDT) work out of the box; Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
               <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
-            <Link href="/trace?intake=1" className="inline-flex items-center gap-2 h-9 px-4 text-xs font-medium border border-line hover:border-accent text-fg">
-              Start from client payments →
-            </Link>
-            <SavedCharts />
+            <SignInPanel />
           </div>
         </div>
 

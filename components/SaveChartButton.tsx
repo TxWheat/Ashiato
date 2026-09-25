@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Save, ChevronDown, Check, Loader2 } from 'lucide-react'
+import { useAuth } from './Providers'
 
 type Status = 'new' | 'dirty' | 'saving' | 'saved'
 
@@ -25,6 +26,7 @@ const time = (t: number) => new Date(t).toLocaleTimeString('en-NZ', { hour: 'num
  */
 export default function SaveChartButton(p: Props) {
   const [menu, setMenu] = useState(false)
+  const signedIn = !!useAuth().address
   const [form, setForm] = useState<null | 'new' | 'as'>(null)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -124,8 +126,9 @@ export default function SaveChartButton(p: Props) {
           <input id="chart-name" autoFocus value={name} onChange={e => setName(e.target.value)} maxLength={80}
             className="w-full h-8 px-2 text-[12px] bg-bg border border-line text-fg outline-none focus:border-accent" />
           <p className="text-[10px] text-faint leading-relaxed">
-            Saved in this browser with the layout, transactions, traces, notes and labels. Reopen it from <b className="text-fg font-medium">Your cases</b> on the home page.
-            {' '}To move it to another computer use Export → Save case file.
+            {signedIn
+              ? <>Saved to your account with the layout, transactions, traces, notes and labels. Reopen it from <b className="text-fg font-medium">My cases</b> on any device.</>
+              : <>Saved in this browser with the layout, transactions, traces, notes and labels. Sign in to keep it in your account and open it on any device.</>}
           </p>
           <div className="flex justify-end gap-1.5">
             <button type="button" onClick={() => setForm(null)} className="h-7 px-2.5 text-[11px] font-medium bg-raised hover:bg-line text-fg">Cancel</button>
