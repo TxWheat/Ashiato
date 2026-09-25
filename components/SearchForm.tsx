@@ -1,5 +1,6 @@
 'use client'
 
+import { chainDot } from '@/lib/format'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowUpRight, AlertCircle, Search } from 'lucide-react'
@@ -16,7 +17,7 @@ export default function SearchForm({ compact = false }: { compact?: boolean }) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!target) {
-      setError('Enter a Bitcoin or Ethereum address, or a transaction hash')
+      setError('Enter a Bitcoin, Ethereum or Tron address, or a transaction hash')
       return
     }
     setValue('')
@@ -25,7 +26,7 @@ export default function SearchForm({ compact = false }: { compact?: boolean }) {
 
   const badge = target && (
     <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted pointer-events-none">
-      <span className={`w-1.5 h-1.5 rounded-full ${target.chain === 'btc' ? 'bg-orange-500' : 'bg-violet-500'}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${chainDot(target.chain)}`} />
       {target.chain} {target.kind === 'tx' ? 'transaction' : 'address'}
     </span>
   )

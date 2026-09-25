@@ -1,7 +1,7 @@
 import { Chain, EntityType } from './types'
 
 export function nativeAsset(chain: Chain): string {
-  return chain === 'btc' ? 'BTC' : 'ETH'
+  return chain === 'btc' ? 'BTC' : chain === 'tron' ? 'TRX' : 'ETH'
 }
 
 /** "USDT*" marks a look-alike token contract; show it plainly as fake */
@@ -61,12 +61,25 @@ export function fmtDate(ts: number): string {
 export function explorerAddressUrl(address: string, chain: Chain): string {
   return chain === 'btc'
     ? `https://mempool.space/address/${address}`
-    : `https://etherscan.io/address/${address}`
+    : chain === 'tron'
+      ? `https://tronscan.org/#/address/${address}`
+      : `https://etherscan.io/address/${address}`
 }
 
 export function explorerTxUrl(txid: string, chain: Chain): string {
-  return chain === 'btc' ? `https://mempool.space/tx/${txid}` : `https://etherscan.io/tx/${txid}`
+  return chain === 'btc'
+    ? `https://mempool.space/tx/${txid}`
+    : chain === 'tron'
+      ? `https://tronscan.org/#/transaction/${txid}`
+      : `https://etherscan.io/tx/${txid}`
 }
+
+/** Dot colour per chain (class names written out for Tailwind) */
+export function chainDot(chain: Chain): string {
+  return chain === 'btc' ? 'bg-orange-500' : chain === 'tron' ? 'bg-red-500' : 'bg-violet-500'
+}
+
+export const CHAIN_NAME: Record<Chain, string> = { btc: 'Bitcoin', eth: 'Ethereum', tron: 'Tron' }
 
 /** Fiat value, or 0 when no price is known for the asset */
 export function fiatValue(amount: number, asset: string, prices: Record<string, number>): number {
@@ -100,7 +113,7 @@ export const ENTITY_STYLE: Record<EntityType, { hex: string; label: string; bord
 export const RISKY_TYPES: EntityType[] = ['sanctioned', 'scam', 'hack', 'ransomware', 'illicit', 'darknet', 'mixer', 'coinjoin']
 
 /** Assets that are never airdrop spam */
-export const MAJOR_ASSETS = new Set(['ETH', 'BTC', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
+export const MAJOR_ASSETS = new Set(['ETH', 'BTC', 'TRX', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
 
 /**
  * The few assets worth naming in a short label: highest NZD value first, then

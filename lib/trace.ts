@@ -40,8 +40,8 @@ export async function assemble(opts: {
     }
   }
 
-  if (chain === 'eth') {
-    findings.push(...tornadoFindings(address, rawTxs, labelOf))
+  if (chain === 'eth') findings.push(...tornadoFindings(address, rawTxs, labelOf))
+  if (chain === 'eth' || chain === 'tron') {
     const poison = detectPoisoning(address, rawTxs)
     for (const [a, l] of poison.labels) if (!labelOf(a)) labelCache.set(a, l)
     if (poison.finding) findings.push(poison.finding)

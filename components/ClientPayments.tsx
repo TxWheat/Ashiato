@@ -3,14 +3,15 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { X, ExternalLink, CheckCircle2, AlertTriangle, HelpCircle, XCircle, ArrowRightFromLine, Trash2 } from 'lucide-react'
-import { CheckedPayment, PaymentStatus } from '@/lib/client-payments'
+import { CheckedPayment, PaymentMatch, PaymentStatus } from '@/lib/client-payments'
 import { explorerTxUrl, fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
 const STATUS: Record<PaymentStatus, { label: string; cls: string; icon: React.ReactNode }> = {
   verified: { label: 'Verified', cls: 'bg-green-500/15 text-green-500', icon: <CheckCircle2 size={12} /> },
   mismatch: { label: 'Found, details differ', cls: 'bg-amber-500/15 text-amber-500', icon: <AlertTriangle size={12} /> },
-  ambiguous: { label: 'Several matches', cls: 'bg-amber-500/15 text-amber-500', icon: <HelpCircle size={12} /> },
+  ambiguous: { label: 'Pick the payment', cls: 'bg-amber-500/15 text-amber-500', icon: <HelpCircle size={12} /> },
+  chosen: { label: 'Picked by you', cls: 'bg-accent/15 text-accent', icon: <CheckCircle2 size={12} /> },
   'not-found': { label: 'Not found', cls: 'bg-red-500/15 text-red-500', icon: <XCircle size={12} /> },
   error: { label: 'Check the line', cls: 'bg-red-500/15 text-red-500', icon: <XCircle size={12} /> },
 }
@@ -35,13 +36,51 @@ interface Props {
   onTraceAll: () => void
   onRemove: (id: string) => void
   onShow: (p: CheckedPayment) => void
+  onChoose: (rowId: string, m: PaymentMatch) => void
   onClose: () => void
+}
+
+/** Every payment found for a vague claim, filterable, each with Use */
+function Candidates({ row, nm, onChoose }: { row: CheckedPayment; nm: (a: string) => string; onChoose: (m: PaymentMatch) => void }) {
+  const [q, setQ] = useState('')
+  const addr = row.claim.address
+  const needle = q.trim().toLowerCase()
+  const list = (row.candidates ?? []).filter(m => !needle ||
+    m.asset.toLowerCase().includes(needle) || String(+m.amount.toPrecision(8)).includes(needle) ||
+    m.from.toLowerCase().includes(needle) || m.to.toLowerCase().includes(needle) || (nm(m.from) + nm(m.to)).toLowerCase().includes(needle) || day(m.timestamp).toLowerCase().includes(needle))
+  const chosen = (m: PaymentMatch) => row.match?.txid === m.txid && row.match.to === m.to && row.match.amount === m.amount
+  return (
+    <div className="mt-2 border border-line">
+      <div className="flex items-center gap-2 px-2 py-1.5 border-b border-line bg-panel">
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Filter: asset, amount, address or date…" aria-label="Filter payments"
+          className="flex-1 h-6 px-2 text-[11px] bg-bg border border-line text-fg placeholder:text-faint outline-none focus:border-accent" />
+        <span className="text-[10px] text-faint whitespace-nowrap">{list.length} of {row.candidates?.length ?? 0}</span>
+      </div>
+      <div className="max-h-56 overflow-y-auto divide-y divide-line/60">
+        {list.slice(0, 200).map((m, k) => {
+          const dir = addr ? (m.to === addr ? 'in' : 'out') : null
+          return (
+            <div key={`${m.txid}${m.to}${k}`} className={clsx('flex items-center gap-2 px-2 py-1 text-[11px]', chosen(m) && 'bg-accent/10')}>
+              {dir && <span className={clsx('text-[9px] font-semibold uppercase px-1', dir === 'in' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500')}>{dir}</span>}
+              <span className="text-faint w-24 whitespace-nowrap">{day(m.timestamp) || 'pending'}</span>
+              <span className="font-mono text-fg w-36 truncate">{fmtAmount(m.amount, m.asset, 8)}</span>
+              <span className="text-faint truncate flex-1">{dir === 'in' ? `from ${nm(m.from)}` : dir === 'out' ? `to ${nm(m.to)}` : `${nm(m.from)} → ${nm(m.to)}`}</span>
+              <a href={explorerTxUrl(m.txid, m.chain)} target="_blank" rel="noopener noreferrer" className="font-mono text-faint hover:text-fg">{truncate(m.txid, 4)}</a>
+              <button onClick={() => onChoose(m)} disabled={chosen(m)} className="h-5 px-2 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
+                {chosen(m) ? 'Used' : 'Use'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 /** Paste what the client gave you; each payment is checked on-chain, then traced together */
 export default function ClientPaymentsDialog(p: Props) {
   const [text, setText] = useState('')
-  const traceable = p.payments.filter(x => x.match && (x.status === 'verified' || x.status === 'mismatch'))
+  const traceable = p.payments.filter(x => x.match && (x.status === 'verified' || x.status === 'mismatch' || x.status === 'chosen'))
   const nm = (a: string) => p.nameOf(a) ?? truncate(a, 6)
 
   return (
@@ -105,10 +144,13 @@ export default function ClientPaymentsDialog(p: Props) {
                         </>
                       ) : <span className="text-faint">—</span>}
                     </td>
-                    <td className="py-2.5 pr-3 space-y-1">
+                    <td className="py-2.5 pr-3 space-y-1" colSpan={x.candidates?.length ? 1 : 1}>
                       <PaymentStatusBadge status={x.status} />
                       {x.notes.map((n, k) => <div key={k} className="text-faint leading-snug">{n}</div>)}
                       {!!x.claim.errors.length && x.status === 'error' && x.claim.errors.map((n, k) => <div key={k} className="text-red-500 leading-snug">{n}</div>)}
+                      {!!x.candidates?.length && (x.status === 'ambiguous' || x.status === 'chosen') && (
+                        <Candidates row={x} nm={nm} onChoose={m => p.onChoose(x.id, m)} />
+                      )}
                     </td>
                     <td className="py-2.5 pr-5 text-right whitespace-nowrap">
                       {x.match && <button onClick={() => p.onShow(x)} className="h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg mr-1">Show</button>}

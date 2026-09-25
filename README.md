@@ -1,6 +1,6 @@
 # CryptoTracer
 
-Free, open-source blockchain forensics for scam victims and independent investigators. Trace Bitcoin and Ethereum funds hop by hop, find the exchange deposit address where they were cashed out, and export a report you can hand to an exchange or the police. No sign-up, no paywall.
+Free, open-source blockchain forensics for scam victims and independent investigators. Trace Bitcoin, Ethereum and Tron funds (including USDT) hop by hop, find the exchange deposit address where they were cashed out, and export a report you can hand to an exchange or the police. No sign-up, no paywall.
 
 ## What it does
 
@@ -17,6 +17,7 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | **Follow the funds** | Trace a specific payment hop by hop: exact coin (UTXO) tracing on Bitcoin, chronological amount-capped tracing on Ethereum. Every hop explains itself; stops at exchanges, deposit addresses and mixers |
 | **ENS names** | Verified primary ENS names on Ethereum addresses (reverse + forward check, so spoofed names are ignored) |
 | **Cases & exports** | Save a chart as a case in your browser (auto-saves; Save as for copies) (layout, transactions, traces, notes, labels) and reopen it from the home page; case files (JSON) to move it between computers; CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
+| **Tron (TRX + USDT)** | TronGrid: TRX and TRC-20 transfers (fake-USDT poisoning flagged), exact tx lookup, same adaptive tracing and pooling as Ethereum; OFAC Tron addresses and GraphSense exchange wallets labelled. Works without a key; a free `TRONGRID_API_KEY` raises the rate limit |
 | **Client payments** | Paste the tx hashes, wallet addresses, amounts and dates a client gives you: each is checked on-chain (verified / details differ / several matches / not found) and all of them are traced together; the report includes the comparison |
 | **Your own labels** | Name any address and set its category; your label overrides every other source wherever the address appears |
 
@@ -30,7 +31,7 @@ Requires Node.js 20+.
 git clone https://github.com/TxWheat/Cryptocurrency-Tracing-Tool.git
 cd Cryptocurrency-Tracing-Tool
 npm install
-cp .env.local.example .env.local   # add ETHERSCAN_API_KEY for Ethereum
+cp .env.local.example .env.local   # add ETHERSCAN_API_KEY for Ethereum; optional TRONGRID_API_KEY for Tron
 npm run dev
 ```
 

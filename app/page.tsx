@@ -68,7 +68,7 @@ export default function Home() {
             </p>
             <SearchForm />
             <p className="text-xs text-faint">
-              Paste an address or a transaction hash. Bitcoin works out of the box; Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
+              Paste an address or a transaction hash. Bitcoin and Tron (TRX + USDT) work out of the box; Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
               <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
             <Link href="/trace?intake=1" className="inline-flex items-center gap-2 h-9 px-4 text-xs font-medium border border-line hover:border-accent text-fg">
@@ -123,7 +123,7 @@ export default function Home() {
           />
           <div className="relative text-2xl sm:text-4xl font-medium text-fg">Addresses identified</div>
           <div className="relative text-[64px] sm:text-[120px] leading-none font-light tracking-[-0.04em] text-fg">
-            {(stats.btc + stats.eth).toLocaleString('en-US')}
+            {(stats.btc + stats.eth + stats.tron).toLocaleString('en-US')}
           </div>
           <p className="relative text-xs sm:text-sm font-medium text-muted max-w-sm">
             Exchanges, mixers, scams, ransomware, hacks and sanctioned wallets from open, source-linked datasets.

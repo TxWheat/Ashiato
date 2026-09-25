@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, AlertTriangle } from 'lucide-react'
 import { EntityLabel, RawTransaction, TxIO, TxLookup } from '@/lib/types'
-import { ENTITY_STYLE, explorerTxUrl, fmtAmount, fmtDate } from '@/lib/format'
+import { ENTITY_STYLE, explorerTxUrl, fmtAmount, fmtDate, chainDot } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
 interface Props {
@@ -60,7 +60,7 @@ export default function TxInspector(p: Props) {
     <div className="flex flex-col h-full min-h-0">
       <div className="p-4 border-b border-line space-y-2.5 flex-shrink-0">
         <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider">
-          <span className={clsx('w-1.5 h-1.5 rounded-full', lookup.chain === 'btc' ? 'bg-orange-500' : 'bg-violet-500')} />
+          <span className={clsx('w-1.5 h-1.5 rounded-full', chainDot(lookup.chain))} />
           <span className="text-faint">{lookup.chain} transaction</span>
           {lookup.failed && <span className="px-1.5 py-0.5 bg-red-500/15 text-red-500">failed</span>}
           {btc?.coinjoin && <span className="px-1.5 py-0.5 bg-orange-500/15 text-orange-500">{btc.coinjoin.kind} CoinJoin</span>}

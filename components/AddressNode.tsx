@@ -2,9 +2,9 @@
 
 import { Handle, Position } from 'reactflow'
 import { clsx } from 'clsx'
-import { NodeData } from '@/lib/types'
+import { Chain, NodeData } from '@/lib/types'
 import { truncate } from '@/lib/detect-chain'
-import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
+import { ENTITY_STYLE, fmtAmount, chainDot } from '@/lib/format'
 
 export interface AddressNodeData extends NodeData {
   view: {
@@ -68,7 +68,7 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
       <Handle type="target" position={Position.Left} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
 
       <div className="flex items-center gap-1.5 mb-1.5 text-[9px] font-medium uppercase tracking-wider">
-        <span className={clsx('w-1.5 h-1.5 rounded-full', data.chain === 'btc' ? 'bg-orange-500' : 'bg-violet-500')} />
+        <span className={clsx('w-1.5 h-1.5 rounded-full', chainDot(data.chain))} />
         <span className="text-faint">{data.chain}</span>
         {labelled && <span className={clsx('px-1 py-px', style.badge)}>{style.label.split(' ')[0]}</span>}
         {data.isOrigin && <span className="px-1 py-px bg-accent/20 text-accent">origin</span>}
@@ -107,7 +107,7 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
 
 export interface TxHubData {
   txid: string
-  chain: 'btc' | 'eth'
+  chain: Chain
   label: string
   inputs: { address: string; amount: number; asset: string }[]
   outputs: { address: string; amount: number; asset: string }[]

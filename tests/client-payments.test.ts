@@ -21,7 +21,7 @@ describe('parseClientPayments', () => {
   })
   it('explains what is missing', () => {
     expect(parseClientPayments('2 BTC 2026-03-09')[0].errors[0]).toMatch(/hash or a wallet address/)
-    expect(parseClientPayments(SCAM)[0].errors[0]).toMatch(/amount and date/)
+    expect(parseClientPayments(SCAM)[0].errors).toEqual([]) // an address alone is fine: its payments are listed
   })
 })
 
@@ -45,6 +45,19 @@ describe('judgePayment', () => {
     expect(judgePayment(claim, [m(1000, '2026-03-09'), m(1000, '2026-03-10')], 'p').status).toBe('ambiguous')
     expect(judgePayment(claim, [m(1000, '2026-05-01')], 'p').status).toBe('not-found')
   })
+  it('lists every payment for a bare address and lets the investigator pick several', async () => {
+    const { choosePayment } = await import('@/lib/client-payments')
+    const [claim] = parseClientPayments(SCAM)
+    const found = [m(1, '2026-03-01'), m(2, '2026-03-02'), { ...m(3, '2026-03-03'), asset: 'USDT*' }]
+    const r = judgePayment(claim, found, 'p')
+    expect(r.status).toBe('ambiguous')
+    expect(r.candidates!.map(c => c.amount)).toEqual([2, 1]) // newest first, fake token dropped
+    let list = choosePayment([r], 'p', r.candidates![0], 'q')
+    list = choosePayment(list, 'p', r.candidates![1], 'q2')
+    expect(list.map(x => [x.status, x.match?.amount])).toEqual([['chosen', 2], ['chosen', 1]])
+    expect(seedsFromPayments(list).lots).toHaveLength(2)
+  })
+
   it('seeds a trace from the recipient of each found payment', () => {
     const [claim] = parseClientPayments(`${SCAM} 5000 USDT 9/3/2026`)
     const { lots, flows } = seedsFromPayments([judgePayment(claim, [m(5000, '2026-03-09')], 'p1')])

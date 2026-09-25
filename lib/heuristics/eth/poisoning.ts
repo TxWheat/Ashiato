@@ -15,6 +15,8 @@ import { EntityLabel, Finding, RawTransaction } from '../../types'
 const DUST = 1e-6
 
 function fingerprint(a: string): string {
+  // Tron: base58 is case-sensitive and always starts with T
+  if (/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a)) return `${a.slice(1, 5)}…${a.slice(-4)}`
   const h = a.toLowerCase().replace(/^0x/, '')
   return `${h.slice(0, 4)}…${h.slice(-4)}`
 }
@@ -29,11 +31,11 @@ export interface PoisoningResult {
 }
 
 export function detectPoisoning(address: string, txs: RawTransaction[]): PoisoningResult {
-  const me = address.toLowerCase()
+  const me = address.startsWith('0x') ? address.toLowerCase() : address
   const genuine = new Set<string>()
   const junk = new Set<string>()
   for (const t of txs) {
-    if (t.chain !== 'eth') continue
+    if (t.chain !== 'eth' && t.chain !== 'tron') continue
     const from = t.inputs[0]?.address
     const to = t.outputs[0]?.address
     const other = from === me ? to : to === me ? from : undefined

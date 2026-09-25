@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchBtcTx } from '@/lib/chains/btc'
 import { fetchEthTx } from '@/lib/chains/eth-tx'
+import { fetchTronTx } from '@/lib/chains/tron'
 import { UpstreamError } from '@/lib/http'
 
 // One transaction. BTC: with the spender of each output (exact UTXO tracing).
@@ -16,6 +17,15 @@ export async function GET(
       return NextResponse.json(await fetchEthTx(txid))
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load transaction' }, { status: 502 })
+    }
+  }
+  if (chain === 'tron') {
+    if (!/^[0-9a-fA-F]{64}$/.test(txid)) return NextResponse.json({ error: 'Invalid transaction hash' }, { status: 400 })
+    try {
+      return NextResponse.json(await fetchTronTx(txid))
+    } catch (e) {
+      const notFound = e instanceof Error && /not found/i.test(e.message)
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load transaction' }, { status: notFound ? 404 : 502 })
     }
   }
   if (chain !== 'btc') return NextResponse.json({ error: 'Unknown chain' }, { status: 400 })

@@ -16,12 +16,12 @@ import { runTaint, TaintMethod } from '@/lib/taint'
 import { BtcTxInfo, Direction, followFunds, Lot, seedsFromTx, backSeedsFromTx, TracedFlow, TraceEnd } from '@/lib/follow'
 import { saveCase as saveChartToBrowser, getCase as getSavedChart, newCaseId } from '@/lib/saved-cases'
 import { collapseChains } from '@/lib/collapse'
-import { CheckedPayment, PaymentMatch, judgePayment, parseClientPayments, seedsFromPayments, transfersOf } from '@/lib/client-payments'
+import { CheckedPayment, PaymentMatch, choosePayment, judgePayment, parseClientPayments, seedsFromPayments, transfersOf } from '@/lib/client-payments'
 import ClientPaymentsDialog from '@/components/ClientPayments'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
-import { ENTITY_STYLE, nativeAsset } from '@/lib/format'
+import { ENTITY_STYLE, nativeAsset, chainDot } from '@/lib/format'
 import AddressInspector, { AddressTab } from '@/components/AddressInspector'
 import TxInspector from '@/components/TxInspector'
 import EdgeDetail from '@/components/EdgeDetail'
@@ -87,7 +87,7 @@ const fetchTrace = (address: string, chain: Chain, cursor?: string) =>
 
 /** Normalises the BTC and ETH transaction endpoints into one shape */
 async function fetchTxLookup(txid: string, chain: Chain): Promise<TxLookup> {
-  if (chain === 'eth') return getJson<TxLookup>(`/api/tx/eth/${txid}`)
+  if (chain === 'eth' || chain === 'tron') return getJson<TxLookup>(`/api/tx/${chain}/${txid}`)
   const info = await getJson<BtcTxInfo>(`/api/tx/btc/${txid}`)
   return { chain: 'btc', txid: info.tx.txid, timestamp: info.tx.timestamp, transfers: [info.tx], labels: info.labels, ens: {}, spentBy: info.spentBy }
 }
@@ -122,7 +122,7 @@ function TracePageInner() {
   const rawAddress = params.get('address') ?? ''
   const originTx = (params.get('tx') ?? '').toLowerCase()
   const chainParam = params.get('chain') as Chain | null
-  const originChain: Chain | null = chainParam === 'btc' || chainParam === 'eth' ? chainParam : originTx ? (originTx.startsWith('0x') ? 'eth' : 'btc') : detectChain(rawAddress)
+  const originChain: Chain | null = chainParam === 'btc' || chainParam === 'eth' || chainParam === 'tron' ? chainParam : originTx ? (originTx.startsWith('0x') ? 'eth' : 'btc') : detectChain(rawAddress)
   const originAddress = !originTx && originChain ? normaliseAddress(rawAddress, originChain) : ''
   const originKey = originTx || originAddress
 
@@ -221,9 +221,9 @@ function TracePageInner() {
 
   const [prices, setPrices] = useState<Record<string, number>>({})
   useEffect(() => {
-    fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=nzd')
+    fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,tron&vs_currencies=nzd')
       .then(r => r.json())
-      .then(d => setPrices({ BTC: d.bitcoin?.nzd ?? 0, ETH: d.ethereum?.nzd ?? 0, WETH: d.ethereum?.nzd ?? 0, USD: d.tether?.nzd ?? 0 }))
+      .then(d => setPrices({ BTC: d.bitcoin?.nzd ?? 0, ETH: d.ethereum?.nzd ?? 0, WETH: d.ethereum?.nzd ?? 0, TRX: d.tron?.nzd ?? 0, USD: d.tether?.nzd ?? 0 }))
       .catch(() => {})
   }, [])
 
@@ -326,7 +326,7 @@ function TracePageInner() {
       return
     }
     if (!originChain || (!originTx && !originAddress)) {
-      setError('Not a valid Bitcoin or Ethereum address or transaction')
+      setError('Not a valid Bitcoin, Ethereum or Tron address or transaction')
       setInitialLoading(false)
       return
     }
@@ -335,7 +335,16 @@ function TracePageInner() {
     resetState()
     try {
       if (originTx) {
-        const l = await fetchTxLookup(originTx, originChain)
+        // A bare 64-hex hash is Bitcoin or Tron; try Tron when Bitcoin has no such tx
+        let l: TxLookup
+        try {
+          l = await fetchTxLookup(originTx, originChain)
+        } catch (e) {
+          if (originChain !== 'btc') throw e
+          l = await fetchTxLookup(originTx, 'tron').catch(() => { throw e })
+          restoring.current = true
+          router.replace(`/trace?tx=${originTx}&chain=tron`)
+        }
         absorbTx(l)
         const { inputs, outputs } = txParticipants(l)
         setVisible(new Set([...inputs.slice(0, TX_PARTICIPANTS), ...outputs.slice(0, TX_PARTICIPANTS)]))
@@ -618,7 +627,7 @@ function TracePageInner() {
           result = { id, claim: c, status: 'error', notes: [] }
         } else if (c.txid) {
           // A bare 64-hex hash is Bitcoin (Tron hashes look the same; tried next)
-          const chains: Chain[] = c.chain ? [c.chain] : ['btc']
+          const chains: Chain[] = c.chain ? [c.chain] : ['btc', 'tron']
           let found: PaymentMatch[] | null = null
           for (const ch of chains) {
             try {
@@ -629,7 +638,8 @@ function TracePageInner() {
           result = found ? judgePayment(c, found, id) : { id, claim: c, status: 'not-found', notes: ['Transaction not found'] }
         } else {
           const chain = detectChain(c.address!)!
-          const txs = await historyUntil(c.address!, chain, (c.date ?? 0) - 4 * 86400)
+          // With a date, page back far enough to cover it; without one, the latest history
+          const txs = await historyUntil(c.address!, chain, c.date !== undefined ? c.date - 4 * 86400 : Number.POSITIVE_INFINITY)
           result = judgePayment(c, transfersOf(txs), id)
         }
       } catch (e) {
@@ -1159,7 +1169,7 @@ function TracePageInner() {
           className="flex items-center gap-2 min-w-0 max-w-[260px] text-left hover:text-accent"
           title="Show the starting point"
         >
-          {originChain && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${originChain === 'btc' ? 'bg-orange-500' : 'bg-violet-500'}`} />}
+          {originChain && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${chainDot(originChain)}`} />}
           <span className="text-[10px] uppercase tracking-wider text-faint flex-shrink-0">{originTx ? 'tx' : originChain}</span>
           <span className="text-xs text-fg truncate font-mono">{originNode?.label?.name ?? originNode?.ens ?? truncate(originKey, 8)}</span>
         </button>
@@ -1315,6 +1325,7 @@ function TracePageInner() {
               onCheck={checkPayments}
               onTraceAll={traceAllPayments}
               onRemove={id => setPayments(prev => prev.filter(x => x.id !== id))}
+              onChoose={(rowId, m) => setPayments(prev => choosePayment(prev, rowId, m, `${Date.now().toString(36)}c`))}
               onShow={x => {
                 if (!x.match) return
                 showOnGraph([x.match.from, x.match.to].filter(Boolean))

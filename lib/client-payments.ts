@@ -19,7 +19,7 @@ export interface ClaimedPayment {
   errors: string[]
 }
 
-export type PaymentStatus = 'verified' | 'mismatch' | 'ambiguous' | 'not-found' | 'error'
+export type PaymentStatus = 'verified' | 'mismatch' | 'ambiguous' | 'chosen' | 'not-found' | 'error'
 
 export interface PaymentMatch {
   chain: Chain
@@ -110,9 +110,6 @@ export function parseClientPayments(text: string): ClaimedPayment[] {
       }
     }
     if (!claim.txid && !claim.address) claim.errors.push('Needs a transaction hash or a wallet address')
-    if (!claim.txid && claim.address && (claim.amount === undefined || claim.date === undefined)) {
-      claim.errors.push('With only an address, give the amount and date so the payment can be found')
-    }
     return claim
   })
 }
@@ -152,6 +149,16 @@ export function judgePayment(claim: ClaimedPayment, found: PaymentMatch[], id: s
     return { id, claim, status: 'not-found', notes: [claim.txid ? 'The transaction exists, but no transfer in it matches the stated address/asset' : 'No matching payment in the loaded history of this address'] }
   }
 
+  // Only an address: every payment in or out of it is a candidate for the user to pick
+  if (!claim.txid && claim.address && claim.amount === undefined && claim.date === undefined) {
+    // Fake-token spam (poisoning) is never a client payment
+    const all = pool.filter(m => !m.asset.endsWith('*')).sort((x, y) => y.timestamp - x.timestamp)
+    return {
+      id, claim, status: 'ambiguous', candidates: all.slice(0, 500),
+      notes: [`${all.length} payment${all.length === 1 ? '' : 's'} in or out of this address${all.length > 500 ? ' (latest 500)' : ''}. Pick the client's with Use, or add the amount and date to find it automatically.`],
+    }
+  }
+
   const score = (m: PaymentMatch) => {
     const a = claim.amount !== undefined ? Math.abs(m.amount - claim.amount) / Math.max(claim.amount, 1e-9) : 0
     const d = claim.date !== undefined && m.timestamp ? Math.abs(m.timestamp - claim.date) / DAY : 0
@@ -176,7 +183,7 @@ export function judgePayment(claim: ClaimedPayment, found: PaymentMatch[], id: s
   if (!best.timestamp) notes.push('Still unconfirmed (pending)')
   const exact = close.filter(m => amountClose(claim.amount ?? m.amount, m.amount, m.asset, 0.02))
   if (!claim.txid && exact.length > 1) {
-    return { id, claim, status: 'ambiguous', match: best, candidates: exact.slice(0, 5), notes: [`${exact.length} payments of about that amount near that date; the closest is shown`] }
+    return { id, claim, status: 'ambiguous', candidates: exact.slice(0, 20), notes: [`${exact.length} payments of about that amount near that date. Pick the client's with Use.`] }
   }
   return { id, claim, status: amountOk && dateOk ? 'verified' : 'mismatch', match: best, notes }
 }
@@ -187,12 +194,25 @@ export function seedsFromPayments(payments: CheckedPayment[]): { lots: Lot[]; fl
   const flows: TracedFlow[] = []
   payments.forEach((p, i) => {
     const m = p.match
-    if (!m || (p.status !== 'verified' && p.status !== 'mismatch')) return
+    if (!m || (p.status !== 'verified' && p.status !== 'mismatch' && p.status !== 'chosen')) return
     lots.push({ chain: m.chain, address: m.to, asset: m.asset, amount: m.amount, time: m.timestamp, via: m.txid, vout: m.vout, hop: 1 })
     flows.push({
       from: m.from, to: m.to, amount: m.amount, asset: m.asset, txid: m.txid, time: m.timestamp, hop: 1,
-      reason: `Client payment ${i + 1}${p.status === 'verified' ? ' (verified on-chain)' : ' (on-chain, details differ from the client’s)'}`,
+      reason: `Client payment ${i + 1}${p.status === 'verified' ? ' (verified on-chain)' : p.status === 'chosen' ? ' (picked by the investigator)' : ' (on-chain, details differ from the client’s)'}`,
     })
   })
   return { lots, flows }
+}
+
+/**
+ * The investigator picks a candidate: the first pick turns the row into that payment,
+ * further picks add rows (a client who paid several times).
+ */
+export function choosePayment(list: CheckedPayment[], rowId: string, m: PaymentMatch, newId: string): CheckedPayment[] {
+  const row = list.find(x => x.id === rowId)
+  if (!row) return list
+  const note = 'Picked from the address’s payments'
+  if (row.status === 'ambiguous') return list.map(x => (x.id === rowId ? { ...x, status: 'chosen', match: m, notes: [note] } : x))
+  const i = list.indexOf(row)
+  return [...list.slice(0, i + 1), { id: newId, claim: row.claim, status: 'chosen', match: m, candidates: row.candidates, notes: [note] }, ...list.slice(i + 1)]
 }

@@ -92,7 +92,7 @@ function sourceId(title, url, license) {
   return sourceIdx.get(key)
 }
 
-const labels = { btc: new Map(), eth: new Map() }
+const labels = { btc: new Map(), eth: new Map(), tron: new Map() }
 function add(chain, address, name, type, src) {
   if (!type || !name) return
   const addr = normalise(address, chain)
@@ -130,7 +130,7 @@ if (tagpacksDir) {
     )
     for (const t of pack.tags) {
       const cur = String(t.currency ?? pack.currency ?? '').toUpperCase()
-      const chain = cur === 'BTC' ? 'btc' : cur === 'ETH' ? 'eth' : null
+      const chain = cur === 'BTC' ? 'btc' : cur === 'ETH' ? 'eth' : cur === 'TRX' ? 'tron' : null
       if (!chain || !t.address) continue
       const abuse = t.abuse ?? pack.abuse
       const category = t.category ?? pack.category
@@ -149,7 +149,11 @@ if (ofacDir) {
     'https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses',
     'Public domain (US Gov) / MIT tooling'
   )
-  const files = { btc: ['sanctioned_addresses_XBT.txt'], eth: ['sanctioned_addresses_ETH.txt', 'sanctioned_addresses_USDT.txt', 'sanctioned_addresses_USDC.txt'] }
+  const files = {
+    btc: ['sanctioned_addresses_XBT.txt'],
+    eth: ['sanctioned_addresses_ETH.txt', 'sanctioned_addresses_USDT.txt', 'sanctioned_addresses_USDC.txt'],
+    tron: ['sanctioned_addresses_TRX.txt', 'sanctioned_addresses_USDT.txt', 'sanctioned_addresses_USDC.txt'],
+  }
   for (const [chain, names] of Object.entries(files)) {
     for (const name of names) {
       const p = path.join(ofacDir, name)
@@ -158,6 +162,7 @@ if (ofacDir) {
         const a = line.trim()
         if (!a) continue
         if (chain === 'eth' && !/^0x[0-9a-fA-F]{40}$/.test(a)) continue
+        if (chain === 'tron' && !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a)) continue
         add(chain, a, 'OFAC sanctioned address', 'sanctioned', src)
       }
     }
@@ -226,7 +231,7 @@ for (const c of curated) {
   labels[c.chain]?.set(addr, { name: c.name, type: c.type, src: curatedSrc })
 }
 
-for (const chain of ['btc', 'eth']) {
+for (const chain of ['btc', 'eth', 'tron']) {
   const rows = [...labels[chain]].sort(([a], [b]) => (a < b ? -1 : 1))
   const out = rows.map(([a, l]) => `${a}\t${l.name}\t${l.type}\t${l.src}`).join('\n') + '\n'
   fs.writeFileSync(path.join(outDir, `${chain}.tsv.gz`), zlib.gzipSync(out, { level: 9 }))

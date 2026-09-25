@@ -10,7 +10,7 @@ interface Source { title: string; url: string; license: string }
 
 const DIR = path.join(process.cwd(), 'data', 'labels')
 
-let cache: { btc: Map<string, EntityLabel>; eth: Map<string, EntityLabel> } | null = null
+let cache: Record<Chain, Map<string, EntityLabel>> | null = null
 
 function load() {
   if (cache) return cache
@@ -28,7 +28,7 @@ function load() {
     }
     return map
   }
-  cache = { btc: read('btc'), eth: read('eth') }
+  cache = { btc: read('btc'), eth: read('eth'), tron: read('tron') }
   return cache
 }
 
@@ -46,9 +46,17 @@ const SPECIAL: Record<string, EntityLabel> = {
   '0x6818809eefce719e480a7526d76bd3e561526b46': { name: 'Privacy Pools: Deposit', type: 'mixer', source: 'Etherscan public name tag', sourceUrl: 'https://etherscan.io/address/0x6818809eefce719e480a7526d76bd3e561526b46' },
 }
 
+// Tron token contracts
+const SPECIAL_TRON: Record<string, EntityLabel> = {
+  TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t: { name: 'Tether: USDT (TRC-20) contract', type: 'service', source: 'Token contract' },
+  TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8: { name: 'Circle: USDC (TRC-20) contract', type: 'service', source: 'Token contract' },
+  T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb: { name: 'Tron black-hole address (burn)', type: 'service', source: 'Tron convention' },
+}
+
 export function getLabel(address: string, chain: Chain): EntityLabel | undefined {
   const addr = normaliseAddress(address, chain)
   if (chain === 'eth' && SPECIAL[addr]) return SPECIAL[addr]
+  if (chain === 'tron' && SPECIAL_TRON[addr]) return SPECIAL_TRON[addr]
   const hit = load()[chain].get(addr)
   if (hit) return hit
   // BitMEX gives every customer a vanity deposit address starting with 3BMEX
@@ -66,6 +74,6 @@ export function getLabel(address: string, chain: Chain): EntityLabel | undefined
 export function labelStats() {
   const c = load()
   let sanctioned = 0
-  for (const m of [c.btc, c.eth]) for (const l of m.values()) if (l.type === 'sanctioned') sanctioned++
-  return { btc: c.btc.size, eth: c.eth.size, sanctioned }
+  for (const m of [c.btc, c.eth, c.tron]) for (const l of m.values()) if (l.type === 'sanctioned') sanctioned++
+  return { btc: c.btc.size, eth: c.eth.size, tron: c.tron.size, sanctioned }
 }

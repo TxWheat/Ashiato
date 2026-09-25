@@ -11,7 +11,7 @@ import { EntityLabel, EntityType, NodeData, RawTransaction, transferKey } from '
 import { Counterparty, FlowSummary } from '@/lib/counterparties'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { LoadedPage } from '@/lib/export'
-import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue, MAJOR_ASSETS, topAssets } from '@/lib/format'
+import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue, MAJOR_ASSETS, topAssets, chainDot } from '@/lib/format'
 import { truncate, detectChain, normaliseAddress } from '@/lib/detect-chain'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
@@ -315,7 +315,7 @@ export default function AddressInspector(p: Props) {
       {/* Identity */}
       <div className="p-4 border-b border-line space-y-3 flex-shrink-0">
         <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider">
-          <span className={clsx('w-1.5 h-1.5 rounded-full', node.chain === 'btc' ? 'bg-orange-500' : 'bg-violet-500')} />
+          <span className={clsx('w-1.5 h-1.5 rounded-full', chainDot(node.chain))} />
           <span className="text-faint">{node.chain} address</span>
           <span className={clsx('px-1.5 py-0.5', style.badge)}>{style.label}</span>
           {node.isOrigin && <span className="px-1.5 py-0.5 bg-accent/20 text-accent">origin</span>}

@@ -13,6 +13,8 @@ const MIN_GAP_MS: Record<string, number> = {
   'api.etherscan.io': Math.ceil(1000 / ETHERSCAN_RPS) + 20,
   'blockstream.info': 120,
   'mempool.space': 120,
+  // TronGrid: ~15 req/s with a free key, fewer without
+  'api.trongrid.io': process.env.TRONGRID_API_KEY ? 80 : 350,
 }
 
 export class UpstreamError extends Error {
@@ -33,8 +35,15 @@ async function throttle(host: string) {
  * `softError` lets callers flag a 200 response that is really a rate-limit error
  * (Etherscan does this); such bodies are retried with back-off and never cached.
  */
-export async function fetchJson<T>(url: string, ttlSeconds = 60, retries = 3, softError?: (body: T) => boolean): Promise<T> {
-  const hit = cache.get(url)
+export async function fetchJson<T>(
+  url: string,
+  ttlSeconds = 60,
+  retries = 3,
+  softError?: (body: T) => boolean,
+  init?: { method?: 'GET' | 'POST'; body?: string; headers?: Record<string, string> }
+): Promise<T> {
+  const key = init?.body ? `${url}#${init.body}` : url
+  const hit = cache.get(key)
   if (hit && hit.expires > Date.now()) return hit.body as T
 
   const host = new URL(url).host
@@ -42,7 +51,12 @@ export async function fetchJson<T>(url: string, ttlSeconds = 60, retries = 3, so
   for (let attempt = 0; attempt <= retries; attempt++) {
     await throttle(host)
     try {
-      const res = await fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store' })
+      const res = await fetch(url, {
+        method: init?.method ?? 'GET',
+        body: init?.body,
+        headers: { accept: 'application/json', ...(init?.body ? { 'content-type': 'application/json' } : {}), ...init?.headers },
+        cache: 'no-store',
+      })
       if (res.status === 429 || res.status >= 500) {
         lastErr = new UpstreamError(`${host} returned ${res.status}`, res.status)
         await new Promise(r => setTimeout(r, 500 * 2 ** attempt))
@@ -62,7 +76,7 @@ export async function fetchJson<T>(url: string, ttlSeconds = 60, retries = 3, so
         continue
       }
       if (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value!)
-      cache.set(url, { expires: Date.now() + ttlSeconds * 1000, body })
+      cache.set(key, { expires: Date.now() + ttlSeconds * 1000, body })
       return body
     } catch (e) {
       if (e instanceof UpstreamError && e.status < 500 && e.status !== 429) throw e

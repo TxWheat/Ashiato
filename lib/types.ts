@@ -1,4 +1,4 @@
-export type Chain = 'btc' | 'eth'
+export type Chain = 'btc' | 'eth' | 'tron'
 
 export type EntityType =
   | 'exchange'
