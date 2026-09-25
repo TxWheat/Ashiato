@@ -2,6 +2,7 @@ import { Chain, EdgeData, NodeData, RawTransaction, TxLookup } from './types'
 import { TaintMethod } from './taint'
 import type { CheckedPayment } from './client-payments'
 import type { TracedFlow, TraceEnd } from './follow'
+import type { CrossChainHop } from './bridges/types'
 
 // Case files and exports: JSON (save/load an investigation), CSV of flows,
 // GraphML (Gephi / yEd / Cytoscape, as in s0md3v/Orbit).
@@ -38,6 +39,8 @@ export interface CaseFile {
   hiddenLinks?: string[]
   /** What the client said they paid, and whether it checked out on-chain */
   clientPayments?: CheckedPayment[]
+  /** Cross-chain swaps added to the graph; `via` is the service's node it leaves from */
+  bridgeHops?: (CrossChainHop & { via: string })[]
 }
 
 export function parseCase(text: string): CaseFile {

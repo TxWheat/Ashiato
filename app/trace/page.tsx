@@ -21,7 +21,7 @@ import ClientPaymentsDialog from '@/components/ClientPayments'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
-import { ENTITY_STYLE, nativeAsset, chainDot } from '@/lib/format'
+import { ENTITY_STYLE, nativeAsset, chainDot, fmtCompact, fmtDay } from '@/lib/format'
 import AddressInspector, { AddressTab } from '@/components/AddressInspector'
 import TxInspector from '@/components/TxInspector'
 import EdgeDetail from '@/components/EdgeDetail'
@@ -35,6 +35,8 @@ import type { Attester } from '@/components/CommunityLabels'
 import { usePublicClient, useSwitchChain, useWalletClient } from 'wagmi'
 import { attestLabel, revokeAttestation, voteOnLabel, walletChainId } from '@/lib/attest/write'
 import { ATTEST_CHAIN, SCHEMA_UID } from '@/lib/attest/config'
+import BridgeHops from '@/components/BridgeHops'
+import { BRIDGE_NAME, CrossChainHop, chainDisplay } from '@/lib/bridges/types'
 import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
@@ -163,6 +165,8 @@ function TracePageInner() {
   const intake = params.get('intake') === '1'
   /** Address pairs whose link the user hid from the graph */
   const [hiddenLinks, setHiddenLinks] = useState<Set<string>>(new Set())
+  /** Cross-chain swaps put on the graph (a service's order records link the two chains) */
+  const [bridgeHops, setBridgeHops] = useState<(CrossChainHop & { via: string })[]>([])
   const [traced, setTraced] = useState<TracedFlow[]>([])
   const [traceEnds, setTraceEnds] = useState<TraceEnd[]>([])
   const [history, setHistory] = useState<Snapshot[]>([])
@@ -331,6 +335,7 @@ function TracePageInner() {
     setHiddenLinks(new Set())
     setPinned(new Set())
     setPayments([])
+    setBridgeHops([])
     setTraced([])
     setTraceEnds([])
     setHistory([])
@@ -835,6 +840,13 @@ function TracePageInner() {
     setSelection(null)
   }
 
+  const graphBridges = useMemo(() => bridgeHops.map(h => ({
+    id: h.orderId,
+    from: h.via,
+    to: h.toAddress,
+    line1: `${fmtCompact(h.fromAmount, h.fromAsset)} → ${fmtCompact(h.toAmount, h.toAsset)} (${chainDisplay(h.toChainName)})`,
+    line2: `via ${h.service}${h.time ? ` · ${fmtDay(h.time)}` : ''}`,
+  })), [bridgeHops])
   const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
 
   const legendTypes = useMemo(() => {
@@ -913,6 +925,7 @@ function TracePageInner() {
           itemizedIds: [...itemizedIds],
           hiddenLinks: [...hiddenLinks],
           clientPayments: payments,
+          bridgeHops,
         }
       : null
 
@@ -944,6 +957,7 @@ function TracePageInner() {
     setItemizedIds(new Set(c.itemizedIds ?? []))
     setHiddenLinks(new Set(c.hiddenLinks ?? []))
     setPayments(c.clientPayments ?? [])
+    setBridgeHops(c.bridgeHops ?? [])
     setTraced(uniqueFlows(c.traced ?? []))
     setTraceEnds(mergeEnds(c.traceEnds ?? []))
     setTaint(c.taint ?? null)
@@ -1009,7 +1023,7 @@ function TracePageInner() {
     }
     changeCount.current++
     setDirty(true)
-  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, payments, traced, traceEnds, taint, layoutRev, myLabels])
+  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, payments, traced, traceEnds, taint, layoutRev, myLabels, bridgeHops])
   useEffect(() => {
     if (!autosave || !saved || !dirty || initialLoading) return
     const t = setTimeout(() => saveRef.current(saved.name, { quiet: true }), 1500)
@@ -1154,6 +1168,24 @@ function TracePageInner() {
           }}
           onClose={() => setSelection(null)}
           onHide={() => hideLink(selection.from, selection.to)}
+          extra={(() => {
+            // A link into a cross-chain swap service: ask the service where the money came out
+            const isBridge = (a: string) => BRIDGE_NAME.test(nameOf(a) ?? '')
+            const bridge = isBridge(selection.to) ? selection.to : isBridge(selection.from) ? selection.from : null
+            if (!bridge) return undefined
+            const sender = bridge === selection.to ? selection.from : selection.to
+            const txids = edgeRows.filter(r => r.source === sender && r.target === bridge).flatMap(r => r.txids ?? [r.txid])
+            if (!txids.length) return undefined
+            return (
+              <BridgeHops sender={sender} serviceName={(nameOf(bridge) ?? 'Bridgers').replace(/\s*[(:].*$/, '')} txids={txids} onGraph={visible}
+                onAdd={hop => {
+                  snapshot()
+                  setBridgeHops(prev => (prev.some(h => h.orderId === hop.orderId) ? prev : [...prev, { ...hop, via: bridge }]))
+                  showOnGraph([hop.toAddress])
+                  flash(`Added ${chainDisplay(hop.toChainName)} destination ${truncate(hop.toAddress, 6)}. Open it to keep tracing there.`)
+                }} />
+            )
+          })()}
         />
       )
     }
@@ -1305,6 +1337,7 @@ function TracePageInner() {
               onChainClick={id => setExpandedChains(prev => new Set(prev).add(id))}
               layoutKey={layoutKey}
               hubs={graphHubs}
+              bridges={graphBridges}
               itemized={itemizedEdges}
               prices={prices}
               taintByEdge={taintResult?.byEdge}
