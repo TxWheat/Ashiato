@@ -833,8 +833,12 @@ function TracePageInner() {
     }
   }, [collapsed, graphNodes, graphEdges, graphTraced])
   const drawnNodes = drawn?.nodes ?? graphNodes
-  // Re-tidy the layout whenever the set of collapsed chains changes
-  const layoutKey = `${collapseOn}|${collapsed.chains.map(c => c.id).sort().join(',')}`
+  // The layout is only re-tidied when asked (Tidy layout): collapsing chains, removing or
+  // adding nodes keeps everything where it is, and the zoom where the user left it
+  const [tidyRev, setTidyRev] = useState(0)
+  /** Bumped when a view toggle (collapse / expand) adds or hides nodes, so the zoom stays put */
+  const [quietRev, setQuietRev] = useState(0)
+  const layoutKey = String(tidyRev)
   const hideLink = (a: string, b: string) => {
     setHiddenLinks(prev => new Set(prev).add(pairKey(a, b)))
     setSelection(null)
@@ -1262,9 +1266,15 @@ function TracePageInner() {
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
           )}
+          {drawnNodes.length > 2 && (
+            <button onClick={() => setTidyRev(v => v + 1)} title="Re-arrange the whole graph neatly and fit it to the screen"
+              className="h-7 px-2.5 border border-line text-[11px] font-medium text-muted hover:text-fg whitespace-nowrap">
+              Tidy layout
+            </button>
+          )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
             <button
-              onClick={() => { setCollapseOn(v => !v); setExpandedChains(new Set()); setPinned(new Set()) }}
+              onClick={() => { setQuietRev(v => v + 1); setCollapseOn(v => !v); setExpandedChains(new Set()); setPinned(new Set()) }}
               title={collapseOn ? 'Show every hop of long chains' : 'Draw long pass-through chains as one line'}
               className={`h-7 px-2.5 border border-line text-[11px] font-medium ${collapseOn ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
             >
@@ -1357,8 +1367,9 @@ function TracePageInner() {
               followedPairs={followedPairs}
               traced={drawn?.traced ?? graphTraced}
               chains={collapsed.chains}
-              onChainClick={id => setExpandedChains(prev => new Set(prev).add(id))}
+              onChainClick={id => { setQuietRev(v => v + 1); setExpandedChains(prev => new Set(prev).add(id)) }}
               layoutKey={layoutKey}
+              quietKey={quietRev}
               hubs={graphHubs}
               bridges={graphBridges}
               onBridgeClick={id => {

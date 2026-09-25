@@ -170,6 +170,8 @@ interface Props {
   /** Cross-chain hops: from the swap service's node to where the money came out */
   bridges?: BridgeLine[]
   onBridgeClick?: (id: string) => void
+  /** Changes when nodes appear or vanish because of a view toggle (collapsing chains): keep the zoom */
+  quietKey?: number
 }
 
 export interface BridgeLine { id: string; from: string; to: string; line1: string; line2: string }
@@ -187,7 +189,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [], onBridgeClick }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [], onBridgeClick, quietKey }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)
@@ -195,6 +197,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   const nodeCount = useRef(0)
   /** Node ids on the canvas last time, to tell what was just added */
   const shownIds = useRef(new Set<string>())
+  const lastQuiet = useRef(quietKey)
 
   // Highlight the selected address's counterparties: green paid it, red were paid by it
   const relation = useMemo(() => {
@@ -422,6 +425,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     // Refit on first draw and after a re-layout. Otherwise keep the user's zoom: removing
     // nodes never moves the view, and added nodes only refit when they land off-screen.
     const firstOrRelayout = nodeCount.current <= 0
+    const quiet = lastQuiet.current !== quietKey
+    lastQuiet.current = quietKey
     const added = laid.filter(n => !shownIds.current.has(n.id))
     nodeCount.current = rawNodes.length
     shownIds.current = new Set(laid.map(n => n.id))
@@ -429,7 +434,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       // Refit again once new nodes have been measured
       setTimeout(() => rf.current?.fitView(FIT), 60)
       setTimeout(() => rf.current?.fitView({ ...FIT, duration: 250 }), 400)
-    } else if (added.length) {
+    } else if (added.length && !quiet) {
       setTimeout(() => {
         const inst = rf.current
         const el = document.querySelector('.react-flow')
@@ -443,7 +448,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         if (offscreen) inst.fitView({ ...FIT, duration: 250 })
       }, 120)
     }
-  }, [rawNodes, rawEdges, setNodes, setEdges])
+  }, [rawNodes, rawEdges, setNodes, setEdges, layoutKey, quietKey])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
