@@ -29,6 +29,9 @@ const RISK_TEXT: Record<string, string> = {
   critical: 'text-red-500',
 }
 
+/** 0.0003 → "<1%" (never a misleading "0%") */
+const sharePct = (s: number) => (s > 0 && s < 0.01 ? '<1%' : `${Math.round(s * 100)}%`)
+
 export default function AddressNode({ data, selected }: { data: AddressNodeData; selected?: boolean }) {
   const type = data.label?.type ?? 'unknown'
   const style = ENTITY_STYLE[type]
@@ -61,8 +64,8 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
       )}
       {data.view.pooled !== undefined && (
         <span className="absolute -top-2.5 right-2 px-1.5 text-[9px] font-semibold uppercase tracking-wider bg-amber-500 text-black"
-          title={`The traced funds were only ${Math.round(data.view.pooled * 100)}% of the pool here, so the trail stopped`}>
-          pooled {Math.round(data.view.pooled * 100)}%
+          title={`The traced funds were only ${sharePct(data.view.pooled)} of the pool here, so the trail stopped`}>
+          pooled {sharePct(data.view.pooled)}
         </span>
       )}
       <Handle type="target" position={Position.Left} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />

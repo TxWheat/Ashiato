@@ -716,7 +716,8 @@ function TracePageInner() {
       const res = await followFunds(
         seed.lots,
         { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive, minShare: follow.minSharePct / 100 },
-        { addressTxs, btcTx, labelOf: a => knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
+        // Your own labels count too: a wallet you marked as an exchange ends the trail there
+        { addressTxs, btcTx, labelOf: a => mine(a) ?? knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
         (msg, partial) => {
           setTraceStatus(msg)
           show([...seed.flows, ...partial.flows])
@@ -783,8 +784,17 @@ function TracePageInner() {
 
   const selectedAddress = selection?.kind === 'address' ? selection.id : null
 
+  // Ends at a wallet now known (or labelled by you) as an exchange/mixer read as 'reached' it,
+  // even if the trace ran before the label existed
+  const displayEnds = useMemo(() => traceEnds.map(e => {
+    if (e.reason === 'entity') return e
+    const l = mine(e.address) ?? known.get(e.address)?.label
+    return l && STOP_AT.includes(l.type) ? { ...e, reason: 'entity' as const, detail: `Reached ${l.name} (${l.type})` } : e
+  }), [traceEnds, known, mine])
+
   const graphNodes: AddressNodeData[] = useMemo(() => {
-    const pooledAt = new Map(traceEnds.filter(e => e.reason === 'diluted' && e.share !== undefined).map(e => [e.address, e.share!]))
+    // An exchange pools everyone's money: ending there is 'reached', not 'pooled'
+    const pooledAt = new Map(displayEnds.filter(e => e.reason === 'diluted' && e.share !== undefined).map(e => [e.address, e.share!]))
     return [...visible].flatMap(a => {
       const n = known.get(a)
       if (!n) return []
@@ -804,7 +814,7 @@ function TracePageInner() {
         },
       }]
     })
-  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, traceEnds, mine])
+  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, displayEnds, mine])
 
   const graphEdges = useMemo(() => {
     const ids = new Set(graphNodes.map(n => n.address))
@@ -1343,7 +1353,7 @@ function TracePageInner() {
             follow={follow}
             onFollow={setFollow}
             traced={traced}
-            traceEnds={traceEnds}
+            traceEnds={displayEnds}
             onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]) }}
             taint={taint}
             taintResult={taintResult}
