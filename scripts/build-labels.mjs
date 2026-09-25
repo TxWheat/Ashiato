@@ -136,8 +136,14 @@ if (tagpacksDir) {
       if (!chain || !t.address) continue
       const abuse = t.abuse ?? pack.abuse
       const category = t.category ?? pack.category
-      const type = ABUSE[abuse] ?? CATEGORY[category] ?? (abuse ? 'scam' : null)
+      let type = ABUSE[abuse] ?? CATEGORY[category] ?? (abuse ? 'scam' : null)
       if (!type) continue
+      // Etherscan "wordcloud" packs were keyword-matched: their "market" is NFT marketplaces
+      // (not darknet), and token contracts ("TORN Token (TORN)") or grants that merely
+      // mention an exchange or mixer are not one
+      const label = String(t.label ?? pack.label ?? '')
+      if (base.startsWith('etherscan-wordcloud-') && (category === 'market' || /\([^()]+\)\s*$|gitcoin/i.test(label))) type = 'service'
+      if ((type === 'mixer' || type === 'exchange') && /\btoken\b/i.test(label)) type = 'service'
       if (type === 'miner' && !withMiners) continue
       add(chain, t.address, t.label ?? pack.label ?? pack.title, type, src)
     }
@@ -188,7 +194,7 @@ function ethLabelType(slug, name) {
   if (/ofac/.test(slug)) return /tornado/i.test(name) ? 'mixer' : null
   if (slug === 'phish-hack' || slug === 'scam' || /fake_phishing/i.test(name)) return 'scam'
   if (slug === 'heist' || /exploit$/.test(slug)) return 'hack'
-  if (/tornado|mixer/.test(slug)) return 'mixer'
+  if (/tornado|mixer/.test(slug)) return /\btoken\b/i.test(name) ? 'service' : 'mixer'
   if (slug === 'gambling') return 'gambling'
   if (CEX.has(slug)) return /\bdep(osit)?\b:?/i.test(name) && !/funder/i.test(name) ? 'deposit' : 'exchange'
   return 'service'
