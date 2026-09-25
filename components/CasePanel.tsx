@@ -97,6 +97,7 @@ export default function CasePanel(p: CasePanelProps) {
             {groupEnds(p.traceEnds).map(g => (
               <div key={g.reason}>
                 <div className="text-[10px] uppercase tracking-wider text-faint mt-2 mb-1">{END_TITLE[g.reason]}</div>
+                {g.items.length > 6 && <div className="text-[10px] text-faint -mt-0.5 mb-1">{g.items.length} addresses, largest first</div>}
                 {g.items.slice(0, 6).map((e, i) => {
                   const l = p.labelOf(e.address)
                   return (

@@ -15,6 +15,7 @@ import { tornadoLinks as findTornadoLinks } from '@/lib/heuristics/eth/tornado'
 import { runTaint, TaintMethod } from '@/lib/taint'
 import { BtcTxInfo, Direction, followFunds, Lot, seedsFromTx, backSeedsFromTx, TracedFlow, TraceEnd } from '@/lib/follow'
 import { saveCase as saveChartToBrowser, getCase as getSavedChart, newCaseId } from '@/lib/saved-cases'
+import { collapseChains } from '@/lib/collapse'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
@@ -46,6 +47,20 @@ interface Snapshot {
 const STOP_AT: EntityType[] = ['exchange', 'deposit', 'mixer', 'coinjoin', 'sanctioned', 'defi']
 /** Older pages loaded per address while following funds */
 const MAX_EXTRA_PAGES = 5
+/** Trace ends that are not part of the drawn trail */
+const OFF_TRAIL: TraceEnd['reason'][] = ['peel', 'split']
+
+/** One row per address and reason (two lots can end at the same address) */
+function mergeEnds(ends: TraceEnd[]): TraceEnd[] {
+  const m = new Map<string, TraceEnd>()
+  for (const e of ends) {
+    const k = `${e.address}|${e.reason}|${e.asset}`
+    const ex = m.get(k)
+    m.set(k, ex ? { ...ex, amount: ex.amount + e.amount } : e)
+  }
+  return [...m.values()]
+}
+
 /** BTC addresses with at most this many transactions load their full history automatically */
 const AUTO_FULL_HISTORY_BTC = 500
 /** Participants of a searched transaction put on the graph straight away (per side) */
@@ -583,9 +598,10 @@ function TracePageInner() {
       )
       const flows = [...seed.flows, ...res.flows].filter(f => f.from && f.to)
       show(flows)
-      // Addresses the trail stopped at (with no outgoing hop yet) still belong on the graph
-      showOnGraph(res.ends.map(e => e.address))
-      setTraceEnds(prev => [...prev, ...(seed.ends ?? []), ...res.ends])
+      // Addresses the trail stopped at belong on the graph; peeled-off payments and minor
+      // splits were deliberately not followed, so they stay in the side list only
+      showOnGraph(res.ends.filter(e => !OFF_TRAIL.includes(e.reason)).map(e => e.address))
+      setTraceEnds(prev => mergeEnds([...prev, ...(seed.ends ?? []), ...res.ends]))
       if (flows.length) setFocusTrace(true)
       const cashOut = res.ends.filter(e => e.reason === 'entity').length
       flash(`Traced ${flows.length} hop${flows.length === 1 ? '' : 's'}${cashOut ? ` · reached ${cashOut} exchange/mixer/sanctioned endpoint${cashOut === 1 ? '' : 's'}` : ''}`)
@@ -644,7 +660,7 @@ function TracePageInner() {
   const selectedAddress = selection?.kind === 'address' ? selection.id : null
 
   const graphNodes: AddressNodeData[] = useMemo(() => {
-    const endSet = new Set(traceEnds.map(e => e.address))
+    const endSet = new Set(traceEnds.filter(e => !OFF_TRAIL.includes(e.reason)).map(e => e.address))
     const shown = showTraceOnly
       ? [...visible].filter(a => traceSet.has(a) || endSet.has(a) || a === originAddress || a === selectedAddress)
       : [...visible]
@@ -673,6 +689,27 @@ function TracePageInner() {
     return allEdges.filter(e => ids.has(e.source) && ids.has(e.target) && !hiddenLinks.has(pairKey(e.source, e.target)))
   }, [allEdges, graphNodes, hiddenLinks])
   const graphTraced = useMemo(() => traced.filter(f => !hiddenLinks.has(pairKey(f.from, f.to))), [traced, hiddenLinks])
+
+  // Long pass-through runs (peel chains, relays) drawn as one line; the hops stay in the data
+  const [collapseOn, setCollapseOn] = useState(true)
+  const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set())
+  const collapsed = useMemo(() => {
+    if (!collapseOn) return { chains: [], hidden: new Set<string>() }
+    const keep = new Set<string>([originAddress, selectedAddress ?? ''].filter(Boolean))
+    for (const n of graphNodes) if (n.label || n.note || n.view.isTaintSeed) keep.add(n.address)
+    return collapseChains({ nodes: graphNodes.map(n => n.address), edges: graphEdges, traced: graphTraced, keep, expanded: expandedChains })
+  }, [collapseOn, graphNodes, graphEdges, graphTraced, expandedChains, originAddress, selectedAddress])
+  const drawn = useMemo(() => {
+    const h = collapsed.hidden
+    if (!h.size) return null
+    return {
+      nodes: graphNodes.filter(n => !h.has(n.address)),
+      edges: graphEdges.filter(e => !h.has(e.source) && !h.has(e.target)),
+      traced: graphTraced.filter(f => !h.has(f.from) && !h.has(f.to)),
+    }
+  }, [collapsed, graphNodes, graphEdges, graphTraced])
+  // Re-tidy the layout whenever the set of collapsed chains changes
+  const layoutKey = `${collapseOn}|${collapsed.chains.map(c => c.id).sort().join(',')}`
   const hideLink = (a: string, b: string) => {
     setHiddenLinks(prev => new Set(prev).add(pairKey(a, b)))
     setSelection(null)
@@ -1045,6 +1082,15 @@ function TracePageInner() {
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
           )}
+          {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
+            <button
+              onClick={() => { setCollapseOn(v => !v); setExpandedChains(new Set()) }}
+              title={collapseOn ? 'Show every hop of long chains' : 'Draw long pass-through chains as one line'}
+              className={`h-7 px-2.5 border border-line text-[11px] font-medium ${collapseOn ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
+            >
+              {collapseOn ? `Chains collapsed${collapsed.chains.length ? ` (${collapsed.chains.length})` : ''}` : 'Collapse chains'}
+            </button>
+          )}
           {traced.length > 0 && (
             <div className="flex border border-line text-[11px] font-medium">
               {([['Trail', true], ['All', false]] as const).map(([label, v]) => (
@@ -1131,10 +1177,13 @@ function TracePageInner() {
 
           {!initialLoading && !error && (graphNodes.length > 0 || graphHubs.length > 0) && (
             <TraceGraph
-              nodes={graphNodes}
-              edges={graphEdges}
+              nodes={drawn?.nodes ?? graphNodes}
+              edges={drawn?.edges ?? graphEdges}
               followedPairs={followedPairs}
-              traced={graphTraced}
+              traced={drawn?.traced ?? graphTraced}
+              chains={collapsed.chains}
+              onChainClick={id => setExpandedChains(prev => new Set(prev).add(id))}
+              layoutKey={layoutKey}
               hubs={graphHubs}
               itemized={itemizedEdges}
               prices={prices}

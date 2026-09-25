@@ -20,6 +20,7 @@ import 'reactflow/dist/style.css'
 import dagre from 'dagre'
 import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
+import type { CollapsedChain } from '@/lib/collapse'
 import { TracedFlow } from '@/lib/follow'
 import { ENTITY_STYLE, fiatValue, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort, topAssets } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
@@ -49,6 +50,8 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
 }
 
 export type XY = { x: number; y: number }
+
+
 
 /**
  * Nodes already on screen stay exactly where they are (whether auto-placed or
@@ -127,6 +130,11 @@ interface Props {
   positions: Map<string, XY>
   /** The user moved nodes (so the saved case needs updating) */
   onLayoutChange?: () => void
+  /** Long pass-through runs drawn as one line (the middle addresses are hidden) */
+  chains?: CollapsedChain[]
+  onChainClick?: (id: string) => void
+  /** Changing this re-tidies the whole layout (e.g. when chains collapse or expand) */
+  layoutKey?: string
   onReady?: (api: GraphApi) => void
 }
 
@@ -143,7 +151,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)
@@ -300,8 +308,39 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       h.inputs.forEach((i, k) => ids.has(i.address) && draw(i.address, id, i.amount, i.asset, `in${k}`))
       h.outputs.forEach((o, k) => ids.has(o.address) && draw(id, o.address, o.amount, o.asset, `out${k}`))
     }
+
+    // Collapsed chains: one thick line standing in for many hops
+    for (const c of chains) {
+      if (!ids.has(c.from) || !ids.has(c.to)) continue
+      const amt = c.firstAmount && Math.abs(c.firstAmount - c.lastAmount) > c.firstAmount * 0.001
+        ? `${fmtCompact(c.firstAmount, c.asset)} → ${fmtCompact(c.lastAmount, c.asset)}`
+        : fmtCompact(c.lastAmount, c.asset)
+      out.push({
+        id: `chain:${c.id}`,
+        source: c.from,
+        target: c.to,
+        type: 'label',
+        data: {
+          line1: `${c.hops} hops · ${amt}`,
+          line2: `${c.firstTime ? (fmtDay(c.firstTime) === fmtDay(c.lastTime) ? fmtDay(c.lastTime) : `${fmtDay(c.firstTime)} → ${fmtDay(c.lastTime)}`) + ' · ' : ''}click to expand`,
+          color: 'rgb(var(--accent))',
+          bold: true,
+        },
+        zIndex: 3,
+        markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--accent))', width: 16, height: 16 },
+        style: { stroke: 'rgb(var(--accent))', strokeWidth: 5, strokeDasharray: '2 6', strokeLinecap: 'round', cursor: 'pointer' },
+      })
+    }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selectedEdge])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selectedEdge, chains])
+
+  // A new layoutKey re-tidies everything: forget positions so dagre lays the graph out afresh
+  const lastLayoutKey = useRef(layoutKey)
+  if (lastLayoutKey.current !== layoutKey) {
+    lastLayoutKey.current = layoutKey
+    pinned.current.clear()
+    nodeCount.current = -1 // forces a refit
+  }
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -365,7 +404,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         onNodeClick={(_, n) => (n.type === 'tx' ? onHubClick((n.data as TxHubData).txid) : onNodeClick(n.id))}
         onPaneClick={onPaneClick}
         onEdgeClick={(_, e) => {
-          if (!e.id.startsWith('tx:')) onEdgeClick(e.source, e.target)
+          if (e.id.startsWith('chain:')) onChainClick?.(e.id.slice(6))
+          else if (!e.id.startsWith('tx:')) onEdgeClick(e.source, e.target)
         }}
         onInit={inst => {
           rf.current = inst
