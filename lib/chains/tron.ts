@@ -69,6 +69,7 @@ const cleanSymbol = (s: string) => (s || 'TOKEN').replace(/[^\w.$-]/g, '').slice
 /** "USDT*" when a token calls itself USDT but isn't the real contract (poisoning spam) */
 function assetFor(symbol: string, contract: string): string {
   const sym = cleanSymbol(symbol)
+  if (['TRX', 'TRON'].includes(sym.replace(/[^a-z]/gi, '').toUpperCase())) return `${sym}*` // posing as native TRX
   const real = REAL_BY_SYMBOL[sym.toUpperCase()]
   return real && real !== contract ? `${sym}*` : sym
 }

@@ -23,6 +23,21 @@ export const KNOWN_TOKENS: Record<string, string> = {
   WBTC: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
 }
 
+/** Names only the native coin can have: a token calling itself one is always fake */
+const NATIVE_NAMES = new Set(['ETH', 'ETHER', 'ETHEREUM'])
+
+/**
+ * The asset name for a token transfer. Look-alikes of well-known tokens, and tokens
+ * posing as native ETH (address-poisoning spam), get a "*" and are shown as fake.
+ */
+export function tokenAsset(rawSymbol: string, contract: string): string {
+  const symbol = (rawSymbol || 'TOKEN').replace(/[^\w.$-]/g, '').slice(0, 12) || 'TOKEN'
+  const letters = symbol.replace(/[^a-z]/gi, '').toUpperCase()
+  if (NATIVE_NAMES.has(letters)) return `${symbol}*`
+  const real = KNOWN_TOKENS[letters]
+  return real && real !== contract.toLowerCase() ? `${symbol}*` : symbol
+}
+
 interface EtherscanResponse<T> {
   status: string
   message: string
@@ -133,16 +148,12 @@ export async function traceEthAddress(address: string, cursor?: string): Promise
       spam++
       continue
     }
-    let symbol = (t.tokenSymbol || 'TOKEN').replace(/[^\w.$-]/g, '').slice(0, 12) || 'TOKEN'
-    const real = KNOWN_TOKENS[symbol.toUpperCase()]
-    if (real && real !== t.contractAddress.toLowerCase()) {
-      symbol = `${symbol}*`
-      fake++
-    }
+    const symbol = tokenAsset(t.tokenSymbol, t.contractAddress)
+    if (symbol.endsWith('*')) fake++
     rawTxs.push(transfer(t.hash, t.from, t.to, v, symbol, t.timeStamp, 'token', undefined, t.logIndex))
   }
   if (spam) warnings.push(`${spam} zero-value token transfer(s) hidden (typical address-poisoning spam)`)
-  if (fake) warnings.push(`${fake} transfer(s) of fake tokens posing as real ones (e.g. a fake USDT contract). These are usually address-poisoning spam; no real funds moved`)
+  if (fake) warnings.push(`${fake} transfer(s) of fake tokens posing as real ones (e.g. a fake USDT contract, or a token calling itself ETH). These are usually address-poisoning spam; no real funds moved`)
 
   rawTxs.sort((a, b) => b.timestamp - a.timestamp)
   const more = normal.length >= PAGE_SIZE || internal.length >= PAGE_SIZE || tokens.length >= PAGE_SIZE

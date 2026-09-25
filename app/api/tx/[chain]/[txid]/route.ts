@@ -6,6 +6,9 @@ import { UpstreamError } from '@/lib/http'
 
 // One transaction. BTC: with the spender of each output (exact UTXO tracing).
 // ETH: every value transfer inside it (ETH, ERC-20 events, internal).
+// Traces can take a while on free APIs; Vercel cuts functions off at the default otherwise
+export const maxDuration = 60
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ chain: string; txid: string }> }

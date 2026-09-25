@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { handleTrace } from '@/lib/api'
 
 // Machine-readable screening result for one address (latest page of activity).
+// Traces can take a while on free APIs; Vercel cuts functions off at the default otherwise
+export const maxDuration = 60
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ chain: string; address: string }> }

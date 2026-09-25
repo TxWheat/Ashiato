@@ -300,15 +300,24 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       }
     })
 
-    // Individual transactions, fanned out so parallel lines don't overlap
+    // Individual transactions, fanned out so parallel lines don't overlap. A transaction
+    // the trace already follows is drawn by the traced line, not again on top of it.
+    const tracedTx = new Set(traced.map(f => `${f.txid}|${f.from}->${f.to}`))
     const byPair = new Map<string, EdgeData[]>()
-    for (const e of shownItems) byPair.set(pairKey(e.source, e.target), [...(byPair.get(pairKey(e.source, e.target)) ?? []), e])
-    for (const list of byPair.values()) {
+    for (const e of shownItems) {
+      if ((e.txids ?? [e.txid]).some(t => tracedTx.has(`${t}|${e.source}->${e.target}`))) continue
+      byPair.set(pairKey(e.source, e.target), [...(byPair.get(pairKey(e.source, e.target)) ?? []), e])
+    }
+    for (const [pair, list] of byPair) {
       list.sort((x, y) => x.timestamp - y.timestamp)
+      // A traced line runs through the middle: fan the others out around it, not over it
+      const [a, b] = pair.split('|')
+      const middleTaken = tracedBy.has(`${a}->${b}`) || tracedBy.has(`${b}->${a}`)
       list.forEach((e, i) => {
         // Same visual side regardless of direction, so A→B and B→A lines interleave cleanly
         const sign = e.source < e.target ? 1 : -1
-        const offset = (i - (list.length - 1) / 2) * 48 * sign
+        const slot = middleTaken ? (i % 2 ? -1 : 1) * (Math.floor(i / 2) + 1) : i - (list.length - 1) / 2
+        const offset = slot * 48 * sign
         out.push({
           id: `item:${e.id}`,
           source: e.source,

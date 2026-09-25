@@ -307,6 +307,7 @@ function TracePageInner() {
     setFollowedPairs(new Set())
     setItemizedIds(new Set())
     setHiddenLinks(new Set())
+    setPinned(new Set())
     setPayments([])
     setTraced([])
     setTraceEnds([])
@@ -562,6 +563,14 @@ function TracePageInner() {
 
   const removeNode = (addr: string) => {
     snapshot()
+    // Everything still on screen stays on screen: without this, removing one node can turn a
+    // neighbour into a pass-through that then folds into a collapsed chain and vanishes too
+    setPinned(prev => {
+      const n = new Set(prev)
+      for (const x of drawnNodes) if (x.address !== addr) n.add(x.address)
+      n.delete(addr)
+      return n
+    })
     setVisible(prev => {
       const n = new Set(prev)
       n.delete(addr)
@@ -779,12 +788,14 @@ function TracePageInner() {
   // Long pass-through runs (peel chains, relays) drawn as one line; the hops stay in the data
   const [collapseOn, setCollapseOn] = useState(true)
   const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set())
+  /** Addresses never folded into a chain (they were on screen when you removed something) */
+  const [pinned, setPinned] = useState<Set<string>>(new Set())
   const collapsed = useMemo(() => {
     if (!collapseOn) return { chains: [], hidden: new Set<string>() }
-    const keep = new Set<string>([originAddress, selectedAddress ?? ''].filter(Boolean))
+    const keep = new Set<string>([originAddress, selectedAddress ?? '', ...pinned].filter(Boolean))
     for (const n of graphNodes) if (n.label || n.note || n.view.isTaintSeed) keep.add(n.address)
     return collapseChains({ nodes: graphNodes.map(n => n.address), edges: graphEdges, traced: graphTraced, keep, expanded: expandedChains })
-  }, [collapseOn, graphNodes, graphEdges, graphTraced, expandedChains, originAddress, selectedAddress])
+  }, [collapseOn, graphNodes, graphEdges, graphTraced, expandedChains, originAddress, selectedAddress, pinned])
   const drawn = useMemo(() => {
     const h = collapsed.hidden
     if (!h.size) return null
@@ -794,6 +805,7 @@ function TracePageInner() {
       traced: graphTraced.filter(f => !h.has(f.from) && !h.has(f.to)),
     }
   }, [collapsed, graphNodes, graphEdges, graphTraced])
+  const drawnNodes = drawn?.nodes ?? graphNodes
   // Re-tidy the layout whenever the set of collapsed chains changes
   const layoutKey = `${collapseOn}|${collapsed.chains.map(c => c.id).sort().join(',')}`
   const hideLink = (a: string, b: string) => {
@@ -1174,7 +1186,7 @@ function TracePageInner() {
           )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
             <button
-              onClick={() => { setCollapseOn(v => !v); setExpandedChains(new Set()) }}
+              onClick={() => { setCollapseOn(v => !v); setExpandedChains(new Set()); setPinned(new Set()) }}
               title={collapseOn ? 'Show every hop of long chains' : 'Draw long pass-through chains as one line'}
               className={`h-7 px-2.5 border border-line text-[11px] font-medium ${collapseOn ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
             >
