@@ -1,9 +1,9 @@
-# ETHGlobal Continuity Track: plan of attack
+# ETHGlobal Tokyo 2026 (25–27 Sep), Continuity track: plan of attack
 
 **Pitch:** an open, low-cost alternative to TRM Labs and Chainalysis for scam victims and small investigators. Tracing is free. Labels are public on-chain attestations that anyone can read, dispute or build on. Reports can be verified by anyone. There are no accounts: your wallet is your identity, and no personal data is stored.
 
-**Existing before the event:** the whole CryptoTracer web app (BTC/ETH/Tron tracing, adaptive follow-the-funds, client payment intake, taint, open label datasets). Tag: `pre-hackathon-baseline`.
-**Built at the event:** everything in Phases 1–7 below.
+**Existing before the event:** the whole CryptoTracer web app (BTC/ETH/Tron tracing, adaptive follow-the-funds, client payment intake, taint, open label datasets), up to commit `b6ed119` (25 Sep 2026, 11:45 JST), tagged `pre-hackathon-baseline`.
+**Built at the event:** everything in Phases 1–7 below. (This plan file was written at the start of the event.)
 
 ---
 
@@ -37,11 +37,12 @@ uint8  confidence   // 1–100
 ```
 Revocable: the attester can withdraw their own label.
 
-**2. Vote**: agree or dispute an existing label (`refUID` = the label's UID)
+**2. Vote**: how trustworthy is this label? (`refUID` = the label's UID)
 ```
-bool   agree
-string reason       // required when disputing
+int8   trust        // -2 wrong · -1 doubtful · +1 plausible · +2 confirmed
+string reason       // required for negative votes; optional evidence tx hashes
 ```
+One live vote per wallet per label: a new vote supersedes (revokes) that wallet's previous one.
 
 **3. Report**: "this trace report existed, unaltered, at this time"
 ```
@@ -57,9 +58,10 @@ string  summary     // one line, no victim personal data
 
 ## Reputation weighting (keep simple)
 
-Score of a label = Σ over agreeing attesters of `weight`, minus Σ over disputing attesters.
+Trust score of a label = Σ (vote.trust × voter weight), with the creator counting as +2.
 `weight` = 1, +1 if the attester has an ENS primary name, +1 per 3 of their past labels that others agreed with (cap at +3), −1 per label of theirs that was disputed and revoked.
-Show it plainly: "Scam · 7 investigators agree · 1 dispute", with a list of attesters.
+Show it plainly as a trust meter: "Scam · trust 82% · 7 votes (1 disputes)", with the list of voters, their ENS names and reasons.
+Optional (World prize fit): a World ID "verified human" adds +2 weight, which makes vote-stuffing with many wallets expensive.
 Community labels sit **alongside** the open datasets, not over them. A label disputed by more weight than it has is shown struck through, not hidden.
 
 ---
@@ -72,7 +74,7 @@ Community labels sit **alongside** the open datasets, not over them. A label dis
 - [ ] `AI_USAGE.md`: which tools, which files, how they were directed; keep prompts and plans in `docs/`
 - [ ] Deploy the baseline app to Vercel with env keys (Etherscan, TronGrid) and check it works live
 - [ ] Reown project ID, Sepolia ETH from a faucet in 2–3 test wallets (need several "investigators" for the demo)
-- [ ] Confirm the event, dates and partner prizes (EAS, ENS, MetaMask, WalletConnect?)
+- [ ] Continuity partner prizes at Tokyo (check requirements at the booths): Uniswap Foundation, 1inch (Aqua), World (AgentKit), Hedera. Uniswap/1inch fit Phase 3b swaps; World fits verified-human voting
 
 ### Phase 1: wallet sign-in (**you**)
 - [ ] AppKit provider in `app/layout.tsx` (client component, cookie storage for SSR)
@@ -93,6 +95,16 @@ Community labels sit **alongside** the open datasets, not over them. A label dis
 - [ ] Inspector: attesters (ENS), evidence links, Agree / Dispute buttons (Vote schema)
 - [ ] Optimistic UI: show your own new label immediately (the indexer can lag ~30s)
 - **Done when:** wallet A flags, wallet B agrees, wallet C disputes; all three show with correct weighting
+
+### Phase 3b: cross-chain hops (bridges and swaps)
+Scammers move funds across chains to break the trail; showing the other side is essential.
+- [ ] Detect bridge deposits: curated list of bridge contracts (Across, Stargate, Hop, Synapse, cBridge, deBridge, Wormhole, native Arbitrum/Optimism/Base/zkSync bridges, THORChain routers)
+- [ ] Resolve the destination: **LI.FI status API** (`/v1/status?txHash=`), which covers most bridges with one call and returns the receiving chain, tx hash, address and amount. Fallbacks: Across API, LayerZero Scan, Wormholescan, THORChain Midgard
+- [ ] Graph: a bridge edge "Bridged via Across → Arbitrum", showing **both txids** (source and destination) with explorer links; the destination address appears as a node with a chain badge
+- [ ] Continue the trace on EVM L2s: Etherscan V2 is multichain (same key, `chainid=42161/10/8453/…`), so Arbitrum/Optimism/Base/Polygon/BSC hops can be followed; THORChain → BTC continues on the BTC tracer
+- [ ] Swaps: label Uniswap/1inch router hops as "Swapped USDT → ETH via Uniswap" instead of dead ends (Uniswap and 1inch Continuity prize fit)
+- [ ] Report + CSV: a "Cross-chain hops" table (source tx, bridge, destination chain, destination tx)
+- **Done when:** an ETH → Arbitrum Across deposit shows the Arbitrum fill txid and the trace continues on Arbitrum
 
 ### Phase 4: verifiable reports
 - [ ] On export: sha256 of the case JSON, "Certify on-chain" → Report attestation; UID + QR code printed on the PDF report
