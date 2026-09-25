@@ -155,7 +155,6 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     const m = new Map<string, 'in' | 'out' | 'both'>()
     if (!selected) return m
     for (const e of edgeData) {
-      if (e.isChange) continue
       const other: string | null = e.target === selected ? e.source : e.source === selected ? e.target : null
       if (!other || other === selected) continue
       const r: 'in' | 'out' = e.target === selected ? 'in' : 'out'
@@ -236,7 +235,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const taint = taintByEdge?.get(key)
       const tainted = !!taint && taint > 0
       const weight = es.length ? Math.max(...es.map(x => Math.log1p(x.amount) / Math.log1p(maxByAsset.get(x.asset) || 1))) : 0.6
-      const width = isChange ? 1 : tr ? 2.5 + 2 * Math.min(1, weight) : 1 + 3 * Math.min(1, Math.max(0, weight))
+      // Change keeps its value-based width (it can be most of the money), drawn dashed
+      const width = tr ? 2.5 + 2 * Math.min(1, weight) : 1 + 3 * Math.min(1, Math.max(0, weight))
       const color = tainted ? TAINT : tr || followed ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--muted))'
       // Breadcrumbs-style label written along the line: amount (value) · count, then dates
       const txs = es.reduce((n, x) => n + (x.txCount ?? 1), 0)
@@ -246,7 +246,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         ? [...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')
         : tainted
           ? `${fmtCompact(taint!, es[0]?.asset ?? '')} tainted`
-          : relationshipLabel(es, prices, txs)
+          : `${relationshipLabel(es, prices, txs)}${isChange ? ' · likely change' : ''}`
       const line2 = !es.length ? '' : txs === 1 ? fmtDateTime(last) : isFinite(first) && fmtDay(first) !== fmtDay(last) ? `${fmtDay(first)} → ${fmtDay(last)}` : fmtDay(last)
       const isSel = selectedEdge === key
       return {
@@ -259,7 +259,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         animated: !!tr || followed || tainted,
         zIndex: tr ? 2 : 1,
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
-        style: { stroke: color, strokeWidth: isSel ? width + 1.5 : width, strokeDasharray: isChange ? '5 4' : undefined, opacity: isChange ? 0.5 : 1, cursor: 'pointer' },
+        style: { stroke: color, strokeWidth: isSel ? width + 1.5 : width, strokeDasharray: isChange ? '5 4' : undefined, opacity: isChange ? 0.85 : 1, cursor: 'pointer' },
       }
     })
 

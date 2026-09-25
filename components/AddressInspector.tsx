@@ -457,7 +457,12 @@ export default function AddressInspector(p: Props) {
                 <div key={c.address} className="flex items-center gap-3 px-4 py-2.5 border-b border-line/60 hover:bg-panel">
                   <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', l ? ENTITY_STYLE[l.type].dot : 'bg-line')} />
                   <button onClick={() => p.onOpenRelationship(c.address)} className="min-w-0 flex-1 text-left" title={`Open the relationship with ${c.address}`}>
-                    <div className={clsx('text-[12px] text-fg truncate', !p.nameOf(c.address) && 'font-mono')}>{p.nameOf(c.address) ?? truncate(c.address, 8)}</div>
+                    <div className={clsx('text-[12px] text-fg truncate', !p.nameOf(c.address) && 'font-mono')}>
+                      {p.nameOf(c.address) ?? truncate(c.address, 8)}
+                      {filter === 'out' && c.likelyChange && (
+                        <span className="ml-1.5 text-[9px] px-1 bg-yellow-500/15 text-yellow-600 font-sans" title="Heuristic guess: this output returns to the same owner (change). The funds still left this address.">likely change</span>
+                      )}
+                    </div>
                     <div className="text-[10px] text-faint">{countOf(c)} tx{countOf(c) === 1 ? '' : 's'} · last {fmtDate(lastOf(c)).split(' ').slice(0, 3).join(' ')}</div>
                   </button>
                   <div className="text-right font-mono text-[11px] leading-tight max-w-[55%] flex-shrink-0">
@@ -512,12 +517,15 @@ function TxList(p: Props) {
   const rows = useMemo(() => (txs ?? []).map(tx => {
     const sent = tx.inputs.some(x => x.address === me)
     const got = tx.outputs.some(x => x.address === me)
-    const dir: 'in' | 'out' | 'self' = sent && got && !tx.outputs.some(o => o.address !== me && !o.isChange) ? 'self' : sent ? 'out' : 'in'
+    const dir: 'in' | 'out' | 'self' = sent && got && !tx.outputs.some(o => o.address !== me) ? 'self' : sent ? 'out' : 'in'
     const amount = dir === 'in'
       ? tx.outputs.filter(o => o.address === me).reduce((s, o) => s + o.amount, 0)
-      : tx.outputs.filter(o => o.address !== me && !o.isChange).reduce((s, o) => s + o.amount, 0)
-    const others = dir === 'in' ? [...new Set(tx.inputs.map(x => x.address))].filter(a => a !== me) : [...new Set(tx.outputs.filter(o => o.address !== me && !o.isChange).map(o => o.address))]
-    return { tx, dir, amount, others }
+      : tx.outputs.filter(o => o.address !== me).reduce((s, o) => s + o.amount, 0)
+    // Largest first, so the main recipient shows before small outputs
+    const outs = tx.outputs.filter(o => o.address !== me).sort((a, b) => b.amount - a.amount)
+    const others = dir === 'in' ? [...new Set(tx.inputs.map(x => x.address))].filter(a => a !== me) : [...new Set(outs.map(o => o.address))]
+    const change = new Set(dir === 'out' ? outs.filter(o => o.isChange).map(o => o.address) : [])
+    return { tx, dir, amount, others, change }
   }), [txs, me])
 
   const needle = q.trim().toLowerCase()
@@ -532,10 +540,11 @@ function TxList(p: Props) {
     (!onChartOnly || r.others.some(a => p.onGraph.has(a))) &&
     (!needle || r.tx.txid.toLowerCase().includes(needle) || r.others.some(a => a.toLowerCase().includes(needle) || (p.nameOf(a) ?? '').toLowerCase().includes(needle))))
 
-  const Addr = ({ a }: { a: string }) => (
-    <button onClick={() => p.onOpen(a)} title={a}
+  const Addr = ({ a, change }: { a: string; change?: boolean }) => (
+    <button onClick={() => p.onOpen(a)} title={change ? `${a}\nLikely change (a heuristic guess that this output returns to the same owner)` : a}
       className={clsx('truncate hover:text-accent', !p.nameOf(a) && 'font-mono', p.onGraph.has(a) ? 'text-fg font-medium' : 'text-fg')}>
       {p.nameOf(a) ?? truncate(a, 6)}
+      {change && <span className="ml-1 text-[9px] px-1 bg-yellow-500/15 text-yellow-600 font-sans">change?</span>}
       {p.onGraph.has(a) && <CheckCircle2 size={10} className="inline ml-1 -mt-0.5 text-accent" />}
     </button>
   )
@@ -616,7 +625,7 @@ function TxList(p: Props) {
         </div>
       )}
 
-      {filtered.slice(0, shown).map(({ tx, dir, amount, others }, i) => {
+      {filtered.slice(0, shown).map(({ tx, dir, amount, others, change }, i) => {
         const onChart = others.some(a => p.onGraph.has(a))
         const tint = clsx(
           dir === 'in' ? (onChart ? 'bg-green-500/[0.12] border-l-2 border-l-green-500' : 'bg-green-500/[0.04] border-l-2 border-l-transparent')
@@ -641,7 +650,7 @@ function TxList(p: Props) {
               <span className="text-[11px] text-faint">{tx.timestamp ? fmtDate(tx.timestamp) : 'pending'}</span>
               <DirTag dir={dir} />
               <div className="flex items-center gap-2 min-w-0 text-[11px]">
-                {others.length ? others.slice(0, 3).map(a => <Addr key={a} a={a} />) : <span className="text-faint">itself</span>}
+                {others.length ? others.slice(0, 3).map(a => <Addr key={a} a={a} change={change.has(a)} />) : <span className="text-faint">itself</span>}
                 {others.length > 3 && <span className="text-faint whitespace-nowrap">+{others.length - 3} more</span>}
                 {badges}
               </div>
@@ -663,7 +672,7 @@ function TxList(p: Props) {
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-[11px] min-w-0">
               <span className="text-faint">{dir === 'in' ? 'from' : 'to'}</span>
-              {others[0] ? <Addr a={others[0]} /> : <span className="text-faint">itself</span>}
+              {others[0] ? <Addr a={others[0]} change={change.has(others[0])} /> : <span className="text-faint">itself</span>}
               {others.length > 1 && <span className="text-faint whitespace-nowrap">+{others.length - 1} more</span>}
               <div className="ml-auto"><Actions tx={tx} dir={dir} /></div>
             </div>

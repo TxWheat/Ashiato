@@ -23,6 +23,7 @@ const SECTIONS: { id: string; title: string; body: string[]; limits: string; cre
     body: [
       'A Bitcoin payment usually returns "change" to the sender. We score each output: paying back to an input address (certain); the only non-round amount (payments tend to be round); the only output with the same script type as the inputs; the only output smaller than every input (otherwise an input was unnecessary).',
       'An output is marked change only when it is clearly ahead of the others, and its confidence and reasons are shown on hover.',
+      'A change mark is only a tag. The output still counts as money leaving the address: it appears in Outgoing totals, Relationships and the graph (as a dashed line), and Trace follows it like any other output.',
     ],
     limits: 'Modern wallets deliberately defeat these rules (script-type matching, random amounts, PayJoin). Treat change marks as likely, not certain.',
     credit: 'Meiklejohn et al. 2013; BlockSci; peterzen/heuristic',

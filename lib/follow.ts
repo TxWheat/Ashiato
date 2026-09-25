@@ -304,10 +304,12 @@ export function seedsFromTx(tx: RawTransaction, from: string, to?: string): { lo
   const mine = tx.inputs.filter(i => i.address === from).reduce((s, i) => s + i.amount, 0)
   const share = tx.chain === 'btc' && totalIn > 0 && mine > 0 ? mine / totalIn : 1
   for (const o of tx.outputs) {
-    if (o.address === from || o.amount <= 0 || (to && o.address !== to) || (!to && o.isChange)) continue
+    // Change outputs are followed too: the funds still left this address, and the
+    // change guess can be wrong (it's a heuristic)
+    if (o.address === from || o.amount <= 0 || (to && o.address !== to)) continue
     const amount = o.amount * share
     lots.push({ chain: tx.chain, address: o.address, asset: tx.asset, amount, time: tx.timestamp, via: tx.txid, vout: o.index, hop: 1 })
-    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: 'Starting transaction' })
+    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: o.isChange ? 'Starting transaction (likely change, same owner)' : 'Starting transaction' })
   }
   return { lots, flows }
 }

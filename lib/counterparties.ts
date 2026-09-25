@@ -10,6 +10,8 @@ export interface Counterparty {
   receivedCount: number
   sentCount: number
   lastSeen: number
+  /** Everything this address sent it was flagged as likely change (probably the same owner) */
+  likelyChange?: boolean
   lastReceived: number
   lastSent: number
   /** Largest share of any single asset's flow; used for ranking */
@@ -18,7 +20,8 @@ export interface Counterparty {
 
 /** Everyone `address` exchanged value with (per loaded transactions), largest first. Change is excluded. */
 export function counterparties(address: string, edges: EdgeData[]): Counterparty[] {
-  const mine = edges.filter(e => (e.source === address || e.target === address) && e.source !== e.target && !(e.source === address && e.isChange))
+  // Change outputs are included: the funds still moved to another address
+  const mine = edges.filter(e => (e.source === address || e.target === address) && e.source !== e.target)
   const totals = new Map<string, number>()
   for (const e of mine) totals.set(e.asset, (totals.get(e.asset) ?? 0) + e.amount)
 
@@ -38,6 +41,7 @@ export function counterparties(address: string, edges: EdgeData[]): Counterparty
     }
     c.lastSeen = Math.max(c.lastSeen, e.timestamp)
     c.weight = Math.max(c.weight, e.amount / (totals.get(e.asset) || 1))
+    if (e.source === address) c.likelyChange = (c.likelyChange ?? true) && !!e.isChange
     map.set(other, c)
   }
   return [...map.values()].sort((a, b) => b.weight - a.weight)
@@ -49,13 +53,13 @@ export interface FlowSummary {
   outgoing: Record<string, { amount: number; count: number }>
 }
 
-/** Node-visualizer totals: everything that came in and went out, per asset (fake tokens excluded) */
+/** Node-visualizer totals: everything that came in and went out, per asset (fake tokens excluded, change included) */
 export function flowSummary(address: string, edges: EdgeData[]): FlowSummary {
   const incoming: FlowSummary['incoming'] = {}
   const outgoing: FlowSummary['outgoing'] = {}
   for (const e of edges) {
     if (e.asset.endsWith('*') || e.source === e.target) continue
-    const side = e.target === address ? incoming : e.source === address && !e.isChange ? outgoing : null
+    const side = e.target === address ? incoming : e.source === address ? outgoing : null
     if (!side) continue
     const s = side[e.asset] ?? { amount: 0, count: 0 }
     s.amount += e.amount
