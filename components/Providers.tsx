@@ -28,7 +28,7 @@ const modal = adapter && projectId
       networks: [akMainnet, akSepolia],
       defaultNetwork: akMainnet,
       projectId,
-      metadata: { name: 'Ashiato', description: 'Open, community-verified crypto tracing', url: siteUrl, icons: [`${siteUrl}/favicon.ico`] },
+      metadata: { name: 'Ashiato', description: 'Open, community-verified crypto tracing', url: siteUrl, icons: [`${siteUrl}/icon-512.png`] },
       features: { email: true, socials: ['google', 'github', 'x', 'apple', 'discord'], emailShowWallets: true, analytics: false },
       themeMode: 'dark',
       themeVariables: { '--w3m-accent': '#5b5bf0', '--w3m-border-radius-master': '1px' },
