@@ -27,7 +27,8 @@ async function rest<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!URL_ || !KEY) throw new StoreNotConfigured()
   const res = await fetch(`${URL_}/rest/v1/${path}`, {
     ...init,
-    headers: { apikey: KEY, authorization: `Bearer ${KEY}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    // New secret keys (sb_secret_…) go in `apikey` only; legacy service_role JWTs also as a bearer token
+    headers: { apikey: KEY, ...(KEY.startsWith('eyJ') ? { authorization: `Bearer ${KEY}` } : {}), 'content-type': 'application/json', ...(init.headers ?? {}) },
     cache: 'no-store',
   })
   if (!res.ok) throw new Error(`Case storage error (${res.status}): ${(await res.text()).slice(0, 200)}`)
