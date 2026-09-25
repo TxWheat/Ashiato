@@ -166,7 +166,7 @@ function TracePageInner() {
   /** Address pairs whose link the user hid from the graph */
   const [hiddenLinks, setHiddenLinks] = useState<Set<string>>(new Set())
   /** Cross-chain swaps put on the graph (a service's order records link the two chains) */
-  const [bridgeHops, setBridgeHops] = useState<(CrossChainHop & { via: string })[]>([])
+  const [bridgeHops, setBridgeHops] = useState<(CrossChainHop & { via: string; sender?: string; bridge?: string })[]>([])
   const [traced, setTraced] = useState<TracedFlow[]>([])
   const [traceEnds, setTraceEnds] = useState<TraceEnd[]>([])
   const [history, setHistory] = useState<Snapshot[]>([])
@@ -1199,9 +1199,13 @@ function TracePageInner() {
                   snapshot()
                   // This link's own swaps leave from the service's node; the wallet's other swaps
                   // (e.g. from another chain) are drawn from the wallet itself
-                  setBridgeHops(prev => (prev.some(h => h.orderId === hop.orderId) ? prev : [...prev, { ...hop, via: matched ? bridge : sender }]))
+                  setBridgeHops(prev => (prev.some(h => h.orderId === hop.orderId) ? prev : [...prev, { ...hop, via: matched ? bridge : sender, sender, bridge }]))
                   showOnGraph([hop.toAddress])
                   flash(`Added ${chainDisplay(hop.toChainName)} destination ${truncate(hop.toAddress, 6)}. Open it to keep tracing there.`)
+                }}
+                onRemove={orderId => {
+                  snapshot()
+                  setBridgeHops(prev => prev.filter(h => h.orderId !== orderId))
                 }} />
             )
           })()}
@@ -1357,6 +1361,21 @@ function TracePageInner() {
               layoutKey={layoutKey}
               hubs={graphHubs}
               bridges={graphBridges}
+              onBridgeClick={id => {
+                // Reopen the link the swap was found on, where it can be removed
+                const ids = id.split('+')
+                const h = bridgeHops.find(x => ids.includes(x.orderId))
+                if (!h) return
+                // Swaps added before this was recorded: work out the wallet and the service node
+                const sender = h.sender ?? (h.fromAddress.startsWith('0x') ? h.fromAddress.toLowerCase() : h.fromAddress)
+                const bridge = h.bridge ?? (BRIDGE_NAME.test(nameOf(h.via) ?? '') ? h.via
+                  : [...visible].find(a => BRIDGE_NAME.test(nameOf(a) ?? '') && allEdges.some(e => e.source === sender && e.target === a)))
+                if (bridge && visible.has(sender)) setSelection({ kind: 'flow', from: sender, to: bridge })
+                else if (confirm('Remove this cross-chain line from the graph?')) {
+                  snapshot()
+                  setBridgeHops(prev => prev.filter(x => !ids.includes(x.orderId)))
+                }
+              }}
               itemized={itemizedEdges}
               prices={prices}
               taintByEdge={taintResult?.byEdge}

@@ -169,6 +169,7 @@ interface Props {
   onReady?: (api: GraphApi) => void
   /** Cross-chain hops: from the swap service's node to where the money came out */
   bridges?: BridgeLine[]
+  onBridgeClick?: (id: string) => void
 }
 
 export interface BridgeLine { id: string; from: string; to: string; line1: string; line2: string }
@@ -186,12 +187,14 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [] }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [], onBridgeClick }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)
   pinned.current = positions
   const nodeCount = useRef(0)
+  /** Node ids on the canvas last time, to tell what was just added */
+  const shownIds = useRef(new Set<string>())
 
   // Highlight the selected address's counterparties: green paid it, red were paid by it
   const relation = useMemo(() => {
@@ -270,7 +273,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     const itemizedPairs = new Set(shownItems.map(e => pairKey(e.source, e.target)))
     for (const k of [...groups.keys()]) {
       const [a, b] = k.split('->')
-      if (itemizedPairs.has(pairKey(a, b)) && !tracedBy.has(k)) groups.delete(k)
+      // Shown as individual transactions: those replace the relationship (or traced) line
+      if (itemizedPairs.has(pairKey(a, b))) groups.delete(k)
     }
 
     const out: Edge[] = [...groups.entries()].map(([key, es]) => {
@@ -308,32 +312,31 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       }
     })
 
-    // Individual transactions, fanned out so parallel lines don't overlap. A transaction
-    // the trace already follows is drawn by the traced line, not again on top of it.
+    // Individual transactions, fanned out so parallel lines don't overlap. One the trace
+    // follows keeps the traced look, since it replaces the traced line.
     const tracedTx = new Set(traced.map(f => `${f.txid}|${f.from}->${f.to}`))
     const byPair = new Map<string, EdgeData[]>()
-    for (const e of shownItems) {
-      if ((e.txids ?? [e.txid]).some(t => tracedTx.has(`${t}|${e.source}->${e.target}`))) continue
-      byPair.set(pairKey(e.source, e.target), [...(byPair.get(pairKey(e.source, e.target)) ?? []), e])
-    }
-    for (const [pair, list] of byPair) {
+    for (const e of shownItems) byPair.set(pairKey(e.source, e.target), [...(byPair.get(pairKey(e.source, e.target)) ?? []), e])
+    for (const list of byPair.values()) {
       list.sort((x, y) => x.timestamp - y.timestamp)
-      // A traced line runs through the middle: fan the others out around it, not over it
-      const [a, b] = pair.split('|')
-      const middleTaken = tracedBy.has(`${a}->${b}`) || tracedBy.has(`${b}->${a}`)
       list.forEach((e, i) => {
         // Same visual side regardless of direction, so A→B and B→A lines interleave cleanly
         const sign = e.source < e.target ? 1 : -1
-        const slot = middleTaken ? (i % 2 ? -1 : 1) * (Math.floor(i / 2) + 1) : i - (list.length - 1) / 2
-        const offset = slot * 48 * sign
+        const offset = (i - (list.length - 1) / 2) * 48 * sign
+        const isTraced = (e.txids ?? [e.txid]).some(t => tracedTx.has(`${t}|${e.source}->${e.target}`))
         out.push({
           id: `item:${e.id}`,
           source: e.source,
           target: e.target,
           type: 'label',
-          data: { offset, parallel: true, line1: amountWithValue(e.amount, e.asset, prices), line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))' },
+          data: {
+            offset, parallel: true, line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))',
+            line1: isTraced ? `${fmtCompact(e.amount, e.asset)} traced` : amountWithValue(e.amount, e.asset, prices),
+            bold: isTraced, glow: isTraced,
+          },
+          zIndex: isTraced ? 2 : 1,
           markerEnd: arrowFor('accent'),
-          style: { stroke: 'rgb(var(--accent))', strokeWidth: 1.5, opacity: 0.85 },
+          style: { stroke: 'rgb(var(--accent))', strokeWidth: isTraced ? 3.5 : 1.5, opacity: isTraced ? 1 : 0.85, cursor: 'pointer' },
         })
       })
     }
@@ -394,7 +397,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         data: { offset: k ? 90 * Math.ceil(k / 2) * (k % 2 ? -1 : 1) : 0, line1: b.line1, line2: b.line2, color: BRIDGE, bold: true, glow: true },
         zIndex: 3,
         markerEnd: arrowFor('bridge'),
-        style: { stroke: BRIDGE, strokeWidth: 3, strokeDasharray: '8 5' },
+        style: { stroke: BRIDGE, strokeWidth: 3, strokeDasharray: '8 5', cursor: 'pointer' },
       })
     }
     return out
@@ -416,12 +419,29 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     const laid = placeNodes(layoutGraph(rawNodes, rawEdges), rawEdges, pinned.current)
     setNodes(laid)
     setEdges(rawEdges)
-    // Refit when nodes are added or removed, not on every data refresh
-    if (rawNodes.length !== nodeCount.current) {
-      nodeCount.current = rawNodes.length
+    // Refit on first draw and after a re-layout. Otherwise keep the user's zoom: removing
+    // nodes never moves the view, and added nodes only refit when they land off-screen.
+    const firstOrRelayout = nodeCount.current <= 0
+    const added = laid.filter(n => !shownIds.current.has(n.id))
+    nodeCount.current = rawNodes.length
+    shownIds.current = new Set(laid.map(n => n.id))
+    if (firstOrRelayout) {
       // Refit again once new nodes have been measured
       setTimeout(() => rf.current?.fitView(FIT), 60)
       setTimeout(() => rf.current?.fitView({ ...FIT, duration: 250 }), 400)
+    } else if (added.length) {
+      setTimeout(() => {
+        const inst = rf.current
+        const el = document.querySelector('.react-flow')
+        if (!inst || !el) return
+        const { x, y, zoom } = inst.getViewport()
+        const w = el.clientWidth, h = el.clientHeight
+        const offscreen = added.some(n => {
+          const sx = n.position.x * zoom + x, sy = n.position.y * zoom + y
+          return sx < 0 || sy < 0 || sx + 200 * zoom > w || sy + 60 * zoom > h
+        })
+        if (offscreen) inst.fitView({ ...FIT, duration: 250 })
+      }, 120)
     }
   }, [rawNodes, rawEdges, setNodes, setEdges])
 
@@ -472,7 +492,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         onPaneClick={onPaneClick}
         onEdgeClick={(_, e) => {
           if (e.id.startsWith('chain:')) onChainClick?.(e.id.slice(6))
-          else if (!e.id.startsWith('tx:') && !e.id.startsWith('bridge:')) onEdgeClick(e.source, e.target)
+          else if (e.id.startsWith('bridge:')) onBridgeClick?.(e.id.slice(7))
+          else if (!e.id.startsWith('tx:')) onEdgeClick(e.source, e.target)
         }}
         onInit={inst => {
           rf.current = inst
