@@ -83,3 +83,23 @@ describe('fetchTronTx', () => {
     expect(l.transfers[0]).toMatchObject({ asset: 'USDT', inputs: [{ address: ME }], outputs: [{ address: SCAM, amount: 1234.5 }] })
   })
 })
+
+describe('Tronscan labels in a trace', () => {
+  const HOT = hexToBase58('41' + '44'.repeat(20))
+  const ME2 = hexToBase58('41' + '55'.repeat(20))
+  it('names counterparties from their Tronscan tags', async () => {
+    mockFetch(url => {
+      if (url.includes('tronscanapi.com/api/accountv2')) return url.includes(HOT) ? { publicTag: 'Binance-Hot 9' } : {}
+      if (url.includes('/transactions/trc20')) return {
+        success: true,
+        data: [{ transaction_id: 'e'.repeat(64), block_timestamp: ts, from: ME2, to: HOT, value: '1000000', type: 'Transfer', token_info: { symbol: 'USDT', address: USDT, decimals: 6 } }],
+      }
+      if (url.includes('/transactions?')) return { success: true, data: [] }
+      return { success: true, data: [{ balance: 0 }] }
+    })
+    const r = await traceTronAddress(ME2)
+    const scam = r.nodes.find(n => n.address === HOT)
+    expect(scam?.label).toMatchObject({ name: 'Binance-Hot 9', type: 'exchange', source: 'Tronscan tag' })
+    expect(calls.some(u => u.includes(`accountv2?address=${ME2}`))).toBe(true)
+  })
+})

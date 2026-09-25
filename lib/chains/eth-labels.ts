@@ -13,7 +13,7 @@ export function classifyTag(text: string): EntityType {
   if (/exploit|hack|heist/.test(t)) return 'hack'
   if (/mixer|tornado|privacy ?pool|railgun|blender|sinbad|wasabi|coinjoin/.test(t)) return 'mixer'
   if (/gambl|casino|betting/.test(t)) return 'gambling'
-  if (/exchange|binance|coinbase|kraken|okx|bybit|kucoin|bitfinex|gemini|huobi|htx|gate\.io|bitstamp|crypto\.com|upbit|bithumb/.test(t)) {
+  if (/exchange|binance|coinbase|kraken|okx|bybit|kucoin|bitfinex|gemini|huobi|htx|gate\.io|bitstamp|crypto\.com|upbit|bithumb|mexc|bitget|poloniex|hitbtc|-hot\b|hot wallet|cold wallet/.test(t)) {
     return /deposit address|: deposit\b/.test(t) && !/privacy/.test(t) ? 'deposit' : 'exchange'
   }
   return 'service'
