@@ -24,16 +24,6 @@ const assetOf = (code: string) => code.replace(/\(.*\)$/, '').trim().toUpperCase
 /** "USDT(TRON)" → "TRON" when a coin code carries its chain */
 const chainInCode = (code: string) => code.match(/\(([^)]+)\)$/)?.[1] ?? ''
 
-function timeOf(v: unknown): number | undefined {
-  if (typeof v === 'number') return v > 1e12 ? Math.floor(v / 1000) : v
-  const s = str(v)
-  if (!s) return undefined
-  if (/^\d+$/.test(s)) return timeOf(Number(s))
-  // "2026-08-19 04:18:35" (the API reports UTC+8, Beijing time)
-  const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : `${s.replace(' ', 'T')}+08:00`)
-  return Number.isFinite(t) ? Math.floor(t / 1000) : undefined
-}
-
 /** One order record → a hop (tolerant of field-name variations between API versions) */
 export function hopFromBridgers(r: Raw): CrossChainHop | null {
   const fromCode = str(r.fromCoinCode) || str(r.fromTokenSymbol)
@@ -53,11 +43,16 @@ export function hopFromBridgers(r: Raw): CrossChainHop | null {
     toAddress,
     fromHash,
     toHash: str(r.toHash) || str(r.receiveHash) || undefined,
-    fromAmount: num(r.fromTokenAmount ?? r.fromAmount ?? r.depositCoinAmt),
+    // fromTokenAmount is human units; fromAmount is in base units (wei), so never fall back to it
+    fromAmount: num(r.fromTokenAmount ?? r.depositCoinAmt),
     fromAsset: assetOf(fromCode),
-    toAmount: num(r.toTokenAmount ?? r.toAmount ?? r.receiveCoinAmt),
+    toAmount: num(r.toTokenAmount ?? r.receiveCoinAmt),
     toAsset: assetOf(toCode),
-    time: timeOf(r.createTime ?? r.createdAt ?? r.time),
+    createdText: str(r.createTime) || undefined,
+    depositUrl: str(r.depositHashExplore) || undefined,
+    receiveUrl: str(r.receiveHashExplore) || undefined,
+    refundHash: str(r.refundHash) || undefined,
+    refundUrl: str(r.refundHashExplore) || undefined,
   }
 }
 
@@ -81,5 +76,5 @@ export async function bridgersOrders(fromAddress: string): Promise<CrossChainHop
   if (code && code !== '100' && code !== '0') throw new Error(`Bridgers: ${res.resMsg || `error ${code}`}`)
   const d = res.data as Raw | Raw[] | undefined
   const list: Raw[] = Array.isArray(d) ? d : Array.isArray(d?.list) ? (d!.list as Raw[]) : Array.isArray(d?.records) ? (d!.records as Raw[]) : []
-  return list.map(hopFromBridgers).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
+  return list.map(hopFromBridgers).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
 }

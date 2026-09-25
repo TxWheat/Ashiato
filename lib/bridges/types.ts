@@ -21,9 +21,24 @@ export interface CrossChainHop {
   fromAsset: string
   toAmount: number
   toAsset: string
-  /** Unix seconds */
+  /** When Bridgers created the order, as it reports it (timezone not documented) */
+  createdText?: string
+  /** Unix seconds, when known from the chain (set by the page for matched transactions) */
   time?: number
+  /** Explorer links as the service gives them */
+  depositUrl?: string
+  receiveUrl?: string
+  refundHash?: string
+  refundUrl?: string
 }
+
+const STATUS_TEXT: Record<string, string> = {
+  receive_complete: 'Completed', complete: 'Completed', success: 'Completed',
+  wait_deposit_send: 'Waiting for deposit', wait_exchange_push: 'Swapping', wait_receive_send: 'Paying out',
+  refund_complete: 'Refunded', wait_refund_send: 'Refunding', timeout: 'Timed out', fail: 'Failed', error: 'Failed',
+}
+export const statusText = (s: string) => STATUS_TEXT[s.toLowerCase()] ?? s.replace(/_/g, ' ')
+export const statusOk = (s: string) => /complete|success/i.test(s) && !/refund/i.test(s)
 
 /** Names that mark an address as a cross-chain swap service we can look up */
 export const BRIDGE_NAME = /bridgers|swft|omnibridge|allchain ?bridge/i

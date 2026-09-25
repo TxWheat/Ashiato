@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
+  Shuffle,
 } from 'lucide-react'
 import { MyLabel } from '@/lib/my-labels'
 import CommunityLabels, { Attester } from './CommunityLabels'
+import { BRIDGE_NAME } from '@/lib/bridges/types'
 import { InternalBadge } from './EdgeDetail'
 import { EntityLabel, EntityType, NodeData, RawTransaction, transferKey } from '@/lib/types'
 import { Counterparty, FlowSummary } from '@/lib/counterparties'
@@ -356,6 +358,12 @@ export default function AddressInspector(p: Props) {
             onSave={l => { p.onSaveLabel(l); setEditing(false) }}
             onCancel={() => setEditing(false)}
           />
+        )}
+        {BRIDGE_NAME.test(title ?? '') && (
+          <p className="flex items-start gap-1.5 text-[11px] text-orange-500 border border-orange-500/40 bg-orange-500/5 px-2.5 py-2">
+            <Shuffle size={12} className="mt-0.5 flex-shrink-0" />
+            <span>Cross-chain swap service. Click the <b className="font-medium">line</b> from a wallet into it to see where that wallet&apos;s swap came out, on which chain and address.</span>
+          </p>
         )}
         <CommunityLabels chain={node.chain} address={node.address} attester={p.attester} />
         <FlowBoxes summary={p.summary} />
