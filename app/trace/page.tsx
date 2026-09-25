@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick, EyeOff, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick, EyeOff, ChevronsLeft, ChevronsRight, Repeat } from 'lucide-react'
 import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, TxIO, TxLookup, transferKey } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
@@ -1188,16 +1188,37 @@ function TracePageInner() {
           onClose={() => setSelection(null)}
           onHide={() => hideLink(selection.from, selection.to)}
           extra={(() => {
+            // Swaps: a transaction on this link paid the sender a different asset back (DEX, UniswapX, 1inch…)
+            const swaps = edgeRows.flatMap(r => {
+              const back = allTxs.filter(t => (r.txids ?? [r.txid]).includes(t.txid) && t.outputs.some(o => o.address === r.source) &&
+                t.inputs[0]?.address !== r.source && t.asset !== r.asset && !t.asset.endsWith('*') && (t.outputs[0]?.amount ?? 0) > 0)
+              return back.length ? [{ row: r, back }] : []
+            })
+            const swapNote = swaps.length > 0 && (
+              <div className="border border-violet-500/50 bg-violet-500/5 p-3 space-y-1.5 text-[11px] mb-2">
+                <div className="flex items-center gap-1.5 font-medium text-fg"><Repeat size={12} className="text-violet-400" /> Swap in one transaction</div>
+                {swaps.map(({ row, back }) => (
+                  <div key={row.id} className="text-muted">
+                    <span className="text-fg">{nameOf(row.source) ?? truncate(row.source, 6)}</span> sold <b className="font-mono text-fg">{fmtCompact(row.amount, row.asset)}</b> and got{' '}
+                    <b className="font-mono text-fg">{back.map(t => fmtCompact(t.outputs[0].amount, t.asset)).join(' + ')}</b> back
+                    {' '}(from {back.map(t => nameOf(t.inputs[0].address) ?? truncate(t.inputs[0].address, 5)).join(', ')}) · {fmtDay(row.timestamp)}
+                  </div>
+                ))}
+                <p className="text-faint">Follow the funds carries on with what came back.</p>
+              </div>
+            )
             // A link into a cross-chain swap service: ask the service where the money came out
             const isBridge = (a: string) => BRIDGE_NAME.test(nameOf(a) ?? '')
             const bridge = isBridge(selection.to) ? selection.to : isBridge(selection.from) ? selection.from : null
-            if (!bridge) return undefined
+            if (!bridge) return swapNote || undefined
             const sender = bridge === selection.to ? selection.from : selection.to
             const into = edgeRows.filter(r => r.source === sender && r.target === bridge)
             const txids = into.flatMap(r => r.txids ?? [r.txid])
             if (!txids.length) return undefined
             const txTimes = Object.fromEntries(into.flatMap(r => (r.txids ?? [r.txid]).map(t => [t, r.timestamp])))
             return (
+              <>
+              {swapNote}
               <BridgeHops sender={sender} serviceName={(nameOf(bridge) ?? 'Bridgers').replace(/\s*[(:].*$/, '')} txids={txids} txTimes={txTimes} added={new Set(bridgeHops.map(h => h.orderId))}
                 onAdd={(hop, matched) => {
                   snapshot()
@@ -1211,6 +1232,7 @@ function TracePageInner() {
                   snapshot()
                   setBridgeHops(prev => prev.filter(h => h.orderId !== orderId))
                 }} />
+              </>
             )
           })()}
         />

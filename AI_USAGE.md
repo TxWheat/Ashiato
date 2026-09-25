@@ -36,6 +36,7 @@ Log (updated as work lands):
 | EAS community labels: schemas, encode/decode, trust scoring, indexer reads, API route, Inspector panel, schema registration script, tests | Claude Code (drafted) | Owner |
 | Fixes from the owner's live testing (poisoning, clustering, graph lines, node removal); Tronscan labels | Claude Code (drafted), bugs found and verified by owner | Owner |
 | Bridgers cross-chain hops (owner researched the Bridgers API and chose it); email-wallet network fix; app icon | Claude Code (drafted) | Owner |
+| DEX swap detection and follow-through; graph layout/zoom fixes from the owner's testing | Claude Code (drafted) | Owner |
 | Accounts: wallet/email sign-in, sessions, Supabase case storage, My cases page, home page sign-in (owner's design and screenshots) | Claude Code (drafted) | Owner |
 
 ## Prompts and plans
