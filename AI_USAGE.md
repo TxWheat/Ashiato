@@ -33,6 +33,7 @@ Log (updated as work lands):
 | Change | Written by | Reviewed / merged by |
 |---|---|---|
 | Rename to Ashiato; repo links; HACKATHON.md; this file | Claude Code (drafted) | Owner |
+| EAS community labels: schemas, encode/decode, trust scoring, indexer reads, API route, Inspector panel, schema registration script, tests | Claude Code (drafted) | Owner |
 | Wallet sign-in (WalletConnect) | Owner | Owner |
 
 ## Prompts and plans
