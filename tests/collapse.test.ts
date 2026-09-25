@@ -25,4 +25,12 @@ describe('collapseChains', () => {
     expect(collapseChains({ nodes, edges: [], traced, keep: new Set(), expanded: new Set(['a=>end']) }).chains.map(c => c.id)).not.toContain('a=>end')
     expect(collapseChains({ nodes, edges: [], traced, keep: new Set(), expanded: new Set(), minHops: 10 }).chains).toHaveLength(0)
   })
+  it('folds dead-end side addresses (peeled payees) into the chain', () => {
+    const peels = ['p1', 'p2', 'p3']
+    const edges = peels.map((p, k) => ({ id: p, source: chain[k + 1], target: p, amount: 0.5, asset: 'BTC', txid: p, timestamp: 1, chain: 'btc' as const }))
+    const { chains, hidden } = collapseChains({ nodes: [...nodes, ...peels], edges, traced, keep: new Set(['origin']), expanded: new Set() })
+    expect(chains).toHaveLength(1)
+    expect(chains[0]).toMatchObject({ from: 'a', to: 'end', hops: 5, peels: 3 })
+    expect(peels.every(p => hidden.has(p))).toBe(true)
+  })
 })

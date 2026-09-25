@@ -13,6 +13,10 @@ export interface LabelEdgeData {
   line2?: string
   color?: string
   bold?: boolean
+  /** Soft halo under the line (traced funds, collapsed chains) */
+  glow?: boolean
+  /** Don't add a direction arrow to the label (the label says it already) */
+  noArrowText?: boolean
 }
 
 type Pt = [number, number]
@@ -97,7 +101,7 @@ export default function LabelEdge(props: EdgeProps<LabelEdgeData>) {
     const max = Math.floor(room / px)
     return t.length <= max ? t : max < 4 ? '' : `${t.slice(0, max - 1).trimEnd()}…`
   }
-  const l1 = data?.line1 ? fit(`${reversed ? '← ' : ''}${data.line1}${reversed ? '' : ' →'}`, 6.4) : ''
+  const l1 = data?.line1 ? fit(data.noArrowText ? data.line1 : `${reversed ? '← ' : ''}${data.line1}${reversed ? '' : ' →'}`, 6.4) : ''
   const l2 = data?.line2 ? fit(data.line2, 5.6) : ''
 
   // A bowed line (parallel or two-way) carries both lines on its outer side,
@@ -116,6 +120,9 @@ export default function LabelEdge(props: EdgeProps<LabelEdgeData>) {
 
   return (
     <>
+      {data?.glow && (
+        <path d={path} fill="none" style={{ stroke: String(style?.stroke ?? color), strokeWidth: sw + 8, strokeOpacity: 0.22, strokeLinecap: 'round', pointerEvents: 'none' }} />
+      )}
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={22} />
       {(l1 || l2) && (
         <g transform={`translate(${mid[0]} ${mid[1]}) rotate(${angle})`} style={{ cursor: 'pointer' }} textAnchor="middle">

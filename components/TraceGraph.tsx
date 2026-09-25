@@ -11,7 +11,6 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   BackgroundVariant,
-  MarkerType,
   ReactFlowInstance,
   getRectOfNodes,
   getTransformForBounds,
@@ -34,13 +33,41 @@ const NODE_H = 78
 const FIT = { padding: 0.3, maxZoom: 1.1 }
 const TAINT = '#ef4444'
 
+/**
+ * Slim notched arrowheads at a fixed on-screen size (reactflow's built-in markers
+ * scale with line width, so thick lines got huge heads). Referenced by id.
+ */
+const ARROWS = {
+  accent: 'rgb(var(--accent))',
+  muted: 'rgb(var(--muted))',
+  faint: 'rgb(var(--faint))',
+  taint: TAINT,
+} as const
+const arrowFor = (k: keyof typeof ARROWS) => `ct-arrow-${k}`
+
+function ArrowDefs() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+      <defs>
+        {Object.entries(ARROWS).map(([k, c]) => (
+          <marker key={k} id={arrowFor(k as keyof typeof ARROWS)} viewBox="0 0 12 12" refX="10" refY="6"
+            markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+            <path d="M1,1.5 L11,6 L1,10.5 L3.5,6 Z" style={{ fill: c }} />
+          </marker>
+        ))}
+      </defs>
+    </svg>
+  )
+}
+
 function layoutGraph(nodes: Node[], edges: Edge[]) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({ rankdir: 'LR', nodesep: 70, ranksep: 240 })
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
   edges.forEach(e => {
-    if (g.hasNode(e.source) && g.hasNode(e.target)) g.setEdge(e.source, e.target)
+    // Collapsed chains get a longer line so their summary label fits
+    if (g.hasNode(e.source) && g.hasNode(e.target)) g.setEdge(e.source, e.target, e.id.startsWith('chain:') ? { minlen: 2 } : {})
   })
   dagre.layout(g)
   return nodes.map(n => {
@@ -263,10 +290,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         target,
         type: 'label',
         // Money flowing both ways: bow the two lines apart (opposite sides) so labels don't stack
-        data: { offset: groups.has(`${target}->${source}`) ? 26 : 0, line1, line2, color: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', bold: !!tr || tainted || isSel },
-        animated: !!tr || followed || tainted,
+        data: { offset: groups.has(`${target}->${source}`) ? 26 : 0, line1, line2, color: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', bold: !!tr || tainted || isSel, glow: !!tr || tainted },
         zIndex: tr ? 2 : 1,
-        markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
+        markerEnd: arrowFor(tainted ? 'taint' : tr || followed ? 'accent' : isChange ? 'faint' : 'muted'),
         style: { stroke: color, strokeWidth: isSel ? width + 1.5 : width, strokeDasharray: isChange ? '5 4' : undefined, opacity: isChange ? 0.85 : 1, cursor: 'pointer' },
       }
     })
@@ -286,7 +312,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           target: e.target,
           type: 'label',
           data: { offset, parallel: true, line1: amountWithValue(e.amount, e.asset, prices), line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))' },
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--accent))', width: 12, height: 12 },
+          markerEnd: arrowFor('accent'),
           style: { stroke: 'rgb(var(--accent))', strokeWidth: 1.5, opacity: 0.85 },
         })
       })
@@ -302,7 +328,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           target: to,
           type: 'label',
           data: { line1: amountWithValue(amount, asset, prices) },
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--muted))', width: 14, height: 14 },
+          markerEnd: arrowFor('muted'),
           style: { stroke: 'rgb(var(--muted))', strokeWidth: 1.5, strokeDasharray: '6 3' },
         })
       h.inputs.forEach((i, k) => ids.has(i.address) && draw(i.address, id, i.amount, i.asset, `in${k}`))
@@ -321,14 +347,16 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         target: c.to,
         type: 'label',
         data: {
-          line1: `${c.hops} hops · ${amt}`,
+          line1: `${c.hops} hops · ${amt}${c.peels ? ` · ${c.peels} peel${c.peels === 1 ? '' : 's'}` : ''}`,
           line2: `${c.firstTime ? (fmtDay(c.firstTime) === fmtDay(c.lastTime) ? fmtDay(c.lastTime) : `${fmtDay(c.firstTime)} → ${fmtDay(c.lastTime)}`) + ' · ' : ''}click to expand`,
           color: 'rgb(var(--accent))',
           bold: true,
+          glow: true,
+          noArrowText: true,
         },
         zIndex: 3,
-        markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(var(--accent))', width: 16, height: 16 },
-        style: { stroke: 'rgb(var(--accent))', strokeWidth: 5, strokeDasharray: '2 6', strokeLinecap: 'round', cursor: 'pointer' },
+        markerEnd: arrowFor('accent'),
+        style: { stroke: 'rgb(var(--accent))', strokeWidth: 3.5, strokeLinecap: 'round', cursor: 'pointer' },
       })
     }
     return out
@@ -392,6 +420,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
   return (
     <div className="w-full h-full">
+      <ArrowDefs />
       <ReactFlow
         nodes={nodes}
         edges={edges}

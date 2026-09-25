@@ -50,14 +50,17 @@ const MAX_EXTRA_PAGES = 5
 /** Trace ends that are not part of the drawn trail */
 const OFF_TRAIL: TraceEnd['reason'][] = ['peel', 'split']
 
-/** One row per address and reason (two lots can end at the same address) */
+/** Drops exact repeats (running the same trace twice), keeping genuinely different lots */
 function mergeEnds(ends: TraceEnd[]): TraceEnd[] {
   const m = new Map<string, TraceEnd>()
-  for (const e of ends) {
-    const k = `${e.address}|${e.reason}|${e.asset}`
-    const ex = m.get(k)
-    m.set(k, ex ? { ...ex, amount: ex.amount + e.amount } : e)
-  }
+  for (const e of ends) m.set(`${e.address}|${e.reason}|${e.asset}|${e.amount.toFixed(8)}`, e)
+  return [...m.values()]
+}
+
+/** Same hop traced twice (re-running a trace) must not double the traced amount */
+function uniqueFlows(flows: TracedFlow[]): TracedFlow[] {
+  const m = new Map<string, TracedFlow>()
+  for (const f of flows) m.set(`${f.txid}|${f.from}|${f.to}|${f.asset}|${f.amount.toFixed(8)}`, f)
   return [...m.values()]
 }
 
@@ -580,7 +583,7 @@ function TracePageInner() {
     const before = traced
     const show = (flows: TracedFlow[]) => {
       const real = flows.filter(f => f.from && f.to)
-      setTraced([...before, ...real])
+      setTraced(uniqueFlows([...before, ...real]))
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
     }
     show(seed.flows)
@@ -813,15 +816,18 @@ function TracePageInner() {
     positionsRef.current.clear()
     for (const [id, pos] of Object.entries(c.positions ?? {})) positionsRef.current.set(id, pos)
     setKnownNow(new Map(c.known.map(n => [n.address, n])))
-    setVisible(new Set(c.visible))
+    // Older cases put peeled-off payments on the chart; take those off unless they're on the trail
+    const trail = new Set((c.traced ?? []).flatMap(f => [f.from, f.to]))
+    const offTrail = new Set((c.traceEnds ?? []).filter(e => OFF_TRAIL.includes(e.reason) && !trail.has(e.address)).map(e => e.address))
+    setVisible(new Set(c.visible.filter(a => !offTrail.has(a) || a === c.origin.address)))
     pagesRef.current = new Map(Object.entries(c.pages))
     setPages(pagesRef.current)
     setHubs(new Map((c.hubs ?? []).map(h => [h.txid, h])))
     setFollowedPairs(new Set(c.followedPairs))
     setItemizedIds(new Set(c.itemizedIds ?? []))
     setHiddenLinks(new Set(c.hiddenLinks ?? []))
-    setTraced(c.traced ?? [])
-    setTraceEnds(c.traceEnds ?? [])
+    setTraced(uniqueFlows(c.traced ?? []))
+    setTraceEnds(mergeEnds(c.traceEnds ?? []))
     setTaint(c.taint ?? null)
     setHistory([])
     setError('')

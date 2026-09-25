@@ -9,6 +9,8 @@ export interface CollapsedChain {
   to: string
   /** Addresses hidden inside the run, in order */
   middle: string[]
+  /** Dead-end side addresses (e.g. peeled-off payees) folded into the line */
+  peels: number
   hops: number
   asset: string
   firstAmount: number
@@ -45,6 +47,28 @@ export function collapseChains(opts: {
   for (const e of opts.edges) link(e.source, e.target)
   for (const f of opts.traced) link(f.from, f.to)
 
+  // Dead ends hanging off one address and not on the traced trail (peeled-off payees,
+  // minor splits) don't break a chain; they're folded into it
+  const onTrail = new Set(opts.traced.flatMap(f => [f.from, f.to]))
+  const nbrs = (x: string) => new Set([...(ins.get(x) ?? []), ...(outs.get(x) ?? [])])
+  const leaf = new Set(opts.nodes.filter(x => !opts.keep.has(x) && !onTrail.has(x) && nbrs(x).size === 1))
+  const nbrsBefore = new Map([...leaf].map(x => [x, nbrs(x)]))
+  for (const x of leaf) {
+    for (const m of [ins, outs]) {
+      for (const [k, v] of m) {
+        v.delete(x)
+        if (!v.size) m.delete(k)
+      }
+      m.delete(x)
+    }
+  }
+  const leavesOf = new Map<string, string[]>()
+  for (const x of leaf) {
+    // Neighbour recorded before the leaf's links were removed
+    const n = [...nbrsBefore.get(x)!][0]
+    leavesOf.set(n, [...(leavesOf.get(n) ?? []), x])
+  }
+
   const isMid = (x: string) => {
     if (!nodeSet.has(x) || opts.keep.has(x)) return false
     const i = ins.get(x), o = outs.get(x)
@@ -79,9 +103,12 @@ export function collapseChains(opts: {
       if (hops < minHops || opts.expanded.has(id)) continue
       const steps = path.slice(1).map((b, k) => hop(path[k], b))
       const times = steps.map(s => s.time).filter(Boolean)
-      path.slice(1, -1).forEach(x => hidden.add(x))
+      const middle = path.slice(1, -1)
+      const side = middle.flatMap(x => leavesOf.get(x) ?? [])
+      middle.forEach(x => hidden.add(x))
+      side.forEach(x => hidden.add(x))
       chains.push({
-        id, from: start, to: cur, middle: path.slice(1, -1), hops,
+        id, from: start, to: cur, middle, peels: side.length, hops,
         asset: steps.find(s => s.asset)?.asset ?? '',
         firstAmount: steps[0].amount,
         lastAmount: steps[steps.length - 1].amount,
