@@ -149,7 +149,14 @@ export default function CommunityLabels({ chain, address, attester, evidenceHint
           onCancel={() => setFlagging(false)}
           onSubmit={async input => { if (await act('flag', () => attester.label(input))) setFlagging(false) }} />
       )}
-      {error && <p className="text-[11px] text-red-500">{error}</p>}
+      {error && (
+        <p className="text-[11px] text-red-500 break-words">
+          {error.split(/(https?:\/\/\S+)/).map((part, i) =>
+            /^https?:\/\//.test(part)
+              ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-fg">{part.replace(/^https?:\/\//, '').split('/')[0]}</a>
+              : part)}
+        </p>
+      )}
     </div>
   )
 }

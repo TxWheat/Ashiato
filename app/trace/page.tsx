@@ -33,7 +33,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import { AccountButton } from '@/components/SignIn'
 import type { Attester } from '@/components/CommunityLabels'
 import { usePublicClient, useSwitchChain, useWalletClient } from 'wagmi'
-import { attestLabel, revokeAttestation, voteOnLabel } from '@/lib/attest/write'
+import { attestLabel, revokeAttestation, voteOnLabel, walletChainId } from '@/lib/attest/write'
 import { ATTEST_CHAIN, SCHEMA_UID } from '@/lib/attest/config'
 import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
@@ -132,7 +132,7 @@ function TracePageInner() {
   const attester = useMemo<Attester | undefined>(() => {
     if (!walletClient || !attestClient) return undefined
     const onSepolia = async () => {
-      if ((await walletClient.getChainId()) !== ATTEST_CHAIN.id) await switchChainAsync({ chainId: ATTEST_CHAIN.id })
+      if ((await walletChainId(walletClient)) !== ATTEST_CHAIN.id) await switchChainAsync({ chainId: ATTEST_CHAIN.id })
     }
     return {
       address: walletClient.account.address.toLowerCase(),

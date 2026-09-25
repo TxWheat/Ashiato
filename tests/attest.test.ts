@@ -102,3 +102,15 @@ describe('write helpers', () => {
     expect(uidFromLogs([{ address: A, data, topics }])).toBeUndefined()
   })
 })
+
+describe('wallet network ids', () => {
+  it('reads numbers, hex and CAIP-2 text (Reown email wallets)', async () => {
+    const { parseChainId } = await import('@/lib/attest/write')
+    expect(parseChainId('eip155:1')).toBe(1)
+    expect(parseChainId('eip155:11155111')).toBe(11155111)
+    expect(parseChainId('0xaa36a7')).toBe(11155111)
+    expect(parseChainId(11155111)).toBe(11155111)
+    expect(parseChainId(1n)).toBe(1)
+    expect(parseChainId('nonsense')).toBeUndefined()
+  })
+})
