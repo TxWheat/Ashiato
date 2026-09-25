@@ -39,7 +39,8 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Trust voting on labels, with reputation weighting (ENS)
 - [x] Tron address labels from Tronscan tags (exchange hot wallets, red-flagged scams)
 - [x] Fixes from live testing: fake-ETH address poisoning, runaway deposit-reuse clusters, duplicate traced lines
-- [ ] Cross-chain hops: bridge deposits resolved to the destination chain's txid, trace continues
+- [x] Cross-chain hops (Bridgers): a transfer into Bridgers is looked up in Bridgers' order records; the destination chain, address, amount and both txids are shown, and the destination goes on the graph with a dashed "via Bridgers" line (Tron/Ethereum destinations keep tracing)
+- [ ] More bridges (OmniBridge/SWFT, LI.FI, Across)
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams
 - [ ] (Stretch) MetaMask Snap that warns before sending to a flagged address

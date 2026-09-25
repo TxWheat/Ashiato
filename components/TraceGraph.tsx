@@ -37,11 +37,15 @@ const TAINT = '#ef4444'
  * Slim notched arrowheads at a fixed on-screen size (reactflow's built-in markers
  * scale with line width, so thick lines got huge heads). Referenced by id.
  */
+/** Cross-chain swaps: money leaves one chain and arrives on another */
+const BRIDGE = '#f97316'
+
 const ARROWS = {
   accent: 'rgb(var(--accent))',
   muted: 'rgb(var(--muted))',
   faint: 'rgb(var(--faint))',
   taint: TAINT,
+  bridge: BRIDGE,
 } as const
 const arrowFor = (k: keyof typeof ARROWS) => `ct-arrow-${k}`
 
@@ -163,7 +167,11 @@ interface Props {
   /** Changing this re-tidies the whole layout (e.g. when chains collapse or expand) */
   layoutKey?: string
   onReady?: (api: GraphApi) => void
+  /** Cross-chain hops: from the swap service's node to where the money came out */
+  bridges?: BridgeLine[]
 }
+
+export interface BridgeLine { id: string; from: string; to: string; line1: string; line2: string }
 
 function stylesheetsReadable() {
   try {
@@ -178,7 +186,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [] }: Props) {
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)
@@ -371,8 +379,22 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         style: { stroke: 'rgb(var(--accent))', strokeWidth: 3.5, strokeLinecap: 'round', cursor: 'pointer' },
       })
     }
+    // Cross-chain swaps: dashed orange, like a bridge between the two chains
+    for (const b of bridges) {
+      if (!ids.has(b.from) || !ids.has(b.to)) continue
+      out.push({
+        id: `bridge:${b.id}`,
+        source: b.from,
+        target: b.to,
+        type: 'label',
+        data: { line1: b.line1, line2: b.line2, color: BRIDGE, bold: true, glow: true },
+        zIndex: 3,
+        markerEnd: arrowFor('bridge'),
+        style: { stroke: BRIDGE, strokeWidth: 3, strokeDasharray: '8 5' },
+      })
+    }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selectedEdge, chains])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selectedEdge, chains, bridges])
 
   // A new layoutKey re-tidies everything: forget positions so dagre lays the graph out afresh
   const lastLayoutKey = useRef(layoutKey)
@@ -446,7 +468,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         onPaneClick={onPaneClick}
         onEdgeClick={(_, e) => {
           if (e.id.startsWith('chain:')) onChainClick?.(e.id.slice(6))
-          else if (!e.id.startsWith('tx:')) onEdgeClick(e.source, e.target)
+          else if (!e.id.startsWith('tx:') && !e.id.startsWith('bridge:')) onEdgeClick(e.source, e.target)
         }}
         onInit={inst => {
           rf.current = inst

@@ -41,6 +41,8 @@ const SPECIAL: Record<string, EntityLabel> = {
   '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { name: 'Circle: USDC contract', type: 'service', source: 'Token contract' },
   '0x6b175474e89094c44da98b954eedeac495271d0f': { name: 'Maker: DAI contract', type: 'service', source: 'Token contract' },
   '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { name: 'WETH contract', type: 'service', source: 'Token contract' },
+  // Cross-chain swap router (Bridgers docs: same address on ETH, BSC, Polygon and other EVM chains)
+  '0xc1d13492285eb664951e201bf7c80c7c6318a1b5': { name: 'Bridgers: cross-chain swap router', type: 'service', source: 'Bridgers documentation', sourceUrl: 'https://docs-bridgers-en.bridgers.xyz/' },
   '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { name: 'WBTC contract', type: 'service', source: 'Token contract' },
   // Mixers missing from the public datasets (from Etherscan public name tags)
   '0x6818809eefce719e480a7526d76bd3e561526b46': { name: 'Privacy Pools: Deposit', type: 'mixer', source: 'Etherscan public name tag', sourceUrl: 'https://etherscan.io/address/0x6818809eefce719e480a7526d76bd3e561526b46' },

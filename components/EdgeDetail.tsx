@@ -36,6 +36,8 @@ interface Props {
   onClose: () => void
   /** Remove this link from the graph (both directions); the addresses stay */
   onHide: () => void
+  /** Shown first on the Relationship tab (e.g. where a cross-chain swap went) */
+  extra?: React.ReactNode
 }
 
 /** Contract-sent ETH: Etherscan lists these under "Internal Transactions", not "Transactions" */
@@ -129,6 +131,7 @@ export default function EdgeDetail(p: Props) {
       <div className="flex-1 overflow-y-auto min-h-0">
         {tab === 'relationship' ? (
           <div className="p-4 space-y-3">
+            {p.extra}
             <Direction from={p.a} to={p.b} rows={ab} />
             <Direction from={p.b} to={p.a} rows={ba} />
             {times.length > 0 && (
