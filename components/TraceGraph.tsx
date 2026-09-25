@@ -303,7 +303,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const first = Math.min(...es.map(x => x.firstTimestamp || x.timestamp).filter(Boolean))
       const last = Math.max(...es.map(x => x.timestamp))
       const line1 = tr
-        ? `${[...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')}${swappedBy.has(key) ? ` · swapped for ${[...swappedBy.get(key)!].map(([a, v]) => fmtCompact(v, a)).join(' + ')}` : ''}${pooledBy.has(key) ? ` · ${Math.round(pooledBy.get(key)! * 100)}% of pool` : ''}`
+        ? `${[...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')}${swappedBy.has(key) ? ` · swapped for ${[...swappedBy.get(key)!].map(([a, v]) => fmtCompact(v, a)).join(' + ')}` : ''}${pooledBy.has(key) ? ` · ${pooledBy.get(key)! > 0 && pooledBy.get(key)! < 0.01 ? '<1' : Math.round(pooledBy.get(key)! * 100)}% of pool` : ''}`
         : tainted
           ? `${fmtCompact(taint!, es[0]?.asset ?? '')} tainted`
           : `${relationshipLabel(es, prices, txs)}${isChange ? ' · likely change' : ''}`
