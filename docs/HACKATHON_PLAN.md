@@ -2,7 +2,7 @@
 
 **Pitch:** an open, low-cost alternative to TRM Labs and Chainalysis for scam victims and small investigators. Tracing is free. Labels are public on-chain attestations that anyone can read, dispute or build on. Reports can be verified by anyone. There are no accounts: your wallet is your identity, and no personal data is stored.
 
-**Existing before the event:** the whole CryptoTracer web app (BTC/ETH/Tron tracing, adaptive follow-the-funds, client payment intake, taint, open label datasets), up to commit `b6ed119` (25 Sep 2026, 11:45 JST), tagged `pre-hackathon-baseline`.
+**Existing before the event:** the whole CryptoTracer web app (renamed Ashiato at the event) (BTC/ETH/Tron tracing, adaptive follow-the-funds, client payment intake, taint, open label datasets), up to commit `b6ed119` (25 Sep 2026, 11:45 JST), tagged `pre-hackathon-baseline`.
 **Built at the event:** everything in Phases 1–7 below. (This plan file was written at the start of the event.)
 
 ---

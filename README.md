@@ -1,4 +1,8 @@
-# CryptoTracer
+# Ashiato 足跡
+
+*Ashiato* is Japanese for “footprints”. Every transaction leaves one; Ashiato follows them.
+
+> Built on at **ETHGlobal Tokyo 2026** (Continuity track): see [HACKATHON.md](HACKATHON.md) for what existed before and what was added, and [AI_USAGE.md](AI_USAGE.md).
 
 Free, open-source blockchain forensics for scam victims and independent investigators. Trace Bitcoin, Ethereum and Tron funds (including USDT) hop by hop, find the exchange deposit address where they were cashed out, and export a report you can hand to an exchange or the police. No sign-up, no paywall.
 
@@ -28,8 +32,8 @@ Every heuristic is documented, with its limits, at `/methodology`.
 Requires Node.js 20+.
 
 ```bash
-git clone https://github.com/TxWheat/Cryptocurrency-Tracing-Tool.git
-cd Cryptocurrency-Tracing-Tool
+git clone https://github.com/TxWheat/Ashiato.git
+cd Ashiato
 npm install
 cp .env.local.example .env.local   # add ETHERSCAN_API_KEY for Ethereum; optional TRONGRID_API_KEY for Tron
 npm run dev

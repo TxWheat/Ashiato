@@ -51,7 +51,7 @@ th{background:#f3f4f6}code{font-size:11px;word-break:break-all}a{color:#0645ad;t
 @media print{a{color:#111}}
 </style></head><body>
 <h1>Cryptocurrency trace report</h1>
-<div class="muted">Generated ${esc(new Date().toISOString())} · ${chain.toUpperCase()} · CryptoTracer (open source)</div>
+<div class="muted">Generated ${esc(new Date().toISOString())} · ${chain.toUpperCase()} · Ashiato (open source)</div>
 
 ${section('Subject address', `<p>${addr(origin)}<br>
 Label: ${esc(originNode?.label?.name ?? 'none')} · Risk: <b>${originNode?.risk?.score ?? '–'}/100 (${esc(originNode?.risk?.level ?? 'n/a')})</b></p>

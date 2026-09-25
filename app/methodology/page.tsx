@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import SiteNav from '@/components/SiteNav'
 
 export const metadata: Metadata = {
-  title: 'Methodology · CryptoTracer',
-  description: 'How CryptoTracer labels addresses, detects change, CoinJoins and exchange deposit addresses, scores risk and runs taint analysis, and where each method can be wrong.',
+  title: 'Methodology · Ashiato',
+  description: 'How Ashiato labels addresses, detects change, CoinJoins and exchange deposit addresses, scores risk and runs taint analysis, and where each method can be wrong.',
 }
 
 const SECTIONS: { id: string; title: string; body: string[]; limits: string; credit?: string }[] = [

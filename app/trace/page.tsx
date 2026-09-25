@@ -1153,7 +1153,7 @@ function TracePageInner() {
       {/* Header */}
       <header className="flex items-center gap-3 h-14 px-3 sm:px-4 border-b border-line flex-shrink-0">
         <Link href="/" className="text-faint hover:text-fg p-1.5" aria-label="Home"><ArrowLeft size={16} /></Link>
-        <Link href="/" className="hidden xl:block text-[13px] font-medium tracking-[0.24em] text-fg pr-3 border-r border-line">CRYPTOTRACER</Link>
+        <Link href="/" className="hidden xl:block text-[13px] font-medium tracking-[0.24em] text-fg pr-3 border-r border-line">ASHIATO</Link>
         <button
           onClick={() => setSelection(originTx ? { kind: 'tx', id: originTx } : { kind: 'address', id: originAddress })}
           className="flex items-center gap-2 min-w-0 max-w-[260px] text-left hover:text-accent"
