@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Github } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
+import { AccountButton } from './SignIn'
 
 export default function SiteNav() {
   return (
@@ -21,6 +22,7 @@ export default function SiteNav() {
           <Github size={15} />
           <span className="hidden sm:inline">Source</span>
         </a>
+        <AccountButton />
         <ThemeToggle />
       </div>
     </nav>

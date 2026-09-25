@@ -30,6 +30,11 @@ import SaveChartButton from '@/components/SaveChartButton'
 import ExportMenu from '@/components/ExportMenu'
 import SearchForm from '@/components/SearchForm'
 import ThemeToggle from '@/components/ThemeToggle'
+import { AccountButton } from '@/components/SignIn'
+import type { Attester } from '@/components/CommunityLabels'
+import { usePublicClient, useSwitchChain, useWalletClient } from 'wagmi'
+import { attestLabel, revokeAttestation, voteOnLabel } from '@/lib/attest/write'
+import { ATTEST_CHAIN, SCHEMA_UID } from '@/lib/attest/config'
 import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
@@ -119,6 +124,23 @@ function toHub(l: TxLookup): TxHubData {
 function TracePageInner() {
   const params = useSearchParams()
   const router = useRouter()
+
+  // The connected wallet signs community labels and votes (on Sepolia)
+  const { data: walletClient } = useWalletClient()
+  const attestClient = usePublicClient({ chainId: ATTEST_CHAIN.id })
+  const { switchChainAsync } = useSwitchChain()
+  const attester = useMemo<Attester | undefined>(() => {
+    if (!walletClient || !attestClient) return undefined
+    const onSepolia = async () => {
+      if ((await walletClient.getChainId()) !== ATTEST_CHAIN.id) await switchChainAsync({ chainId: ATTEST_CHAIN.id })
+    }
+    return {
+      address: walletClient.account.address.toLowerCase(),
+      label: async l => { await onSepolia(); return attestLabel(walletClient, attestClient, l) },
+      vote: async (uid, v) => { await onSepolia(); return voteOnLabel(walletClient, attestClient, uid, v) },
+      revoke: async uid => { await onSepolia(); return revokeAttestation(walletClient, attestClient, SCHEMA_UID.label, uid) },
+    }
+  }, [walletClient, attestClient, switchChainAsync])
   const rawAddress = params.get('address') ?? ''
   const originTx = (params.get('tx') ?? '').toLowerCase()
   const chainParam = params.get('chain') as Chain | null
@@ -373,7 +395,7 @@ function TracePageInner() {
       if (saved?.id === caseParam) return // already open (just saved, or the URL was tidied)
       getSavedChart(caseParam)
         .then(r => {
-          if (!r) throw new Error('That case no longer exists in this browser')
+          if (!r) throw new Error('That case was not found. It may have been deleted, or saved in another browser or account.')
           applyCase(parseCase(JSON.stringify(r.data)), { id: caseParam, name: r.name })
         })
         .catch(e => {
@@ -1022,6 +1044,7 @@ function TracePageInner() {
       const a = selectedNode.address
       return (
         <AddressInspector
+          attester={attester}
           node={selectedNode}
           prices={prices}
           page={pages.get(a)}
@@ -1217,6 +1240,7 @@ function TracePageInner() {
             onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges, taintResult?.byEdge), 'text/csv')}
             onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
           />
+          <AccountButton compact />
           <ThemeToggle />
         </div>
       </header>

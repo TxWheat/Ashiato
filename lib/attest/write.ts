@@ -1,4 +1,5 @@
 import { decodeEventLog, parseAbi, zeroAddress, zeroHash, type Account, type PublicClient, type WalletClient } from 'viem'
+import { sepolia } from 'viem/chains'
 import { ATTEST_CHAIN, SCHEMA_UID } from './config'
 import { checkLabel, encodeLabel, encodeReport, encodeVote, LabelInput, ReportInput, VoteInput } from './encode'
 
@@ -30,7 +31,7 @@ async function send(wallet: WalletClient, pub: PublicClient, schema: `0x${string
     functionName: 'attest',
     args: [{ schema, data: { recipient, expirationTime: 0n, revocable: true, refUID, data, value: 0n } }],
     account: wallet.account as Account,
-    chain: wallet.chain,
+    chain: sepolia,
   })
   const receipt = await pub.waitForTransactionReceipt({ hash })
   if (receipt.status !== 'success') throw new Error('The attestation transaction failed')
@@ -77,7 +78,7 @@ export async function revokeAttestation(wallet: WalletClient, pub: PublicClient,
     functionName: 'revoke',
     args: [{ schema, data: { uid, value: 0n } }],
     account: wallet.account as Account,
-    chain: wallet.chain,
+    chain: sepolia,
   })
   await pub.waitForTransactionReceipt({ hash })
   return { hash }
