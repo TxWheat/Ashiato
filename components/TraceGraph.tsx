@@ -90,6 +90,64 @@ export type XY = { x: number; y: number }
  * the offset dagre would give it, then steps down until it overlaps nothing.
  * `placed` is updated with every final position.
  */
+/** One collapsed chain drawn as a single line: this far from its start to its end */
+const CHAIN_SPAN = NODE_W + 380
+/** One hop when a chain is expanded (dagre's rank spacing) */
+const HOP_SPAN = NODE_W + 240
+
+/** Addresses after `start` (following money forward), never going back left of `floorX` */
+function downstream(start: string, edges: Edge[], placed: Map<string, XY>, floorX: number, stop: string): string[] {
+  const out = new Map<string, string[]>()
+  for (const e of edges) out.set(e.source, [...(out.get(e.source) ?? []), e.target])
+  const seen = new Set([start])
+  const queue = [start]
+  while (queue.length) {
+    for (const n of out.get(queue.shift()!) ?? []) {
+      if (seen.has(n) || n === stop) continue
+      const p = placed.get(n)
+      if (!p || p.x <= floorX) continue
+      seen.add(n)
+      queue.push(n)
+    }
+  }
+  return [...seen]
+}
+
+/**
+ * Keep collapsed chains compact without re-laying out the graph: when a chain collapses, its
+ * end and everything after it slide left to sit one line after the start; when it expands,
+ * they slide back (or, for a chain that started collapsed, right by enough room for its hops).
+ */
+function compactChains(chains: CollapsedChain[], edges: Edge[], placed: Map<string, XY>, prev: Map<string, CollapsedChain>, shifts: Map<string, number>) {
+  const now = new Set(chains.map(c => c.id))
+  const move = (ids: string[], dx: number) => {
+    for (const id of ids) {
+      const p = placed.get(id)
+      if (p) placed.set(id, { x: p.x + dx, y: p.y })
+    }
+  }
+  // Expanded: make room again
+  for (const [id, c] of prev) {
+    if (now.has(id)) continue
+    const a = placed.get(c.from), b = placed.get(c.to)
+    if (!a || !b) continue
+    const dx = shifts.get(id) !== undefined ? -shifts.get(id)! : Math.max(0, a.x + (c.middle.length + 1) * HOP_SPAN - b.x)
+    shifts.delete(id)
+    if (dx > 1) move(downstream(c.to, edges, placed, a.x, c.from), dx)
+  }
+  // Newly collapsed: pull the end in
+  for (const c of chains) {
+    if (prev.has(c.id)) continue
+    const a = placed.get(c.from), b = placed.get(c.to)
+    if (!a || !b) continue
+    const dx = a.x + CHAIN_SPAN - b.x
+    if (dx < -1) {
+      move(downstream(c.to, edges, placed, a.x, c.from), dx)
+      shifts.set(c.id, dx)
+    }
+  }
+}
+
 function placeNodes(laid: Node[], edges: Edge[], placed: Map<string, XY>): Node[] {
   const auto = new Map(laid.map(n => [n.id, n.position]))
   const neighbours = new Map<string, string[]>()
@@ -198,6 +256,12 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   /** Node ids on the canvas last time, to tell what was just added */
   const shownIds = useRef(new Set<string>())
   const lastQuiet = useRef(quietKey)
+  /** Collapsed chains last time, and how far each one's end (and everything after it) was slid in */
+  const prevChains = useRef(new Map<string, CollapsedChain>())
+  const chainsRef = useRef(chains)
+  chainsRef.current = chains
+  const chainsKey = chains.map(c => c.id).sort().join(',')
+  const chainShift = useRef(new Map<string, number>())
 
   // Highlight the selected address's counterparties: green paid it, red were paid by it
   const relation = useMemo(() => {
@@ -426,6 +490,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
   useEffect(() => {
     if (rawNodes.length === 0) return
+    compactChains(chainsRef.current, rawEdges, pinned.current, prevChains.current, chainShift.current)
+    prevChains.current = new Map(chainsRef.current.map(c => [c.id, c]))
     const laid = placeNodes(layoutGraph(rawNodes, rawEdges), rawEdges, pinned.current)
     setNodes(laid)
     setEdges(rawEdges)
@@ -455,7 +521,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         if (offscreen) inst.fitView({ ...FIT, duration: 250 })
       }, 120)
     }
-  }, [rawNodes, rawEdges, setNodes, setEdges, layoutKey, quietKey])
+  }, [rawNodes, rawEdges, setNodes, setEdges, layoutKey, quietKey, chainsKey])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
