@@ -380,14 +380,18 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       })
     }
     // Cross-chain swaps: dashed orange, like a bridge between the two chains
+    const perTarget = new Map<string, number>()
     for (const b of bridges) {
       if (!ids.has(b.from) || !ids.has(b.to)) continue
+      // Several lines into one destination: bow the extra ones out so they don't overlap
+      const k = perTarget.get(b.to) ?? 0
+      perTarget.set(b.to, k + 1)
       out.push({
         id: `bridge:${b.id}`,
         source: b.from,
         target: b.to,
         type: 'label',
-        data: { line1: b.line1, line2: b.line2, color: BRIDGE, bold: true, glow: true },
+        data: { offset: k ? 90 * Math.ceil(k / 2) * (k % 2 ? -1 : 1) : 0, line1: b.line1, line2: b.line2, color: BRIDGE, bold: true, glow: true },
         zIndex: 3,
         markerEnd: arrowFor('bridge'),
         style: { stroke: BRIDGE, strokeWidth: 3, strokeDasharray: '8 5' },

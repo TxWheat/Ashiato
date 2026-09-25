@@ -840,13 +840,28 @@ function TracePageInner() {
     setSelection(null)
   }
 
-  const graphBridges = useMemo(() => bridgeHops.map(h => ({
-    id: h.orderId,
-    from: h.via,
-    to: h.toAddress,
-    line1: `${fmtCompact(h.fromAmount, h.fromAsset)} → ${fmtCompact(h.toAmount, h.toAsset)} (${chainDisplay(h.toChainName)})`,
-    line2: `via ${h.service}${h.time ? ` · ${fmtDay(h.time)}` : ''}`,
-  })), [bridgeHops])
+  // One line per (from, to): several swaps to the same destination are summed, not stacked
+  const graphBridges = useMemo(() => {
+    const groups = new Map<string, typeof bridgeHops>()
+    for (const h of bridgeHops) groups.set(`${h.via}|${h.toAddress}`, [...(groups.get(`${h.via}|${h.toAddress}`) ?? []), h])
+    const sum = (hs: typeof bridgeHops, amt: (h: CrossChainHop) => number, asset: (h: CrossChainHop) => string) => {
+      const m = new Map<string, number>()
+      for (const h of hs) m.set(asset(h), (m.get(asset(h)) ?? 0) + amt(h))
+      return [...m].map(([a, v]) => fmtCompact(v, a)).join(' + ')
+    }
+    return [...groups.values()].map(hs => {
+      const h = hs[0]
+      const fromChains = [...new Set(hs.map(x => chainDisplay(x.fromChainName)))]
+      const times = hs.map(x => x.time).filter((t): t is number => !!t)
+      return {
+        id: hs.map(x => x.orderId).join('+'),
+        from: h.via,
+        to: h.toAddress,
+        line1: `${sum(hs, x => x.fromAmount, x => x.fromAsset)} → ${sum(hs, x => x.toAmount, x => x.toAsset)} (${chainDisplay(h.toChainName)})`,
+        line2: `via ${h.service}${hs.length > 1 ? ` · ${hs.length} swaps` : ''}${fromChains.length > 1 || fromChains[0] !== 'Ethereum' ? ` · from ${fromChains.join(' + ')}` : ''}${times.length ? ` · ${fmtDay(Math.min(...times))}` : ''}`,
+      }
+    })
+  }, [bridgeHops])
   const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
 
   const legendTypes = useMemo(() => {
@@ -1174,13 +1189,17 @@ function TracePageInner() {
             const bridge = isBridge(selection.to) ? selection.to : isBridge(selection.from) ? selection.from : null
             if (!bridge) return undefined
             const sender = bridge === selection.to ? selection.from : selection.to
-            const txids = edgeRows.filter(r => r.source === sender && r.target === bridge).flatMap(r => r.txids ?? [r.txid])
+            const into = edgeRows.filter(r => r.source === sender && r.target === bridge)
+            const txids = into.flatMap(r => r.txids ?? [r.txid])
             if (!txids.length) return undefined
+            const txTimes = Object.fromEntries(into.flatMap(r => (r.txids ?? [r.txid]).map(t => [t, r.timestamp])))
             return (
-              <BridgeHops sender={sender} serviceName={(nameOf(bridge) ?? 'Bridgers').replace(/\s*[(:].*$/, '')} txids={txids} onGraph={visible}
-                onAdd={hop => {
+              <BridgeHops sender={sender} serviceName={(nameOf(bridge) ?? 'Bridgers').replace(/\s*[(:].*$/, '')} txids={txids} txTimes={txTimes} added={new Set(bridgeHops.map(h => h.orderId))}
+                onAdd={(hop, matched) => {
                   snapshot()
-                  setBridgeHops(prev => (prev.some(h => h.orderId === hop.orderId) ? prev : [...prev, { ...hop, via: bridge }]))
+                  // This link's own swaps leave from the service's node; the wallet's other swaps
+                  // (e.g. from another chain) are drawn from the wallet itself
+                  setBridgeHops(prev => (prev.some(h => h.orderId === hop.orderId) ? prev : [...prev, { ...hop, via: matched ? bridge : sender }]))
                   showOnGraph([hop.toAddress])
                   flash(`Added ${chainDisplay(hop.toChainName)} destination ${truncate(hop.toAddress, 6)}. Open it to keep tracing there.`)
                 }} />
