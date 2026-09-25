@@ -28,9 +28,14 @@ describe('likely-change outputs stay visible', () => {
   it('counts change in the outgoing total', () => {
     expect(flowSummary(ME, edges).outgoing.BTC).toEqual({ amount: 17, count: 2 })
   })
-  it('follows the change output when tracing the transaction', () => {
-    const { lots, flows } = seedsFromTx(tx, ME)
+  it('can follow the change output (every-output mode)', () => {
+    const { lots, flows } = seedsFromTx(tx, ME, undefined, false)
     expect(lots.map(l => [l.address, l.amount])).toEqual([[CHANGE, 15], [PAY, 2]])
     expect(flows[0].reason).toMatch(/likely change/)
+  })
+  it('adaptive tracing follows the peel-chain remainder (the change) and lists the payment', () => {
+    const { lots, ends } = seedsFromTx(tx, ME)
+    expect(lots.map(l => l.address)).toEqual([CHANGE])
+    expect(ends).toMatchObject([{ address: PAY, reason: 'peel' }])
   })
 })

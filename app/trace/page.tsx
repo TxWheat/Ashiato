@@ -131,7 +131,7 @@ function TracePageInner() {
   const [caseCollapsed, setCaseCollapsed] = useState(false)
 
   const [taint, setTaint] = useState<TaintCfg | null>(null)
-  const [follow, setFollow] = useState({ hops: 6, branches: 3 })
+  const [follow, setFollow] = useState({ hops: 10, branches: 3, adaptive: true })
   const [traceStatus, setTraceStatus] = useState<string | null>(null)
   const [focusTrace, setFocusTrace] = useState(false)
   const traceCancel = useRef(false)
@@ -555,7 +555,7 @@ function TracePageInner() {
     return info
   }, [])
 
-  const runFollow = async (direction: Direction, seed: { lots: Lot[]; flows: TracedFlow[] }) => {
+  const runFollow = async (direction: Direction, seed: { lots: Lot[]; flows: TracedFlow[]; ends?: TraceEnd[] }) => {
     if (!seed.lots.length) {
       flash('Nothing to trace from here')
       return
@@ -573,7 +573,7 @@ function TracePageInner() {
     try {
       const res = await followFunds(
         seed.lots,
-        { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT },
+        { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive },
         { addressTxs, btcTx, labelOf: a => knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
         (msg, partial) => {
           setTraceStatus(msg)
@@ -585,7 +585,7 @@ function TracePageInner() {
       show(flows)
       // Addresses the trail stopped at (with no outgoing hop yet) still belong on the graph
       showOnGraph(res.ends.map(e => e.address))
-      setTraceEnds(prev => [...prev, ...res.ends])
+      setTraceEnds(prev => [...prev, ...(seed.ends ?? []), ...res.ends])
       if (flows.length) setFocusTrace(true)
       const cashOut = res.ends.filter(e => e.reason === 'entity').length
       flash(`Traced ${flows.length} hop${flows.length === 1 ? '' : 's'}${cashOut ? ` · reached ${cashOut} exchange/mixer/sanctioned endpoint${cashOut === 1 ? '' : 's'}` : ''}`)
@@ -599,7 +599,7 @@ function TracePageInner() {
   /** Transaction-level: follow one output (or all) onward */
   const traceTxOut = (tx: RawTransaction, to?: string) => {
     const from = tx.chain === 'eth' ? tx.inputs[0]?.address ?? '' : ''
-    runFollow('forward', seedsFromTx(tx, from, to))
+    runFollow('forward', seedsFromTx(tx, from, to, follow.adaptive))
   }
 
   /** Transaction-level: walk one input (or all) back to its source */
@@ -922,7 +922,7 @@ function TracePageInner() {
           onTab={setTab}
           onAdd={addToGraph}
           onOpen={openAddress}
-          onTraceTx={(tx, dir) => runFollow(dir, dir === 'forward' ? seedsFromTx(tx, a) : backSeedsFromTx(tx, a))}
+          onTraceTx={(tx, dir) => runFollow(dir, dir === 'forward' ? seedsFromTx(tx, a, undefined, follow.adaptive) : backSeedsFromTx(tx, a))}
           onTaint={() => {
             setTaint(t => ({ seed: a, method: t?.method ?? 'haircut', asset: nativeAsset(selectedNode.chain) }))
             ensurePage(a)

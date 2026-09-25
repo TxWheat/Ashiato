@@ -89,10 +89,10 @@ describe('BTC (exact UTXO)', () => {
     labelOf: a => (a === '1Exchange' ? { name: 'Kraken', type: 'exchange' } : undefined),
   }
 
-  it('follows the exact coins and splits pro rata', async () => {
-    const { lots, flows } = seedsFromTx(t1, '1Victim')
+  it('follows the exact coins and splits pro rata (follow every output)', async () => {
+    const { lots, flows } = seedsFromTx(t1, '1Victim', undefined, false)
     expect(flows).toHaveLength(1) // change back to the victim is not a seed
-    const r = await followFunds(lots, opts, deps)
+    const r = await followFunds(lots, { ...opts, adaptive: false }, deps)
     const x = r.flows.find(f => f.to === '1X')!
     expect(x.amount).toBeCloseTo(0.75) // 1.5 × (1 / 2)
     expect(r.flows.find(f => f.to === '1Y')!.amount).toBeCloseTo(0.24995)
@@ -108,5 +108,60 @@ describe('BTC (exact UTXO)', () => {
     expect(froms).toContain('1X->1Exchange')
     expect(froms).toContain('1Mule->1X')
     expect(froms).toContain('1Victim->1Mule')
+  })
+})
+
+describe('Adaptive tracing', () => {
+  // Peel chain like 15bS9Q…: 17 → 15 + 2, 15 → 14 + 0.9996, 14 → 13 + 0.9996
+  const P1 = '1'.repeat(64), P2 = '2'.repeat(64), P3 = '3'.repeat(64), P4 = '4'.repeat(64)
+  const p1 = btcTx([['1Start', 17]], [['1Chain1', 15], ['1Pay1', 2]], 100, P1)
+  const p2 = btcTx([['1Chain1', 15, `${P1}:0`]], [['1Chain2', 14], ['1Pay2', 0.9996]], 200, P2)
+  const p3 = btcTx([['1Chain2', 14, `${P2}:0`]], [['1Chain3', 13], ['1Pay3', 0.9996]], 300, P3)
+  const p4 = btcTx([['1Chain3', 13, `${P3}:0`]], [['1Kraken', 12.9999]], 400, P4)
+  const db: Record<string, BtcTxInfo> = {
+    [P1]: { tx: p1, spentBy: [P2, null], labels: {} },
+    [P2]: { tx: p2, spentBy: [P3, null], labels: {} },
+    [P3]: { tx: p3, spentBy: [P4, null], labels: {} },
+    [P4]: { tx: p4, spentBy: [null], labels: {} },
+  }
+  const deps: FollowDeps = {
+    addressTxs: async () => [],
+    btcTx: async id => db[id],
+    labelOf: a => (a === '1Kraken' ? { name: 'Kraken', type: 'exchange' } : undefined),
+  }
+
+  it('follows the remainder of a peel chain and lists the peels instead of expanding them', async () => {
+    const seed = seedsFromTx(p1, '1Start')
+    expect(seed.lots.map(l => l.address)).toEqual(['1Chain1'])
+    expect(seed.ends).toMatchObject([{ address: '1Pay1', reason: 'peel' }])
+    const r = await followFunds(seed.lots, opts, deps)
+    expect(r.flows.map(f => f.to)).toEqual(['1Chain2', '1Chain3', '1Kraken'])
+    expect(r.flows[0].reason).toMatch(/peel chain/)
+    expect(r.ends.filter(e => e.reason === 'peel').map(e => e.address)).toEqual(['1Pay2', '1Pay3'])
+    expect(r.ends.find(e => e.address === '1Kraken')?.reason).toBe('entity')
+  })
+
+  it('still shows a peeled payment when it lands at an exchange', async () => {
+    const q1 = btcTx([['1A', 10]], [['1B', 9], ['1Kraken', 1]], 100, '5'.repeat(64))
+    const q2 = btcTx([['1B', 9, `${'5'.repeat(64)}:0`]], [['1C', 9]], 200, '6'.repeat(64))
+    const d: FollowDeps = {
+      addressTxs: async () => [],
+      btcTx: async id => ({ [q1.txid]: { tx: q1, spentBy: [q2.txid, null], labels: {} }, [q2.txid]: { tx: q2, spentBy: [null], labels: {} } } as Record<string, BtcTxInfo>)[id],
+      labelOf: a => (a === '1Kraken' ? { name: 'Kraken', type: 'exchange' } : undefined),
+    }
+    const lot = { chain: 'btc' as const, address: '1A', asset: 'BTC', amount: 10, time: 50, via: 'x', vout: 0, hop: 0 }
+    const r = await followFunds([lot], opts, { ...d, btcTx: async id => (id === 'x' ? { tx: btcTx([['1Z', 10]], [['1A', 10]], 50, 'x'), spentBy: [q1.txid], labels: {} } : d.btcTx(id)) })
+    expect(r.flows.map(f => f.to).sort()).toEqual(['1B', '1C', '1Kraken'])
+  })
+
+  it('ETH: prefers a same-amount pass-through over the next outflow', async () => {
+    const txs = [
+      ethTx('0xvictim', '0xmule', 5, 100),
+      ethTx('0xmule', '0xgas', 0.3, 110),          // unrelated small payment first
+      ethTx('0xmule', '0xnext', 4.99, 150),        // the 5 ETH moving on
+    ]
+    const r = await followFunds(seedsFromTx(txs[0], '0xvictim').lots, opts, ethDeps(txs))
+    expect(r.flows.map(f => f.to)).toEqual(['0xnext'])
+    expect(r.flows[0].reason).toMatch(/Pass-through/)
   })
 })

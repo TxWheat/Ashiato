@@ -48,15 +48,24 @@ export function detectChange(tx: RawTransaction): { index: number; finding: Find
     score.set(i, e)
   }
 
-  // 2. Round amounts: if every output but one is round, the odd one is change
+  // 2. Peel chain: one or two input addresses, two outputs, one many times larger.
+  //    A small payment is peeled off and the remainder moves on to a fresh address
+  //    (the classic laundering / exchange-withdrawal pattern), so the large one is change.
+  const [big, small] = [...outs].sort((a, b) => b.v - a.v)
+  const peel = outs.length === 2 && new Set(tx.inputs.map(i => i.address)).size <= 2 && big.v >= 3 * small.v
+  if (peel) bump(big.i, 0.5, 'Keeps most of the value while a small payment is peeled off (peel chain)')
+
+  // 3. Round amounts: if every output but one is round, the odd one is change.
+  //    Weak inside a peel chain, where payments are often exact odd amounts and the
+  //    remainder can land on round numbers (15 → 14 → 13 BTC).
   const r = outs.map(o => roundness(o.v))
   const nonRound = outs.filter((_, k) => r[k] === 0)
   if (nonRound.length === 1 && outs.some((_, k) => r[k] > 0)) {
     const strong = outs.some((_, k) => r[k] === 2)
-    bump(nonRound[0].i, strong ? 0.45 : 0.3, 'Only non-round output (payments tend to be round amounts)')
+    bump(nonRound[0].i, peel ? 0.15 : strong ? 0.45 : 0.3, 'Only non-round output (payments tend to be round amounts)')
   }
 
-  // 3. Script type: change uses the same script type as all the inputs
+  // 4. Script type: change uses the same script type as all the inputs
   const inTypes = new Set(tx.inputs.map(i => i.scriptType).filter(Boolean))
   if (inTypes.size === 1) {
     const t = [...inTypes][0]
@@ -64,7 +73,7 @@ export function detectChange(tx: RawTransaction): { index: number; finding: Find
     if (same.length === 1) bump(same[0].i, 0.3, `Only output with the same script type as the inputs (${t})`)
   }
 
-  // 4. Optimal change: change is smaller than every input, otherwise the wallet
+  // 5. Optimal change: change is smaller than every input, otherwise the wallet
   //    would not have needed that input
   if (tx.inputs.length >= 2) {
     const minIn = Math.min(...tx.inputs.map(i => sats(i.amount)))

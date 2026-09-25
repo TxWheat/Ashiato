@@ -113,3 +113,12 @@ describe('aggregateEdges', () => {
     expect(edge.txCount).toBe(1)
   })
 })
+
+describe('change detection: peel chains', () => {
+  it('flags the large remainder even when it is round and the payment is not (15 → 14 + 0.9996)', async () => {
+    const { detectChange } = await import('@/lib/heuristics/btc/change')
+    const { btcTx } = await import('./fixtures')
+    const tx = btcTx([['1Holder', 15]], [['1Remainder', 14], ['1Payee', 0.9996]])
+    expect(detectChange(tx)?.index).toBe(0)
+  })
+})

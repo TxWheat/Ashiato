@@ -42,7 +42,7 @@ export interface TracedFlow {
   reason: string
 }
 
-export type EndReason = 'unspent' | 'no-outflow' | 'no-source' | 'entity' | 'coinjoin' | 'max-hops' | 'not-loaded'
+export type EndReason = 'unspent' | 'no-outflow' | 'no-source' | 'entity' | 'coinjoin' | 'max-hops' | 'not-loaded' | 'peel' | 'split'
 
 export interface TraceEnd {
   address: string
@@ -74,6 +74,12 @@ export interface FollowOptions {
   stopAt: EntityType[]
   /** Ignore branches smaller than this fraction of the starting amount */
   minFraction?: number
+  /**
+   * Adaptive (default): read each transaction's shape and follow the trail, not
+   * every output. Peels follow the remainder, splits the main outputs, ETH
+   * prefers a same-amount pass-through. Off: every output, pro rata, up to maxBranches.
+   */
+  adaptive?: boolean
 }
 
 export interface FollowResult {
@@ -112,6 +118,7 @@ export async function followFunds(
   const minAmount = rootTotal * (opts.minFraction ?? 0.002)
   const seen = new Set<string>()
   let frontier = seeds
+  const adaptive = opts.adaptive !== false
 
   const stopFor = (l: Lot): boolean => {
     const label = deps.labelOf(l.address)
@@ -140,8 +147,8 @@ export async function followFunds(
       try {
         children =
           lot.chain === 'btc'
-            ? opts.direction === 'forward' ? await btcForward(lot, deps, ends) : await btcBackward(lot, deps, ends)
-            : opts.direction === 'forward' ? await ethForward(lot, deps, ends) : await ethBackward(lot, deps, ends)
+            ? opts.direction === 'forward' ? await btcForward(lot, deps, ends, adaptive ? opts.stopAt : null) : await btcBackward(lot, deps, ends)
+            : opts.direction === 'forward' ? await ethForward(lot, deps, ends, adaptive) : await ethBackward(lot, deps, ends, adaptive)
       } catch (e) {
         ends.push({ address: lot.address, amount: lot.amount, asset: lot.asset, reason: 'not-loaded', detail: e instanceof Error ? e.message : 'Failed to load' })
         continue
@@ -150,9 +157,10 @@ export async function followFunds(
       children = children
         .filter(c => c.flow.amount >= minAmount)
         .sort((a, b) => b.flow.amount - a.flow.amount)
-        .slice(0, opts.maxBranches)
+        .slice(0, adaptive ? 6 : opts.maxBranches)
       for (const c of children) {
-        flows.push(c.flow)
+        // Change paid back to the same address continues there without drawing a self-loop
+        if (c.flow.from !== c.flow.to) flows.push(c.flow)
         next.push(c.lot)
       }
     }
@@ -163,7 +171,54 @@ export async function followFunds(
 
 // ── BTC ────────────────────────────────────────────────────────────────────
 
-async function btcForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
+// ── BTC spend classification ───────────────────────────────────────────────
+
+export type SpendShape = 'sweep' | 'peel' | 'pair' | 'split'
+
+export interface SpendPlan {
+  shape: SpendShape
+  /** Indexes into tx.outputs to follow (may include an output back to the holder) */
+  follow: number[]
+  /** Outputs deliberately not followed (peeled payments, small splits) */
+  side: number[]
+  note: string
+}
+
+/**
+ * Reads what kind of spend a transaction is, from the holder's point of view:
+ *  - sweep: everything into one output → follow it
+ *  - peel:  a small payment peeled off, a much larger remainder moves on → follow the remainder
+ *  - pair:  two comparable outputs → follow both
+ *  - split: three or more outputs → follow the largest covering ~80% of the value
+ */
+export function planBtcSpend(tx: RawTransaction): SpendPlan {
+  const outs = tx.outputs.map((o, k) => ({ o, k })).filter(x => x.o.amount > 0)
+  if (outs.length <= 1) return { shape: 'sweep', follow: outs.map(x => x.k), side: [], note: 'swept into a single output' }
+  const byAmount = [...outs].sort((a, b) => b.o.amount - a.o.amount)
+  const total = outs.reduce((s, x) => s + x.o.amount, 0)
+  const fewInputs = new Set(tx.inputs.map(i => i.address)).size <= 2
+  if (outs.length === 2) {
+    const [big, small] = byAmount
+    if (fewInputs && big.o.amount >= 3 * small.o.amount) {
+      return {
+        shape: 'peel', follow: [big.k], side: [small.k],
+        note: `peel chain: ${fmt(small.o.amount, 'BTC')} peeled off, the ${fmt(big.o.amount, 'BTC')} remainder moved on`,
+      }
+    }
+    return { shape: 'pair', follow: [big.k, small.k], side: [], note: 'split into two comparable outputs; both followed' }
+  }
+  const follow: number[] = []
+  let covered = 0
+  for (const x of byAmount) {
+    if (follow.length >= 3 || covered >= total * 0.8) break
+    follow.push(x.k)
+    covered += x.o.amount
+  }
+  const side = byAmount.map(x => x.k).filter(k => !follow.includes(k))
+  return { shape: 'split', follow, side, note: `split into ${outs.length} outputs; the ${follow.length} largest (${Math.round((covered / total) * 100)}% of the value) followed` }
+}
+
+async function btcForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptiveStopAt: EntityType[] | null) {
   if (!lot.via || lot.vout === undefined) throw new Error('No UTXO to follow')
   const holder = await deps.btcTx(lot.via)
   const k = holder.tx.outputs.findIndex(o => o.index === lot.vout)
@@ -181,23 +236,42 @@ async function btcForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
   if (totalIn <= 0) return []
   const share = lot.amount / totalIn
   const wait = tx.timestamp && lot.time ? `, ${duration(tx.timestamp - lot.time)} later` : ''
+  const child = (o: RawTransaction['outputs'][number], why: string) => {
+    const amount = o.amount * share
+    const change = o.isChange ? ' (likely change, same owner)' : ''
+    return {
+      lot: { chain: 'btc' as const, address: o.address, asset: 'BTC', amount, time: tx.timestamp, via: tx.txid, vout: o.index, hop: lot.hop + 1 },
+      flow: {
+        from: lot.address, to: o.address, amount, asset: 'BTC', txid: tx.txid, time: tx.timestamp, hop: lot.hop + 1,
+        reason: `Exact: the coins were spent in ${tx.txid.slice(0, 10)}…${wait}; ${why}${share < 0.999 ? `; ${(share * 100).toFixed(1)}% of that tx's inputs, split pro rata` : ''}${change}`,
+      },
+    }
+  }
+
+  if (adaptiveStopAt) {
+    const plan = planBtcSpend(tx)
+    const follow = new Set(plan.follow)
+    // A peeled or minor output that lands at an exchange, mixer, etc. is still worth showing
+    for (const i of plan.side) {
+      const l = deps.labelOf(tx.outputs[i].address)
+      if (l && adaptiveStopAt.includes(l.type)) follow.add(i)
+    }
+    for (const i of plan.side) {
+      if (follow.has(i)) continue
+      const o = tx.outputs[i]
+      ends.push({
+        address: o.address, amount: o.amount * share, asset: 'BTC', reason: plan.shape === 'peel' ? 'peel' : 'split',
+        detail: `${plan.shape === 'peel' ? 'Peeled off' : 'Smaller output'} in ${tx.txid.slice(0, 10)}… from ${lot.address.slice(0, 10)}…; not followed (add it to follow this branch)`,
+      })
+    }
+    return [...follow].map(i => child(tx.outputs[i], plan.note))
+  }
+
   const back = tx.outputs.filter(o => o.address === lot.address).reduce((s, o) => s + o.amount * share, 0)
   if (back > 0) {
     ends.push({ address: lot.address, amount: back, asset: 'BTC', reason: 'unspent', detail: `${fmt(back, 'BTC')} paid back to the same address as change` })
   }
-  return tx.outputs
-    .filter(o => o.amount > 0 && o.address !== lot.address)
-    .map(o => {
-      const amount = o.amount * share
-      const change = o.isChange ? ' (likely change, same owner)' : ''
-      return {
-        lot: { chain: 'btc' as const, address: o.address, asset: 'BTC', amount, time: tx.timestamp, via: tx.txid, vout: o.index, hop: lot.hop + 1 },
-        flow: {
-          from: lot.address, to: o.address, amount, asset: 'BTC', txid: tx.txid, time: tx.timestamp, hop: lot.hop + 1,
-          reason: `Exact: the coins were spent in ${tx.txid.slice(0, 10)}…${wait}; ${(share * 100).toFixed(1)}% of that tx's inputs, split pro rata${change}`,
-        },
-      }
-    })
+  return tx.outputs.filter(o => o.amount > 0 && o.address !== lot.address).map(o => child(o, 'every output followed'))
 }
 
 async function btcBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
@@ -230,12 +304,30 @@ async function btcBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
 
 // ── ETH (account model) ────────────────────────────────────────────────────
 
-async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
+/** Same amount within ~3% (or the gas tolerance), for spotting pass-throughs */
+function sameAmount(a: number, b: number, asset: string) {
+  return Math.abs(a - b) <= Math.max(a * 0.03, tolerance(a, asset))
+}
+
+async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive = true) {
   const txs = await deps.addressTxs(lot.address, lot.time)
+  // Only outflows after the funds arrived
   const outs = txs
     .filter(t => t.asset === lot.asset && t.inputs[0]?.address === lot.address && t.outputs[0]?.address !== lot.address)
     .filter(t => t.timestamp >= lot.time && t.txid !== lot.via && (t.outputs[0]?.amount ?? 0) > 0)
     .sort((a, b) => a.timestamp - b.timestamp)
+
+  // Pass-through: the same amount leaving soon after it arrived is almost certainly the same money
+  const pass = adaptive ? outs.find(t => sameAmount(lot.amount, t.outputs[0].amount, lot.asset)) : undefined
+  if (pass) {
+    return [{
+      lot: { chain: 'eth' as const, address: pass.outputs[0].address, asset: lot.asset, amount: Math.min(lot.amount, pass.outputs[0].amount), time: pass.timestamp, via: pass.txid, hop: lot.hop + 1 },
+      flow: {
+        from: lot.address, to: pass.outputs[0].address, amount: Math.min(lot.amount, pass.outputs[0].amount), asset: lot.asset, txid: pass.txid, time: pass.timestamp, hop: lot.hop + 1,
+        reason: `Pass-through: ${fmt(pass.outputs[0].amount, lot.asset)} left ${duration(pass.timestamp - lot.time)} after ${fmt(lot.amount, lot.asset)} arrived (same amount)`,
+      },
+    }]
+  }
 
   let remaining = lot.amount
   const tol = tolerance(lot.amount, lot.asset)
@@ -264,13 +356,26 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
   }))
 }
 
-async function ethBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
+async function ethBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive = true) {
   // Look back up to a year before the funds left
   const txs = await deps.addressTxs(lot.address, lot.time - 365 * 86400)
   const ins = txs
     .filter(t => t.asset === lot.asset && t.outputs[0]?.address === lot.address && t.inputs[0]?.address !== lot.address)
     .filter(t => t.timestamp <= lot.time && t.txid !== lot.via && (t.outputs[0]?.amount ?? 0) > 0)
     .sort((a, b) => b.timestamp - a.timestamp)
+
+  // Same amount arriving shortly before it left: the likely source
+  const src = adaptive ? ins.find(t => sameAmount(lot.amount, t.outputs[0].amount, lot.asset)) : undefined
+  if (src) {
+    const amount = Math.min(lot.amount, src.outputs[0].amount)
+    return [{
+      lot: { chain: 'eth' as const, address: src.inputs[0].address, asset: lot.asset, amount, time: src.timestamp, via: src.txid, hop: lot.hop + 1 },
+      flow: {
+        from: src.inputs[0].address, to: lot.address, amount, asset: lot.asset, txid: src.txid, time: src.timestamp, hop: lot.hop + 1,
+        reason: `Pass-through: ${fmt(src.outputs[0].amount, lot.asset)} arrived ${duration(lot.time - src.timestamp)} before ${fmt(lot.amount, lot.asset)} left (same amount)`,
+      },
+    }]
+  }
 
   let remaining = lot.amount
   const tol = tolerance(lot.amount, lot.asset)
@@ -297,9 +402,13 @@ async function ethBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
 // ── Seeds ──────────────────────────────────────────────────────────────────
 
 /** Lots created by one transaction leaving `from` (optionally only to `to`) */
-export function seedsFromTx(tx: RawTransaction, from: string, to?: string): { lots: Lot[]; flows: TracedFlow[] } {
+export function seedsFromTx(tx: RawTransaction, from: string, to?: string, adaptive = true): { lots: Lot[]; flows: TracedFlow[]; ends: TraceEnd[] } {
   const lots: Lot[] = []
   const flows: TracedFlow[] = []
+  const ends: TraceEnd[] = []
+  // Tracing the whole transaction: apply the same shape rules as later hops
+  const plan = adaptive && !to && tx.chain === 'btc' ? planBtcSpend(tx) : null
+  const skip = new Set(plan?.side.map(i => tx.outputs[i].address) ?? [])
   const totalIn = tx.inputs.reduce((s, i) => s + i.amount, 0)
   const mine = tx.inputs.filter(i => i.address === from).reduce((s, i) => s + i.amount, 0)
   const share = tx.chain === 'btc' && totalIn > 0 && mine > 0 ? mine / totalIn : 1
@@ -307,11 +416,15 @@ export function seedsFromTx(tx: RawTransaction, from: string, to?: string): { lo
     // Change outputs are followed too: the funds still left this address, and the
     // change guess can be wrong (it's a heuristic)
     if (o.address === from || o.amount <= 0 || (to && o.address !== to)) continue
+    if (skip.has(o.address)) {
+      ends.push({ address: o.address, amount: o.amount * share, asset: tx.asset, reason: plan!.shape === 'peel' ? 'peel' : 'split', detail: `${plan!.shape === 'peel' ? 'Peeled off' : 'Smaller output'} in the starting transaction; not followed` })
+      continue
+    }
     const amount = o.amount * share
     lots.push({ chain: tx.chain, address: o.address, asset: tx.asset, amount, time: tx.timestamp, via: tx.txid, vout: o.index, hop: 1 })
-    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: o.isChange ? 'Starting transaction (likely change, same owner)' : 'Starting transaction' })
+    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: `Starting transaction${plan ? ` (${plan.note})` : ''}${o.isChange ? ' (likely change, same owner)' : ''}` })
   }
-  return { lots, flows }
+  return { lots, flows, ends }
 }
 
 /** Backward seeds: the funds that arrived at `to` in `tx` (optionally only from `from`) */

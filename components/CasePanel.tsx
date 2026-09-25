@@ -18,8 +18,10 @@ const END_TITLE: Record<EndReason, string> = {
   'no-source': 'Origin of funds',
   'max-hops': 'Hop limit: continue from here',
   'not-loaded': 'Could not load',
+  peel: 'Peeled-off payments (not followed)',
+  split: 'Smaller splits (not followed)',
 }
-const END_ORDER: EndReason[] = ['entity', 'coinjoin', 'unspent', 'no-outflow', 'no-source', 'max-hops', 'not-loaded']
+const END_ORDER: EndReason[] = ['entity', 'coinjoin', 'unspent', 'no-outflow', 'no-source', 'max-hops', 'peel', 'split', 'not-loaded']
 
 function groupEnds(ends: TraceEnd[]) {
   return END_ORDER.map(reason => ({ reason, items: ends.filter(e => e.reason === reason).sort((a, b) => b.amount - a.amount) })).filter(g => g.items.length)
@@ -48,8 +50,8 @@ export interface CasePanelProps {
   collapsed: boolean
   onToggle: () => void
   legendTypes: EntityType[]
-  follow: { hops: number; branches: number }
-  onFollow: (f: { hops: number; branches: number }) => void
+  follow: { hops: number; branches: number; adaptive: boolean }
+  onFollow: (f: { hops: number; branches: number; adaptive: boolean }) => void
   traced: TracedFlow[]
   traceEnds: TraceEnd[]
   onClearTrace: () => void
@@ -87,7 +89,7 @@ export default function CasePanel(p: CasePanelProps) {
       >
         {p.traced.length === 0 ? (
           <p className="text-[11px] text-muted leading-relaxed">
-            Open an address or transaction and press <b className="text-fg font-medium">Trace</b> on a specific payment. Bitcoin follows the exact coins; Ethereum follows the next outflows after the funds arrive, capped at the amount received.
+            Open an address or transaction and press <b className="text-fg font-medium">Trace</b> on a specific payment. It reads each transaction and follows the trail: the remainder of a peel chain, the main outputs of a split, a same-amount pass-through on Ethereum. Each hop says why.
           </p>
         ) : (
           <div className="space-y-2">
@@ -112,17 +114,23 @@ export default function CasePanel(p: CasePanelProps) {
         <div className="grid grid-cols-2 gap-2 text-[11px] mt-4">
           <label className="space-y-1">
             <span className="text-faint">Max hops</span>
-            <input type="number" min={1} max={12} value={p.follow.hops}
-              onChange={e => p.onFollow({ ...p.follow, hops: Math.min(12, Math.max(1, +e.target.value || 1)) })}
+            <input type="number" min={1} max={20} value={p.follow.hops}
+              onChange={e => p.onFollow({ ...p.follow, hops: Math.min(20, Math.max(1, +e.target.value || 1)) })}
               className="w-full h-8 px-2 bg-panel border border-line text-fg outline-none focus:border-accent" />
           </label>
-          <label className="space-y-1">
-            <span className="text-faint">Branches per hop</span>
-            <input type="number" min={1} max={6} value={p.follow.branches}
-              onChange={e => p.onFollow({ ...p.follow, branches: Math.min(6, Math.max(1, +e.target.value || 1)) })}
-              className="w-full h-8 px-2 bg-panel border border-line text-fg outline-none focus:border-accent" />
-          </label>
+          {!p.follow.adaptive && (
+            <label className="space-y-1">
+              <span className="text-faint">Branches per hop</span>
+              <input type="number" min={1} max={6} value={p.follow.branches}
+                onChange={e => p.onFollow({ ...p.follow, branches: Math.min(6, Math.max(1, +e.target.value || 1)) })}
+                className="w-full h-8 px-2 bg-panel border border-line text-fg outline-none focus:border-accent" />
+            </label>
+          )}
         </div>
+        <label className="mt-2 flex items-start gap-2 text-[11px] text-faint cursor-pointer">
+          <input type="checkbox" checked={!p.follow.adaptive} onChange={e => p.onFollow({ ...p.follow, adaptive: !e.target.checked })} className="mt-0.5 accent-[rgb(var(--accent))]" />
+          <span>Follow every output (no smart pruning). Off by default: the trace reads each transaction and keeps to the trail.</span>
+        </label>
       </Section>
 
       <Section
