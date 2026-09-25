@@ -40,9 +40,11 @@ export interface TracedFlow {
   time: number
   hop: number
   reason: string
+  /** Traced funds' share of the pool they moved in at this hop (0–1); absent = not pooled */
+  share?: number
 }
 
-export type EndReason = 'unspent' | 'no-outflow' | 'no-source' | 'entity' | 'coinjoin' | 'max-hops' | 'not-loaded' | 'peel' | 'split'
+export type EndReason = 'unspent' | 'no-outflow' | 'no-source' | 'entity' | 'coinjoin' | 'max-hops' | 'not-loaded' | 'peel' | 'split' | 'diluted'
 
 export interface TraceEnd {
   address: string
@@ -50,6 +52,8 @@ export interface TraceEnd {
   asset: string
   reason: EndReason
   detail: string
+  /** diluted: the traced funds' share of the pool where the trail stopped */
+  share?: number
 }
 
 export interface BtcTxInfo {
@@ -80,6 +84,12 @@ export interface FollowOptions {
    * prefers a same-amount pass-through. Off: every output, pro rata, up to maxBranches.
    */
   adaptive?: boolean
+  /**
+   * Stop when the traced funds are less than this share (0–1) of the pool they move
+   * in, e.g. 0.35: once the client's money is under 35% of a mixed transaction or
+   * wallet balance, the onward trail is no longer meaningfully theirs.
+   */
+  minShare?: number
 }
 
 export interface FollowResult {
@@ -147,8 +157,8 @@ export async function followFunds(
       try {
         children =
           lot.chain === 'btc'
-            ? opts.direction === 'forward' ? await btcForward(lot, deps, ends, adaptive ? opts.stopAt : null) : await btcBackward(lot, deps, ends)
-            : opts.direction === 'forward' ? await ethForward(lot, deps, ends, adaptive) : await ethBackward(lot, deps, ends, adaptive)
+            ? opts.direction === 'forward' ? await btcForward(lot, deps, ends, adaptive ? opts.stopAt : null, opts.minShare ?? 0) : await btcBackward(lot, deps, ends)
+            : opts.direction === 'forward' ? await ethForward(lot, deps, ends, adaptive, opts.minShare ?? 0) : await ethBackward(lot, deps, ends, adaptive)
       } catch (e) {
         ends.push({ address: lot.address, amount: lot.amount, asset: lot.asset, reason: 'not-loaded', detail: e instanceof Error ? e.message : 'Failed to load' })
         continue
@@ -218,7 +228,9 @@ export function planBtcSpend(tx: RawTransaction): SpendPlan {
   return { shape: 'split', follow, side, note: `split into ${outs.length} outputs; the ${follow.length} largest (${Math.round((covered / total) * 100)}% of the value) followed` }
 }
 
-async function btcForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptiveStopAt: EntityType[] | null) {
+const pct = (x: number) => `${Math.round(x * 100)}%`
+
+async function btcForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptiveStopAt: EntityType[] | null, minShare = 0) {
   if (!lot.via || lot.vout === undefined) throw new Error('No UTXO to follow')
   const holder = await deps.btcTx(lot.via)
   const k = holder.tx.outputs.findIndex(o => o.index === lot.vout)
@@ -234,7 +246,14 @@ async function btcForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
   }
   const totalIn = tx.inputs.reduce((s, i) => s + i.amount, 0)
   if (totalIn <= 0) return []
-  const share = lot.amount / totalIn
+  const share = Math.min(1, lot.amount / totalIn)
+  if (share < minShare) {
+    ends.push({
+      address: lot.address, amount: lot.amount, asset: 'BTC', reason: 'diluted', share,
+      detail: `Pooled: the traced ${fmt(lot.amount, 'BTC')} was only ${pct(share)} of the ${fmt(totalIn, 'BTC')} spent together in ${tx.txid.slice(0, 10)}… (below the ${pct(minShare)} cut-off)`,
+    })
+    return []
+  }
   const wait = tx.timestamp && lot.time ? `, ${duration(tx.timestamp - lot.time)} later` : ''
   const child = (o: RawTransaction['outputs'][number], why: string) => {
     const amount = o.amount * share
@@ -243,7 +262,8 @@ async function btcForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
       lot: { chain: 'btc' as const, address: o.address, asset: 'BTC', amount, time: tx.timestamp, via: tx.txid, vout: o.index, hop: lot.hop + 1 },
       flow: {
         from: lot.address, to: o.address, amount, asset: 'BTC', txid: tx.txid, time: tx.timestamp, hop: lot.hop + 1,
-        reason: `Exact: the coins were spent in ${tx.txid.slice(0, 10)}…${wait}; ${why}${share < 0.999 ? `; ${(share * 100).toFixed(1)}% of that tx's inputs, split pro rata` : ''}${change}`,
+        reason: `Exact: the coins were spent in ${tx.txid.slice(0, 10)}…${wait}; ${why}${share < 0.999 ? `; pooled: ${(share * 100).toFixed(1)}% of that tx's inputs were the traced funds, split pro rata` : ''}${change}`,
+        ...(share < 0.999 ? { share } : {}),
       },
     }
   }
@@ -309,8 +329,26 @@ function sameAmount(a: number, b: number, asset: string) {
   return Math.abs(a - b) <= Math.max(a * 0.03, tolerance(a, asset))
 }
 
-async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive = true) {
+async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive = true, minShare = 0) {
   const txs = await deps.addressTxs(lot.address, lot.time)
+  // Pooling: other funds of the same asset that arrived after the traced funds and
+  // before a given outflow share that outflow (a balance already sitting there isn't
+  // visible from loaded history, so this can only overstate the traced share)
+  const otherIn = txs.filter(t => t.asset === lot.asset && t.outputs[0]?.address === lot.address && t.inputs[0]?.address !== lot.address && t.txid !== lot.via && t.timestamp >= lot.time)
+  const shareAt = (time: number) => {
+    const other = otherIn.filter(t => t.timestamp <= time).reduce((s, t) => s + (t.outputs[0]?.amount ?? 0), 0)
+    return lot.amount / (lot.amount + other)
+  }
+  const diluted = (time: number) => {
+    const s = shareAt(time)
+    if (s >= minShare) return false
+    const other = lot.amount / s - lot.amount
+    ends.push({
+      address: lot.address, amount: lot.amount, asset: lot.asset, reason: 'diluted', share: s,
+      detail: `Pooled: ${fmt(other, lot.asset)} of other funds arrived before the money moved on, so the traced ${fmt(lot.amount, lot.asset)} was only ${pct(s)} of the pool (below the ${pct(minShare)} cut-off)`,
+    })
+    return true
+  }
   // Only outflows after the funds arrived
   const outs = txs
     .filter(t => t.asset === lot.asset && t.inputs[0]?.address === lot.address && t.outputs[0]?.address !== lot.address)
@@ -320,15 +358,19 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
   // Pass-through: the same amount leaving soon after it arrived is almost certainly the same money
   const pass = adaptive ? outs.find(t => sameAmount(lot.amount, t.outputs[0].amount, lot.asset)) : undefined
   if (pass) {
+    if (diluted(pass.timestamp)) return []
+    const ps = shareAt(pass.timestamp)
     return [{
       lot: { chain: 'eth' as const, address: pass.outputs[0].address, asset: lot.asset, amount: Math.min(lot.amount, pass.outputs[0].amount), time: pass.timestamp, via: pass.txid, hop: lot.hop + 1 },
       flow: {
         from: lot.address, to: pass.outputs[0].address, amount: Math.min(lot.amount, pass.outputs[0].amount), asset: lot.asset, txid: pass.txid, time: pass.timestamp, hop: lot.hop + 1,
-        reason: `Pass-through: ${fmt(pass.outputs[0].amount, lot.asset)} left ${duration(pass.timestamp - lot.time)} after ${fmt(lot.amount, lot.asset)} arrived (same amount)`,
+        reason: `Pass-through: ${fmt(pass.outputs[0].amount, lot.asset)} left ${duration(pass.timestamp - lot.time)} after ${fmt(lot.amount, lot.asset)} arrived (same amount)${ps < 0.999 ? `; pooled: traced funds ${pct(ps)} of the balance` : ''}`,
+        ...(ps < 0.999 ? { share: ps } : {}),
       },
     }]
   }
 
+  if (outs.length && diluted(outs[0].timestamp)) return []
   let remaining = lot.amount
   const tol = tolerance(lot.amount, lot.asset)
   const alloc = new Map<string, { amount: number; tx: RawTransaction; covered: number }>()
@@ -351,7 +393,8 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
     lot: { chain: 'eth' as const, address: tx.outputs[0].address, asset: lot.asset, amount, time: tx.timestamp, via: tx.txid, hop: lot.hop + 1 },
     flow: {
       from: lot.address, to: tx.outputs[0].address, amount, asset: lot.asset, txid: tx.txid, time: tx.timestamp, hop: lot.hop + 1,
-      reason: `Next ${lot.asset} outflow ${duration(tx.timestamp - lot.time)} after ${fmt(lot.amount, lot.asset)} arrived; ${fmt(amount, lot.asset)} of ${fmt(tx.outputs[0].amount, lot.asset)} attributed`,
+      reason: `Next ${lot.asset} outflow ${duration(tx.timestamp - lot.time)} after ${fmt(lot.amount, lot.asset)} arrived; ${fmt(amount, lot.asset)} of ${fmt(tx.outputs[0].amount, lot.asset)} attributed${shareAt(tx.timestamp) < 0.999 ? `; pooled: traced funds ${pct(shareAt(tx.timestamp))} of the balance` : ''}`,
+      ...(shareAt(tx.timestamp) < 0.999 ? { share: shareAt(tx.timestamp) } : {}),
     },
   }))
 }

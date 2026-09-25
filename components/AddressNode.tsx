@@ -16,6 +16,8 @@ export interface AddressNodeData extends NodeData {
     relation?: 'in' | 'out' | 'both'
     /** Just added to the chart */
     fresh?: boolean
+    /** Trail stopped here because the traced funds were this share (0–1) of a pool */
+    pooled?: number
   }
 }
 
@@ -55,6 +57,12 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
           title={data.view.relation === 'in' ? 'Sent funds to the selected address' : data.view.relation === 'out' ? 'Received funds from the selected address' : 'Sent and received funds with the selected address'}
         >
           {data.view.relation === 'in' ? 'in' : data.view.relation === 'out' ? 'out' : 'in + out'}
+        </span>
+      )}
+      {data.view.pooled !== undefined && (
+        <span className="absolute -top-2.5 right-2 px-1.5 text-[9px] font-semibold uppercase tracking-wider bg-amber-500 text-black"
+          title={`The traced funds were only ${Math.round(data.view.pooled * 100)}% of the pool here, so the trail stopped`}>
+          pooled {Math.round(data.view.pooled * 100)}%
         </span>
       )}
       <Handle type="target" position={Position.Left} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />

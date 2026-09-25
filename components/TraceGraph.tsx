@@ -238,12 +238,15 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
     // Traced amounts per directed pair and asset
     const tracedBy = new Map<string, Map<string, number>>()
+    // Lowest pool share seen on each traced pair (pooling made visible on the line)
+    const pooledBy = new Map<string, number>()
     for (const f of traced) {
       if (!ids.has(f.from) || !ids.has(f.to)) continue
       const k = `${f.from}->${f.to}`
       const m = tracedBy.get(k) ?? new Map<string, number>()
       m.set(f.asset, (m.get(f.asset) ?? 0) + f.amount)
       tracedBy.set(k, m)
+      if (f.share !== undefined) pooledBy.set(k, Math.min(pooledBy.get(k) ?? 1, f.share))
     }
 
     // Several assets between the same pair (e.g. ETH + USDT) share one drawn edge
@@ -278,7 +281,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const first = Math.min(...es.map(x => x.firstTimestamp || x.timestamp).filter(Boolean))
       const last = Math.max(...es.map(x => x.timestamp))
       const line1 = tr
-        ? [...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')
+        ? `${[...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')}${pooledBy.has(key) ? ` · ${Math.round(pooledBy.get(key)! * 100)}% of pool` : ''}`
         : tainted
           ? `${fmtCompact(taint!, es[0]?.asset ?? '')} tainted`
           : `${relationshipLabel(es, prices, txs)}${isChange ? ' · likely change' : ''}`

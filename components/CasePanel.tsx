@@ -10,6 +10,8 @@ import { TracedFlow, TraceEnd, EndReason } from '@/lib/follow'
 import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
+export interface FollowSettings { hops: number; branches: number; adaptive: boolean; minSharePct: number }
+
 const END_TITLE: Record<EndReason, string> = {
   entity: 'Reached an exchange / mixer / sanctioned',
   unspent: 'Still sitting (unspent)',
@@ -18,10 +20,11 @@ const END_TITLE: Record<EndReason, string> = {
   'no-source': 'Origin of funds',
   'max-hops': 'Hop limit: continue from here',
   'not-loaded': 'Could not load',
+  diluted: 'Pooled below the cut-off (stopped)',
   peel: 'Peeled-off payments (not followed)',
   split: 'Smaller splits (not followed)',
 }
-const END_ORDER: EndReason[] = ['entity', 'coinjoin', 'unspent', 'no-outflow', 'no-source', 'max-hops', 'peel', 'split', 'not-loaded']
+const END_ORDER: EndReason[] = ['entity', 'diluted', 'coinjoin', 'unspent', 'no-outflow', 'no-source', 'max-hops', 'peel', 'split', 'not-loaded']
 
 function groupEnds(ends: TraceEnd[]) {
   return END_ORDER.map(reason => ({ reason, items: ends.filter(e => e.reason === reason).sort((a, b) => b.amount - a.amount) })).filter(g => g.items.length)
@@ -50,8 +53,8 @@ export interface CasePanelProps {
   collapsed: boolean
   onToggle: () => void
   legendTypes: EntityType[]
-  follow: { hops: number; branches: number; adaptive: boolean }
-  onFollow: (f: { hops: number; branches: number; adaptive: boolean }) => void
+  follow: FollowSettings
+  onFollow: (f: FollowSettings) => void
   traced: TracedFlow[]
   traceEnds: TraceEnd[]
   onClearTrace: () => void
@@ -128,6 +131,16 @@ export default function CasePanel(p: CasePanelProps) {
             </label>
           )}
         </div>
+        <label className="mt-3 block space-y-1 text-[11px]">
+          <span className="text-faint">Stop when the traced funds are below this share of a pooled transaction or balance</span>
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} max={100} step={5} value={p.follow.minSharePct}
+              onChange={e => p.onFollow({ ...p.follow, minSharePct: Math.min(100, Math.max(0, +e.target.value || 0)) })}
+              aria-label="Minimum share of pool"
+              className="w-20 h-8 px-2 bg-panel border border-line text-fg outline-none focus:border-accent" />
+            <span className="text-faint">% {p.follow.minSharePct === 0 && '(off)'}</span>
+          </div>
+        </label>
         <label className="mt-2 flex items-start gap-2 text-[11px] text-faint cursor-pointer">
           <input type="checkbox" checked={!p.follow.adaptive} onChange={e => p.onFollow({ ...p.follow, adaptive: !e.target.checked })} className="mt-0.5 accent-[rgb(var(--accent))]" />
           <span>Follow every output (no smart pruning). Off by default: the trace reads each transaction and keeps to the trail.</span>

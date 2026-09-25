@@ -23,7 +23,7 @@ import { ENTITY_STYLE, nativeAsset } from '@/lib/format'
 import AddressInspector, { AddressTab } from '@/components/AddressInspector'
 import TxInspector from '@/components/TxInspector'
 import EdgeDetail from '@/components/EdgeDetail'
-import CasePanel from '@/components/CasePanel'
+import CasePanel, { FollowSettings } from '@/components/CasePanel'
 import SaveChartButton from '@/components/SaveChartButton'
 import ExportMenu from '@/components/ExportMenu'
 import SearchForm from '@/components/SearchForm'
@@ -149,7 +149,7 @@ function TracePageInner() {
   const [caseCollapsed, setCaseCollapsed] = useState(false)
 
   const [taint, setTaint] = useState<TaintCfg | null>(null)
-  const [follow, setFollow] = useState({ hops: 10, branches: 3, adaptive: true })
+  const [follow, setFollow] = useState<FollowSettings>({ hops: 10, branches: 3, adaptive: true, minSharePct: 35 })
   const [traceStatus, setTraceStatus] = useState<string | null>(null)
   const [focusTrace, setFocusTrace] = useState(false)
   const traceCancel = useRef(false)
@@ -591,7 +591,7 @@ function TracePageInner() {
     try {
       const res = await followFunds(
         seed.lots,
-        { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive },
+        { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive, minShare: follow.minSharePct / 100 },
         { addressTxs, btcTx, labelOf: a => knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
         (msg, partial) => {
           setTraceStatus(msg)
@@ -664,6 +664,7 @@ function TracePageInner() {
 
   const graphNodes: AddressNodeData[] = useMemo(() => {
     const endSet = new Set(traceEnds.filter(e => !OFF_TRAIL.includes(e.reason)).map(e => e.address))
+    const pooledAt = new Map(traceEnds.filter(e => e.reason === 'diluted' && e.share !== undefined).map(e => [e.address, e.share!]))
     const shown = showTraceOnly
       ? [...visible].filter(a => traceSet.has(a) || endSet.has(a) || a === originAddress || a === selectedAddress)
       : [...visible]
@@ -682,6 +683,7 @@ function TracePageInner() {
           taintAsset: taint?.asset,
           isTaintSeed: taint?.seed === a,
           loading: loadingAddrs.has(a),
+          pooled: pooledAt.get(a),
         },
       }]
     })

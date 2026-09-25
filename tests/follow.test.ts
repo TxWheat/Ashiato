@@ -165,3 +165,38 @@ describe('Adaptive tracing', () => {
     expect(r.flows[0].reason).toMatch(/Pass-through/)
   })
 })
+
+describe('Pooling (client share of the pool)', () => {
+  it('BTC: records the share when coins are spent with others, and stops below the cut-off', async () => {
+    const T1 = 'd'.repeat(64), T2 = 'e'.repeat(64)
+    const t1 = btcTx([['1Client', 1]], [['1Mule', 1]], 100, T1)
+    // Mule spends the client's 1 BTC together with 3 BTC of other coins → client is 25%
+    const t2 = btcTx([['1Mule', 1, `${T1}:0`], ['1Other', 3]], [['1Next', 3.9999]], 200, T2)
+    const d: FollowDeps = {
+      addressTxs: async () => [],
+      btcTx: async id => ({ [T1]: { tx: t1, spentBy: [T2], labels: {} }, [T2]: { tx: t2, spentBy: [null], labels: {} } } as Record<string, BtcTxInfo>)[id],
+      labelOf: () => undefined,
+    }
+    const seed = seedsFromTx(t1, '1Client')
+    const open = await followFunds(seed.lots, { ...opts, minShare: 0.2 }, d)
+    expect(open.flows[0]).toMatchObject({ to: '1Next', share: 0.25 })
+    const cut = await followFunds(seed.lots, { ...opts, minShare: 0.35 }, d)
+    expect(cut.flows).toHaveLength(0)
+    expect(cut.ends[0]).toMatchObject({ address: '1Mule', reason: 'diluted', share: 0.25 })
+  })
+
+  it('ETH: other money arriving before the funds move on dilutes the share', async () => {
+    const txs = [
+      ethTx('0xclient', '0xmule', 1, 100),
+      ethTx('0xother', '0xmule', 3, 150),        // pooled in before anything leaves
+      ethTx('0xmule', '0xnext', 4, 200),
+    ]
+    const seed = seedsFromTx(txs[0], '0xclient')
+    const cut = await followFunds(seed.lots, { ...opts, minShare: 0.35 }, ethDeps(txs))
+    expect(cut.ends[0]).toMatchObject({ address: '0xmule', reason: 'diluted' })
+    expect(cut.ends[0].share).toBeCloseTo(0.25)
+    const open = await followFunds(seed.lots, { ...opts, minShare: 0 }, ethDeps(txs))
+    expect(open.flows[0].share).toBeCloseTo(0.25)
+    expect(open.flows[0].reason).toMatch(/pooled/)
+  })
+})
