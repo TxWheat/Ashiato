@@ -57,7 +57,6 @@ const CATEGORY = {
   coinjoin: 'coinjoin',
   mixing_service: 'mixer',
   sanction: 'sanctioned',
-  black_list: 'scam',
   gambling: 'gambling',
   defi: 'defi',
   defi_lending: 'defi',
@@ -121,6 +120,9 @@ if (tagpacksDir) {
     if (!pack?.tags) continue
     const base = path.basename(file)
     if (!withBitmex && base.startsWith('exchange-wallets-bitmex')) continue
+    // Addresses seen in USDT blacklist-related transactions: it includes the null
+    // address and routers like MetaMask Swap, so it says nothing about who is a scammer
+    if (base === 'usdt_blacklist.yaml') continue
     const src = sourceId(
       `GraphSense TagPack: ${pack.title ?? base}`,
       typeof pack.source === 'string' && pack.source.startsWith('http')

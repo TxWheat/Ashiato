@@ -158,7 +158,6 @@ function TracePageInner() {
   const [taint, setTaint] = useState<TaintCfg | null>(null)
   const [follow, setFollow] = useState<FollowSettings>({ hops: 10, branches: 3, adaptive: true, minSharePct: 35 })
   const [traceStatus, setTraceStatus] = useState<string | null>(null)
-  const [focusTrace, setFocusTrace] = useState(false)
   const traceCancel = useRef(false)
   const restoring = useRef(false)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
@@ -311,7 +310,6 @@ function TracePageInner() {
     setPayments([])
     setTraced([])
     setTraceEnds([])
-    setFocusTrace(false)
     setHistory([])
     setSelection(null)
     setTaint(null)
@@ -695,7 +693,6 @@ function TracePageInner() {
       // splits were deliberately not followed, so they stay in the side list only
       showOnGraph(res.ends.filter(e => !OFF_TRAIL.includes(e.reason)).map(e => e.address))
       setTraceEnds(prev => mergeEnds([...prev, ...(seed.ends ?? []), ...res.ends]))
-      if (flows.length) setFocusTrace(true)
       const cashOut = res.ends.filter(e => e.reason === 'entity').length
       flash(`Traced ${flows.length} hop${flows.length === 1 ? '' : 's'}${cashOut ? ` · reached ${cashOut} exchange/mixer/sanctioned endpoint${cashOut === 1 ? '' : 's'}` : ''}`)
     } catch (e) {
@@ -748,17 +745,11 @@ function TracePageInner() {
   const taintAssets = useMemo(() => [...new Set(allTxs.map(t => t.asset))].sort(), [allTxs])
   const taintResult = useMemo(() => (taint ? runTaint(allTxs, [taint.seed], taint.method, taint.asset) : null), [taint, allTxs])
 
-  const traceSet = useMemo(() => new Set(traced.flatMap(f => [f.from, f.to])), [traced])
-  const showTraceOnly = focusTrace && traced.length > 0
   const selectedAddress = selection?.kind === 'address' ? selection.id : null
 
   const graphNodes: AddressNodeData[] = useMemo(() => {
-    const endSet = new Set(traceEnds.filter(e => !OFF_TRAIL.includes(e.reason)).map(e => e.address))
     const pooledAt = new Map(traceEnds.filter(e => e.reason === 'diluted' && e.share !== undefined).map(e => [e.address, e.share!]))
-    const shown = showTraceOnly
-      ? [...visible].filter(a => traceSet.has(a) || endSet.has(a) || a === originAddress || a === selectedAddress)
-      : [...visible]
-    return shown.flatMap(a => {
+    return [...visible].flatMap(a => {
       const n = known.get(a)
       if (!n) return []
       const cluster = clusters.byAddress.get(a)
@@ -777,7 +768,7 @@ function TracePageInner() {
         },
       }]
     })
-  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, showTraceOnly, traceSet, traceEnds, selectedAddress, mine])
+  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, traceEnds, mine])
 
   const graphEdges = useMemo(() => {
     const ids = new Set(graphNodes.map(n => n.address))
@@ -810,7 +801,6 @@ function TracePageInner() {
     setSelection(null)
   }
 
-  // The searched transaction stays visible in Trail view: it is where the trail starts
   const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
 
   const legendTypes = useMemo(() => {
@@ -1191,14 +1181,6 @@ function TracePageInner() {
               {collapseOn ? `Chains collapsed${collapsed.chains.length ? ` (${collapsed.chains.length})` : ''}` : 'Collapse chains'}
             </button>
           )}
-          {traced.length > 0 && (
-            <div className="flex border border-line text-[11px] font-medium">
-              {([['Trail', true], ['All', false]] as const).map(([label, v]) => (
-                <button key={label} onClick={() => setFocusTrace(v)} title={v ? 'Show only the traced money trail' : 'Show everything on the graph'}
-                  className={`h-7 px-2.5 ${focusTrace === v ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}>{label}</button>
-              ))}
-            </div>
-          )}
           <span className="hidden lg:block whitespace-nowrap">{graphNodes.length} addresses</span>
           <button onClick={undo} disabled={!history.length} className="flex items-center gap-1 hover:text-fg disabled:opacity-30 p-1" title="Undo">
             <Undo2 size={14} />{history.length > 0 && <span className="text-[10px]">{history.length}</span>}
@@ -1239,7 +1221,7 @@ function TracePageInner() {
             onFollow={setFollow}
             traced={traced}
             traceEnds={traceEnds}
-            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]); setFocusTrace(false) }}
+            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]) }}
             taint={taint}
             taintResult={taintResult}
             taintAssets={taintAssets}

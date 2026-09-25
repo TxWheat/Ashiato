@@ -385,11 +385,6 @@
   "license": "MIT"
  },
  {
-  "title": "GraphSense TagPack: USDT blacklist",
-  "url": "https://ikna.io",
-  "license": "MIT"
- },
- {
   "title": "GraphSense TagPack: WalletExplorer Tag Pack",
   "url": "https://github.com/graphsense/graphsense-tagpacks/blob/master/packs/walletexplorer.yaml",
   "license": "MIT"
