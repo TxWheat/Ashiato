@@ -78,6 +78,12 @@ const AUTO_FULL_HISTORY_BTC = 500
 /** Participants of a searched transaction put on the graph straight away (per side) */
 const TX_PARTICIPANTS = 6
 
+/** A URL reduced to what decides which trace/case is shown */
+function urlKey(url: string): string {
+  const q = new URLSearchParams(url.split('?')[1] ?? '')
+  return [q.get('address') ?? '', (q.get('tx') ?? '').toLowerCase(), q.get('chain') ?? '', q.get('case') ?? ''].join('|')
+}
+
 function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
@@ -185,7 +191,7 @@ function TracePageInner() {
   const [follow, setFollow] = useState<FollowSettings>({ hops: 10, branches: 3, adaptive: true, minSharePct: 35 })
   const [traceStatus, setTraceStatus] = useState<string | null>(null)
   const traceCancel = useRef(false)
-  const restoring = useRef(false)
+  const restoring = useRef<string | null>(null)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
   // Right panel width: drag to resize, or expand for a wide table view (remembered)
@@ -369,7 +375,7 @@ function TracePageInner() {
         } catch (e) {
           if (originChain !== 'btc') throw e
           l = await fetchTxLookup(originTx, 'tron').catch(() => { throw e })
-          restoring.current = true
+          restoring.current = urlKey(`/trace?tx=${originTx}&chain=tron`)
           router.replace(`/trace?tx=${originTx}&chain=tron`)
         }
         absorbTx(l)
@@ -393,10 +399,10 @@ function TracePageInner() {
 
   const caseParam = params.get('case')
   useEffect(() => {
-    if (restoring.current) {
-      restoring.current = false
-      return
-    }
+    // Skip only the exact URL we just wrote ourselves (a save or a restore), never a new search
+    const skip = restoring.current
+    restoring.current = null
+    if (skip && skip === urlKey(`/trace?${params.toString()}`)) return
     if (caseParam) {
       if (saved?.id === caseParam) return // already open (just saved, or the URL was tidied)
       getSavedChart(caseParam)
@@ -692,7 +698,7 @@ function TracePageInner() {
     // Started without an address: the first recipient becomes the case's anchor
     if (!originKey) {
       const first = seed.lots[0]
-      restoring.current = true
+      restoring.current = urlKey(`/trace?address=${encodeURIComponent(first.address)}&chain=${first.chain}`)
       router.replace(`/trace?address=${encodeURIComponent(first.address)}&chain=${first.chain}`)
     }
     runFollow('forward', seed)
@@ -1002,7 +1008,7 @@ function TracePageInner() {
     // Keep the case in the URL so a refresh or bookmark reopens (and keeps saving) the same case
     const url = caseUrl(c, from?.id)
     if (c.origin.address !== originKey || (params.get('case') ?? undefined) !== from?.id) {
-      restoring.current = true
+      restoring.current = urlKey(url)
       router.replace(url)
     }
   }
@@ -1037,7 +1043,7 @@ function TracePageInner() {
       setLastSavedAt(Date.now())
       if (changeCount.current === counterAtSave) setDirty(false)
       if (isNew || params.get('case') !== id) {
-        restoring.current = true
+        restoring.current = urlKey(caseUrl(c, id))
         router.replace(caseUrl(c, id))
       }
       if (!opts.quiet) flash(isNew ? `Case “${name}” created. It now saves automatically${autosave ? '' : ' when you press Save'}.` : `Saved “${name}”`)
