@@ -36,6 +36,8 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [ ] Wallet sign-in (WalletConnect / Reown AppKit, Sign-In with Ethereum)
 - [x] On-chain community labels as EAS attestations (Sepolia): schemas, encoding, reading, trust scoring, Inspector panel ([docs/ATTESTATIONS.md](docs/ATTESTATIONS.md)); signing goes live once wallet sign-in lands
 - [x] Trust voting on labels, with reputation weighting (ENS)
+- [x] Tron address labels from Tronscan tags (exchange hot wallets, red-flagged scams)
+- [x] Fixes from live testing: fake-ETH address poisoning, runaway deposit-reuse clusters, duplicate traced lines
 - [ ] Cross-chain hops: bridge deposits resolved to the destination chain's txid, trace continues
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams

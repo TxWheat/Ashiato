@@ -4,6 +4,10 @@ import { EntityLabel, RawTransaction, TraceResult, TxLookup } from '../types'
 import { fetchJson } from '../http'
 import { assemble } from '../trace'
 import { getLabel } from '../labels'
+import { tronscanLabel, tronscanLabels } from './tronscan'
+
+/** Counterparties whose Tronscan tags are looked up per trace (most frequent first) */
+const TAG_LOOKUPS = 15
 
 // Tron via TronGrid. Account-based like Ethereum: TRX transfers plus TRC-20 token
 // transfers (most scam money on Tron is USDT). Set TRONGRID_API_KEY (free at
@@ -153,9 +157,24 @@ export async function traceTronAddress(address: string, cursor?: string): Promis
     fpTrc === '-' ? undefined : trc.meta?.fingerprint
   )
 
+  // Tronscan names for this address and its busiest counterparties (first page only)
+  let extraLabel: EntityLabel | undefined
+  let extraLabels: Map<string, EntityLabel> | undefined
+  if (!cursor) {
+    const count = new Map<string, number>()
+    for (const t of rawTxs) {
+      if (t.asset.endsWith('*')) continue
+      for (const a of [t.inputs[0]?.address, t.outputs[0]?.address]) if (a && a !== address) count.set(a, (count.get(a) ?? 0) + 1)
+    }
+    const top = [...count].sort((x, y) => y[1] - x[1]).map(([a]) => a).filter(a => !getLabel(a, 'tron')).slice(0, TAG_LOOKUPS)
+    ;[extraLabel, extraLabels] = await Promise.all([getLabel(address, 'tron') ? undefined : tronscanLabel(address), tronscanLabels(top)])
+  }
+
   return assemble({
     address,
     chain: 'tron',
+    extraLabel,
+    extraLabels,
     balance: (account?.data?.[0]?.balance ?? 0) / 1e6,
     txCount: rawTxs.length,
     rawTxs,
@@ -221,9 +240,12 @@ export async function fetchTronTx(txid: string): Promise<TxLookup> {
     transfers.push(transfer(id, hexToBase58(log.topics[1].slice(-40)), hexToBase58(log.topics[2].slice(-40)), amount, assetFor(meta.symbol, contract), ms, 'token', String(k++)))
   }
   const labels: Record<string, EntityLabel> = {}
+  const unknown = new Set<string>()
   for (const t of transfers) for (const a of [t.inputs[0].address, t.outputs[0].address]) {
     const l = getLabel(a, 'tron')
     if (l) labels[a] = l
+    else unknown.add(a)
   }
+  for (const [a, l] of await tronscanLabels([...unknown].slice(0, TAG_LOOKUPS))) labels[a] = l
   return { chain: 'tron', txid: id, timestamp: Math.floor(ms / 1000), transfers, labels, ens: {}, failed: !!failed, warnings: failed ? ['This transaction failed on-chain'] : [] }
 }

@@ -15,6 +15,8 @@ const MIN_GAP_MS: Record<string, number> = {
   'mempool.space': 120,
   // TronGrid: ~15 req/s with a free key, fewer without
   'api.trongrid.io': process.env.TRONGRID_API_KEY ? 80 : 350,
+  // Tronscan allows ~20 calls/s without a key; stay well under it
+  'apilist.tronscanapi.com': process.env.TRONSCAN_API_KEY ? 60 : 120,
 }
 
 export class UpstreamError extends Error {
