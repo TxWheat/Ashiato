@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'CryptoTracer',
-  description: 'Free, open-source blockchain forensics for scam victims and investigators. Trace BTC and ETH, find exchange deposit addresses, run taint analysis.',
+  title: 'Ashiato · follow the footprints',
+  description: 'Free, open-source blockchain forensics for scam victims and investigators. Trace BTC, ETH and Tron, find exchange deposit addresses, run taint analysis.',
 }
 
 // Applies the saved theme before first paint to avoid a flash

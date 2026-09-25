@@ -6,6 +6,7 @@ import {
   Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
 } from 'lucide-react'
 import { MyLabel } from '@/lib/my-labels'
+import CommunityLabels, { Attester } from './CommunityLabels'
 import { InternalBadge } from './EdgeDetail'
 import { EntityLabel, EntityType, NodeData, RawTransaction, transferKey } from '@/lib/types'
 import { Counterparty, FlowSummary } from '@/lib/counterparties'
@@ -53,6 +54,8 @@ interface Props {
   /** The label from datasets / heuristics, shown when you edit */
   baseLabel?: EntityLabel
   onSaveLabel: (label: { name: string; type: EntityType } | null) => void
+  /** The connected wallet, for flagging and voting on-chain (absent = read-only) */
+  attester?: Attester
   /** Today's NZD prices, used to rank counterparties across different assets */
   prices: Record<string, number>
   node: NodeData
@@ -354,6 +357,7 @@ export default function AddressInspector(p: Props) {
             onCancel={() => setEditing(false)}
           />
         )}
+        <CommunityLabels chain={node.chain} address={node.address} attester={p.attester} />
         <FlowBoxes summary={p.summary} />
       </div>
 
