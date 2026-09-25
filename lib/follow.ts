@@ -42,6 +42,8 @@ export interface TracedFlow {
   reason: string
   /** Traced funds' share of the pool they moved in at this hop (0–1); absent = not pooled */
   share?: number
+  /** The funds were swapped in this transaction (e.g. SHIB → ETH on a DEX): what came back */
+  swap?: { asset: string; amount: number }
 }
 
 export type EndReason = 'unspent' | 'no-outflow' | 'no-source' | 'entity' | 'coinjoin' | 'max-hops' | 'not-loaded' | 'peel' | 'split' | 'diluted'
@@ -126,6 +128,9 @@ export async function followFunds(
   const ends: TraceEnd[] = []
   const rootTotal = seeds.reduce((s, l) => s + l.amount, 0)
   const minAmount = rootTotal * (opts.minFraction ?? 0.002)
+  // The dust threshold is in the traced asset; after a swap it converts at the swap's rate
+  const minFor = new Map<string, number>(seeds.map(l => [l.asset, minAmount]))
+  const minOf = (asset: string) => minFor.get(asset) ?? minAmount
   const seen = new Set<string>()
   let frontier = seeds
   const adaptive = opts.adaptive !== false
@@ -164,8 +169,13 @@ export async function followFunds(
         continue
       }
 
+      for (const c of children) {
+        if (c.flow.swap && !minFor.has(c.flow.swap.asset) && c.flow.amount > 0) {
+          minFor.set(c.flow.swap.asset, minOf(c.flow.asset) * (c.flow.swap.amount / c.flow.amount))
+        }
+      }
       children = children
-        .filter(c => c.flow.amount >= minAmount)
+        .filter(c => c.flow.amount >= minOf(c.flow.asset))
         .sort((a, b) => b.flow.amount - a.flow.amount)
         .slice(0, adaptive ? 6 : opts.maxBranches)
       for (const c of children) {
@@ -357,6 +367,36 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
 
   // Pass-through: the same amount leaving soon after it arrived is almost certainly the same money
   const pass = adaptive ? outs.find(t => sameAmount(lot.amount, t.outputs[0].amount, lot.asset)) : undefined
+
+  // Swap: the traced asset leaves in a transaction that pays this wallet a different asset
+  // back (Uniswap, 1inch, UniswapX, CoW…). The money is now that asset: keep following it here.
+  const received = new Map<string, RawTransaction[]>()
+  for (const t of txs) {
+    if (t.outputs[0]?.address !== lot.address || t.inputs[0]?.address === lot.address) continue
+    if (t.asset === lot.asset || t.asset.endsWith('*') || !((t.outputs[0]?.amount ?? 0) > 0)) continue
+    received.set(t.txid, [...(received.get(t.txid) ?? []), t])
+  }
+  const swapOut = outs.find(t => received.has(t.txid))
+  if (swapOut && (!pass || swapOut.timestamp <= pass.timestamp)) {
+    if (diluted(swapOut.timestamp)) return []
+    const got = received.get(swapOut.txid)!
+    const asset = got[0].asset
+    const gotTotal = got.filter(t => t.asset === asset).reduce((sum, t) => sum + t.outputs[0].amount, 0)
+    const sold = Math.min(lot.amount, swapOut.outputs[0].amount)
+    // Only the traced part of what was sold counts, so only that part of what came back
+    const bought = gotTotal * (sold / swapOut.outputs[0].amount)
+    const ps = shareAt(swapOut.timestamp)
+    return [{
+      lot: { chain: 'eth' as const, address: lot.address, asset, amount: bought, time: swapOut.timestamp, via: swapOut.txid, hop: lot.hop + 1 },
+      flow: {
+        from: lot.address, to: swapOut.outputs[0].address, amount: sold, asset: lot.asset, txid: swapOut.txid, time: swapOut.timestamp, hop: lot.hop + 1,
+        reason: `Swapped ${fmt(sold, lot.asset)} for ${fmt(bought, asset)} in the same transaction; following the ${asset} from this wallet${ps < 0.999 ? `; pooled: traced funds ${pct(ps)} of the balance` : ''}`,
+        swap: { asset, amount: bought },
+        ...(ps < 0.999 ? { share: ps } : {}),
+      },
+    }]
+  }
+
   if (pass) {
     if (diluted(pass.timestamp)) return []
     const ps = shareAt(pass.timestamp)

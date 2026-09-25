@@ -200,3 +200,37 @@ describe('Pooling (client share of the pool)', () => {
     expect(open.flows[0].reason).toMatch(/pooled/)
   })
 })
+
+describe('ETH swaps (DEX, UniswapX, 1inch)', () => {
+  it('follows the asset that came back in the same transaction (SHIB → ETH)', async () => {
+    const dex = '0xrizzolver'
+    const seed = ethTx('0xvictim', '0xwallet', 1_910_000_000, 100, 'SHIB', 'token')
+    const sell = ethTx('0xwallet', dex, 1_910_000_000, 200, 'SHIB', 'token')
+    const buy = { ...ethTx('0xreactor', '0xwallet', 4.45, 200, 'ETH', 'internal'), txid: sell.txid }
+    const onward = ethTx('0xwallet', '0xnext', 4.45, 300)
+    const txs = [seed, sell, buy, onward]
+    const { lots } = seedsFromTx(seed, '0xvictim')
+    const r = await followFunds(lots, opts, ethDeps(txs))
+    expect(r.flows.map(f => `${f.from}->${f.to} ${f.asset}`)).toEqual(['0xwallet->0xrizzolver SHIB', '0xwallet->0xnext ETH'])
+    expect(r.flows[0].swap).toEqual({ asset: 'ETH', amount: 4.45 })
+    expect(r.flows[0].reason).toMatch(/Swapped .*SHIB for 4\.45 ETH/)
+    expect(r.flows[1].amount).toBeCloseTo(4.45)
+  })
+
+  it('only the traced share of a swap is followed', async () => {
+    const seed = ethTx('0xvictim', '0xw', 500, 100, 'USDT', 'token')
+    const sell = ethTx('0xw', '0xdex', 1000, 200, 'USDT', 'token')     // traced 500 + 500 of their own
+    const buy = { ...ethTx('0xdex', '0xw', 0.4, 200, 'ETH', 'internal'), txid: sell.txid }
+    const r = await followFunds(seedsFromTx(seed, '0xvictim').lots, opts, ethDeps([seed, sell, buy]))
+    expect(r.flows[0].swap?.amount).toBeCloseTo(0.2)
+  })
+
+  it('fake-token airdrops in the same transaction are not a swap', async () => {
+    const seed = ethTx('0xvictim', '0xw', 1, 100)
+    const out = ethTx('0xw', '0xnext', 1, 200)
+    const spam = { ...ethTx('0xspam', '0xw', 1000, 200, 'USDT*', 'token'), txid: out.txid }
+    const r = await followFunds(seedsFromTx(seed, '0xvictim').lots, opts, ethDeps([seed, out, spam]))
+    expect(r.flows[0].swap).toBeUndefined()
+    expect(r.flows.map(f => f.to)).toEqual(['0xnext'])
+  })
+})
