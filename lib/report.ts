@@ -1,3 +1,4 @@
+import type { CheckedPayment } from './client-payments'
 import { Chain, EdgeData, NodeData } from './types'
 import { TaintResult } from './taint'
 import type { TracedFlow, TraceEnd } from './follow'
@@ -25,6 +26,7 @@ export function buildReport(opts: {
   traced?: TracedFlow[]
   traceEnds?: TraceEnd[]
   nameOf?: (a: string) => string | undefined
+  payments?: CheckedPayment[]
 }): string {
   const { origin, chain, nodes, edges, taint } = opts
   const traced = opts.traced ?? []
@@ -54,6 +56,15 @@ th{background:#f3f4f6}code{font-size:11px;word-break:break-all}a{color:#0645ad;t
 ${section('Subject address', `<p>${addr(origin)}<br>
 Label: ${esc(originNode?.label?.name ?? 'none')} · Risk: <b>${originNode?.risk?.score ?? '–'}/100 (${esc(originNode?.risk?.level ?? 'n/a')})</b></p>
 <ul>${(originNode?.risk?.reasons ?? []).map(r => `<li>${esc(r)}</li>`).join('')}</ul>`)}
+
+${opts.payments?.length ? section('Client payments (checked on-chain)', `<p class="muted">What the client reported, compared with the blockchain. “Verified” = amount within 2% and date within a day.</p>
+<table><tr><th>#</th><th>Client reported</th><th>On-chain</th><th>Transaction</th><th>Result</th></tr>
+${opts.payments.map((p, i) => `<tr><td>${i + 1}</td>
+<td>${esc(p.claim.amount !== undefined ? `${p.claim.amount} ${p.claim.asset ?? ''}` : '–')}<br><span class="muted">${esc(p.claim.date ? date(p.claim.date).slice(0, 10) : 'no date')}</span></td>
+<td>${p.match ? `${esc(fmtAmount(p.match.amount, p.match.asset, 8))}<br><span class="muted">${esc(date(p.match.timestamp))}</span><br>${addr(p.match.from)} →<br>${addr(p.match.to)}` : '–'}</td>
+<td>${p.match ? `<a href="${esc(explorerTxUrl(p.match.txid, p.match.chain))}"><code>${esc(p.match.txid.slice(0, 16))}…</code></a>` : esc(p.claim.txid ?? '–')}</td>
+<td><b>${esc(p.status)}</b>${p.notes.map(n => `<br><span class="muted">${esc(n)}</span>`).join('')}</td></tr>`).join('')}
+</table>`) : ''}
 
 ${section('Funds reaching exchanges / exchange deposit addresses', cashOut.length ? `<p class="muted">Exchanges can identify the account holder behind a deposit address. Quote the deposit address and transaction hashes in any request.</p>
 <table><tr><th>Address</th><th>Entity</th><th>Received (in this trace)</th><th>Transactions</th><th>Basis</th></tr>

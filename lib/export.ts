@@ -1,5 +1,6 @@
 import { Chain, EdgeData, NodeData, RawTransaction, TxLookup } from './types'
 import { TaintMethod } from './taint'
+import type { CheckedPayment } from './client-payments'
 import type { TracedFlow, TraceEnd } from './follow'
 
 // Case files and exports: JSON (save/load an investigation), CSV of flows,
@@ -35,6 +36,8 @@ export interface CaseFile {
   itemizedIds?: string[]
   /** Links (address pairs) the user hid from the graph */
   hiddenLinks?: string[]
+  /** What the client said they paid, and whether it checked out on-chain */
+  clientPayments?: CheckedPayment[]
 }
 
 export function parseCase(text: string): CaseFile {

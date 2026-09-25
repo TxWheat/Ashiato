@@ -17,6 +17,7 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | **Follow the funds** | Trace a specific payment hop by hop: exact coin (UTXO) tracing on Bitcoin, chronological amount-capped tracing on Ethereum. Every hop explains itself; stops at exchanges, deposit addresses and mixers |
 | **ENS names** | Verified primary ENS names on Ethereum addresses (reverse + forward check, so spoofed names are ignored) |
 | **Cases & exports** | Save a chart as a case in your browser (auto-saves; Save as for copies) (layout, transactions, traces, notes, labels) and reopen it from the home page; case files (JSON) to move it between computers; CSV of flows, GraphML (Gephi/yEd), PNG, printable report |
+| **Client payments** | Paste the tx hashes, wallet addresses, amounts and dates a client gives you: each is checked on-chain (verified / details differ / several matches / not found) and all of them are traced together; the report includes the comparison |
 | **Your own labels** | Name any address and set its category; your label overrides every other source wherever the address appears |
 
 Every heuristic is documented, with its limits, at `/methodology`.

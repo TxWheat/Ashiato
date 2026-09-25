@@ -16,6 +16,8 @@ import { runTaint, TaintMethod } from '@/lib/taint'
 import { BtcTxInfo, Direction, followFunds, Lot, seedsFromTx, backSeedsFromTx, TracedFlow, TraceEnd } from '@/lib/follow'
 import { saveCase as saveChartToBrowser, getCase as getSavedChart, newCaseId } from '@/lib/saved-cases'
 import { collapseChains } from '@/lib/collapse'
+import { CheckedPayment, PaymentMatch, judgePayment, parseClientPayments, seedsFromPayments, transfersOf } from '@/lib/client-payments'
+import ClientPaymentsDialog from '@/components/ClientPayments'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
@@ -132,6 +134,11 @@ function TracePageInner() {
   const [followedPairs, setFollowedPairs] = useState<Set<string>>(new Set())
   /** Per-transaction edge ids drawn individually instead of as a relationship line */
   const [itemizedIds, setItemizedIds] = useState<Set<string>>(new Set())
+  /** What the client says they paid, checked against the chain */
+  const [payments, setPayments] = useState<CheckedPayment[]>([])
+  const [paymentsOpen, setPaymentsOpen] = useState(false)
+  const [checking, setChecking] = useState<string | null>(null)
+  const intake = params.get('intake') === '1'
   /** Address pairs whose link the user hid from the graph */
   const [hiddenLinks, setHiddenLinks] = useState<Set<string>>(new Set())
   const [traced, setTraced] = useState<TracedFlow[]>([])
@@ -301,6 +308,7 @@ function TracePageInner() {
     setFollowedPairs(new Set())
     setItemizedIds(new Set())
     setHiddenLinks(new Set())
+    setPayments([])
     setTraced([])
     setTraceEnds([])
     setFocusTrace(false)
@@ -310,6 +318,13 @@ function TracePageInner() {
   }
 
   const loadOrigin = useCallback(async () => {
+    if (intake && !originTx && !originAddress) {
+      // Started from "Check client payments": nothing to load until they're checked
+      resetState()
+      setInitialLoading(false)
+      setPaymentsOpen(true)
+      return
+    }
     if (!originChain || (!originTx && !originAddress)) {
       setError('Not a valid Bitcoin or Ethereum address or transaction')
       setInitialLoading(false)
@@ -399,11 +414,10 @@ function TracePageInner() {
 
   /** Puts addresses on the graph, creating bare nodes for ones only seen inside transactions */
   const showOnGraph = useCallback((addrs: string[]) => {
-    const chain = originChain ?? 'btc'
     const missing = addrs.filter(a => !knownRef.current.has(a))
     if (missing.length) {
       const next = new Map(knownRef.current)
-      for (const a of missing) next.set(a, { address: a, chain, label: btcLabels.current.get(a), balance: 0, txCount: 0, isOrigin: false })
+      for (const a of missing) next.set(a, { address: a, chain: detectChain(a) ?? originChain ?? 'btc', label: btcLabels.current.get(a), balance: 0, txCount: 0, isOrigin: false })
       setKnownNow(next)
     }
     setVisible(prev => new Set([...prev, ...addrs]))
@@ -572,6 +586,72 @@ function TracePageInner() {
     btcTxCache.current.set(txid, info)
     return info
   }, [])
+
+  // ── Client payments ──────────────────────────────────────────────────────
+  /** An address's history back to `since` (loads older pages as needed) */
+  const historyUntil = async (addr: string, chain: Chain, since: number): Promise<RawTransaction[]> => {
+    let page = pagesRef.current.get(addr)
+    if (!page) {
+      absorb(await fetchTrace(addr, chain), [], false)
+      page = pagesRef.current.get(addr)
+    }
+    for (let i = 0; i < 20 && page?.nextCursor; i++) {
+      const stamps = page.rawTxs.map(t => t.timestamp).filter(Boolean)
+      if (stamps.length && Math.min(...stamps) <= since) break
+      setChecking(`Loading older history of ${truncate(addr, 6)}…`)
+      absorb(await fetchTrace(addr, chain, page.nextCursor), [], true)
+      page = pagesRef.current.get(addr)
+    }
+    return page?.rawTxs ?? []
+  }
+
+  const checkPayments = async (text: string) => {
+    const claims = parseClientPayments(text)
+    if (!claims.length) return
+    const base = Date.now().toString(36)
+    for (const [i, c] of claims.entries()) {
+      const id = `${base}${i}`
+      setChecking(`Checking payment ${i + 1} of ${claims.length}…`)
+      let result: CheckedPayment
+      try {
+        if (!c.txid && !c.address) {
+          result = { id, claim: c, status: 'error', notes: [] }
+        } else if (c.txid) {
+          // A bare 64-hex hash is Bitcoin (Tron hashes look the same; tried next)
+          const chains: Chain[] = c.chain ? [c.chain] : ['btc']
+          let found: PaymentMatch[] | null = null
+          for (const ch of chains) {
+            try {
+              found = transfersOf((await fetchTxLookup(c.txid, ch)).transfers)
+              break
+            } catch { /* try the next chain */ }
+          }
+          result = found ? judgePayment(c, found, id) : { id, claim: c, status: 'not-found', notes: ['Transaction not found'] }
+        } else {
+          const chain = detectChain(c.address!)!
+          const txs = await historyUntil(c.address!, chain, (c.date ?? 0) - 4 * 86400)
+          result = judgePayment(c, transfersOf(txs), id)
+        }
+      } catch (e) {
+        result = { id, claim: c, status: 'error', notes: [e instanceof Error ? e.message : 'Could not check'] }
+      }
+      setPayments(prev => [...prev, result])
+    }
+    setChecking(null)
+  }
+
+  const traceAllPayments = () => {
+    const seed = seedsFromPayments(payments)
+    if (!seed.lots.length) return
+    setPaymentsOpen(false)
+    // Started without an address: the first recipient becomes the case's anchor
+    if (!originKey) {
+      const first = seed.lots[0]
+      restoring.current = true
+      router.replace(`/trace?address=${encodeURIComponent(first.address)}&chain=${first.chain}`)
+    }
+    runFollow('forward', seed)
+  }
 
   const runFollow = async (direction: Direction, seed: { lots: Lot[]; flows: TracedFlow[]; ends?: TraceEnd[] }) => {
     if (!seed.lots.length) {
@@ -798,6 +878,7 @@ function TracePageInner() {
           positions: Object.fromEntries([...positionsRef.current].filter(([a]) => visible.has(a) || hubs.has(a.replace(/^tx:/, '')))),
           itemizedIds: [...itemizedIds],
           hiddenLinks: [...hiddenLinks],
+          clientPayments: payments,
         }
       : null
 
@@ -828,6 +909,7 @@ function TracePageInner() {
     setFollowedPairs(new Set(c.followedPairs))
     setItemizedIds(new Set(c.itemizedIds ?? []))
     setHiddenLinks(new Set(c.hiddenLinks ?? []))
+    setPayments(c.clientPayments ?? [])
     setTraced(uniqueFlows(c.traced ?? []))
     setTraceEnds(mergeEnds(c.traceEnds ?? []))
     setTaint(c.taint ?? null)
@@ -893,7 +975,7 @@ function TracePageInner() {
     }
     changeCount.current++
     setDirty(true)
-  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, traced, traceEnds, taint, layoutRev, myLabels])
+  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, payments, traced, traceEnds, taint, layoutRev, myLabels])
   useEffect(() => {
     if (!autosave || !saved || !dirty || initialLoading) return
     const t = setTimeout(() => saveRef.current(saved.name, { quiet: true }), 1500)
@@ -910,7 +992,7 @@ function TracePageInner() {
 
   const openReport = () => {
     if (!originChain) return
-    const html = buildReport({ origin: originKey, chain: originChain, nodes: nodeMap, edges: graphEdges, taint: taintResult, traced, traceEnds, nameOf })
+    const html = buildReport({ origin: originKey, chain: originChain, nodes: nodeMap, edges: graphEdges, taint: taintResult, traced, traceEnds, nameOf, payments })
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank', 'noopener')
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -1138,6 +1220,8 @@ function TracePageInner() {
       <div className="flex flex-1 overflow-hidden min-h-0">
         {!initialLoading && !error && (
           <CasePanel
+            payments={payments}
+            onOpenPayments={() => setPaymentsOpen(true)}
             collapsed={caseCollapsed}
             onToggle={() => setCaseCollapsed(c => !c)}
             legendTypes={legendTypes}
@@ -1220,6 +1304,25 @@ function TracePageInner() {
               <EyeOff size={12} /> {hiddenLinks.size} hidden link{hiddenLinks.size === 1 ? '' : 's'}
               <button onClick={() => setHiddenLinks(new Set())} className="font-medium text-fg underline underline-offset-2 hover:text-accent">Show all</button>
             </div>
+          )}
+
+          {paymentsOpen && (
+            <ClientPaymentsDialog
+              payments={payments}
+              checking={checking}
+              tracing={!!traceStatus}
+              nameOf={nameOf}
+              onCheck={checkPayments}
+              onTraceAll={traceAllPayments}
+              onRemove={id => setPayments(prev => prev.filter(x => x.id !== id))}
+              onShow={x => {
+                if (!x.match) return
+                showOnGraph([x.match.from, x.match.to].filter(Boolean))
+                setPaymentsOpen(false)
+                setSelection({ kind: 'flow', from: x.match.from, to: x.match.to })
+              }}
+              onClose={() => setPaymentsOpen(false)}
+            />
           )}
 
           {toast && (

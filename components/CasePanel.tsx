@@ -7,6 +7,8 @@ import { Cluster } from '@/lib/heuristics/cluster'
 import { TornadoLink } from '@/lib/heuristics/eth/tornado'
 import { TaintMethod, TaintResult } from '@/lib/taint'
 import { TracedFlow, TraceEnd, EndReason } from '@/lib/follow'
+import { CheckedPayment } from '@/lib/client-payments'
+import { PaymentStatusBadge } from './ClientPayments'
 import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
@@ -69,6 +71,8 @@ export interface CasePanelProps {
   labelOf: (a: string) => EntityLabel | undefined
   nameOf: (a: string) => string | undefined
   onSelect: (address: string) => void
+  payments: CheckedPayment[]
+  onOpenPayments: () => void
 }
 
 export default function CasePanel(p: CasePanelProps) {
@@ -86,6 +90,27 @@ export default function CasePanel(p: CasePanelProps) {
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-faint">Case</span>
         <button onClick={p.onToggle} title="Hide case panel" className="text-faint hover:text-fg p-1"><PanelLeftClose size={14} /></button>
       </div>
+      <Section
+        title="Client payments"
+        right={<button onClick={p.onOpenPayments} className="text-[10px] text-accent hover:text-fg">{p.payments.length ? 'Open' : 'Add'}</button>}
+      >
+        {p.payments.length === 0 ? (
+          <p className="text-[11px] text-muted leading-relaxed">
+            Got tx hashes, wallet addresses, amounts and dates from the client? <button onClick={p.onOpenPayments} className="text-fg underline underline-offset-2 hover:text-accent">Check them on-chain</button> and trace them all at once.
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {p.payments.slice(0, 6).map((x, i) => (
+              <button key={x.id} onClick={p.onOpenPayments} className="w-full flex items-center gap-2 text-[11px] hover:bg-panel -mx-1 px-1 h-6">
+                <span className="text-faint w-4">{i + 1}</span>
+                <span className="font-mono text-fg truncate">{x.match ? fmtAmount(x.match.amount, x.match.asset) : x.claim.amount !== undefined ? `${x.claim.amount} ${x.claim.asset ?? ''}` : '—'}</span>
+                <span className="ml-auto"><PaymentStatusBadge status={x.status} /></span>
+              </button>
+            ))}
+            {p.payments.length > 6 && <div className="text-[10px] text-faint">+{p.payments.length - 6} more</div>}
+          </div>
+        )}
+      </Section>
       <Section
         title="Follow the funds"
         right={p.traced.length > 0 && <button onClick={p.onClearTrace} className="text-[10px] text-faint hover:text-fg">Clear</button>}

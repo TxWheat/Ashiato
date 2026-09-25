@@ -71,6 +71,9 @@ export default function Home() {
               Paste an address or a transaction hash. Bitcoin works out of the box; Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
               <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
+            <Link href="/trace?intake=1" className="inline-flex items-center gap-2 h-9 px-4 text-xs font-medium border border-line hover:border-accent text-fg">
+              Start from client payments →
+            </Link>
             <SavedCharts />
           </div>
         </div>
