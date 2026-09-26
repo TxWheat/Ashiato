@@ -7,6 +7,8 @@ import { Chain, EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
 import { explorerTxUrl, fiatValue, fmtAmount, fmtDate } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
+import { fmtMoney } from '@/lib/currency'
+import { useSettings } from './Settings'
 
 type Tab = 'relationship' | 'transactions'
 
@@ -58,6 +60,7 @@ function totals(rows: EdgeData[]) {
 }
 
 export default function EdgeDetail(p: Props) {
+  const { currency } = useSettings()
   const [tab, setTab] = useState<Tab>(p.initialTab ?? 'relationship')
   const [order, setOrder] = useState<'newest' | 'oldest' | 'largest'>('newest')
   const ab = p.rows.filter(r => r.source === p.a)
@@ -94,7 +97,7 @@ export default function EdgeDetail(p: Props) {
         totals(rows).map(([asset, amt]) => (
           <div key={asset} className="text-sm font-mono text-fg">
             {fmtAmount(amt, asset, 8)}
-            {fiatValue(amt, asset, p.prices) > 0 && <span className="text-[11px] text-faint"> · ${Math.round(fiatValue(amt, asset, p.prices)).toLocaleString('en-NZ')} NZD today</span>}
+            {fiatValue(amt, asset, p.prices) > 0 && <span className="text-[11px] text-faint"> · {fmtMoney(fiatValue(amt, asset, p.prices), currency, true)} today</span>}
           </div>
         ))
       )}

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Github } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import { AccountButton } from './SignIn'
+import { SettingsButton } from './Settings'
 
 export default function SiteNav() {
   return (
@@ -23,6 +24,7 @@ export default function SiteNav() {
           <span className="hidden sm:inline">Source</span>
         </a>
         <AccountButton />
+        <SettingsButton />
         <ThemeToggle />
       </div>
     </nav>

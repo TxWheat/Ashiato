@@ -40,7 +40,7 @@ export default function Home() {
     { value: stats.btc.toLocaleString('en-US'), label: 'Bitcoin labels', dot: 'bg-orange-500' },
     { value: stats.eth.toLocaleString('en-US'), label: 'Ethereum labels', dot: 'bg-violet-500' },
     { value: stats.sanctioned.toLocaleString('en-US'), label: 'OFAC sanctioned addresses', dot: 'bg-red-500' },
-    { value: '$0', label: 'Cost. No sign-up, open source', dot: 'bg-green-500' },
+    { value: '$0', label: 'Free and open source', dot: 'bg-green-500' },
   ]
 
   return (
@@ -68,7 +68,7 @@ export default function Home() {
             </p>
             <SearchForm />
             <p className="text-xs text-faint">
-              Paste an address or a transaction hash. Bitcoin and Tron (TRX + USDT) work out of the box; Ethereum (ETH + ERC-20) needs a free Etherscan API key.{' '}
+              Paste a Bitcoin, Ethereum or Tron address or transaction hash. You&apos;ll name the case and sign in, and it&apos;s saved to your account from the start.{' '}
               <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
             <SignInPanel />

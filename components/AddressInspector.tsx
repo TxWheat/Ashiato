@@ -16,6 +16,7 @@ import { Cluster } from '@/lib/heuristics/cluster'
 import { LoadedPage } from '@/lib/export'
 import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue, MAJOR_ASSETS, topAssets, chainDot } from '@/lib/format'
 import { truncate, detectChain, normaliseAddress } from '@/lib/detect-chain'
+import { useSettings } from './Settings'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
 
@@ -58,7 +59,7 @@ interface Props {
   onSaveLabel: (label: { name: string; type: EntityType } | null) => void
   /** The connected wallet, for flagging and voting on-chain (absent = read-only) */
   attester?: Attester
-  /** Today's NZD prices, used to rank counterparties across different assets */
+  /** Today's prices in the display currency, used to rank counterparties across different assets */
   prices: Record<string, number>
   node: NodeData
   page?: LoadedPage
@@ -216,6 +217,7 @@ function FlowBoxes({ summary, wide }: { summary: FlowSummary; wide?: boolean }) 
 }
 
 export default function AddressInspector(p: Props) {
+  const { currency } = useSettings()
   const { node } = p
   const [copied, setCopied] = useState<boolean | 'failed'>(false)
   const [filter, setFilter] = useState<'in' | 'out'>('in')
@@ -257,7 +259,7 @@ export default function AddressInspector(p: Props) {
   const sideOf = (c: Counterparty, f = filter) => (f === 'in' ? c.received : c.sent)
   const countOf = (c: Counterparty, f = filter) => (f === 'in' ? c.receivedCount : c.sentCount)
   const lastOf = (c: Counterparty) => (filter === 'in' ? c.lastReceived : c.lastSent)
-  /** NZD value today of what moved on the selected side (unpriced tokens count as 0) */
+  /** Value today, in the display currency, of what moved on the selected side (unpriced tokens count as 0) */
   const valueOf = (c: Counterparty) => Object.entries(sideOf(c)).reduce((v, [k, a]) => v + fiatValue(a, k, p.prices), 0)
   const visibleCps = p.counterparties.filter(c => showSpam || !isSpam(c))
   const dirCount = (f: 'in' | 'out') => visibleCps.filter(c => Object.keys(sideOf(c, f)).length).length
@@ -272,7 +274,7 @@ export default function AddressInspector(p: Props) {
       return best
     }
     const score: Record<SortKey, (c: Counterparty) => number> = {
-      // Priced flows rank by NZD value; ones with no price (unknown tokens) go after, by share of that token's flow
+      // Priced flows rank by value; ones with no price (unknown tokens) go after, by share of that token's flow
       amount: c => (asset ? amt(c) : valueOf(c) > 0 ? 1e15 + valueOf(c) : share(sideOf(c))),
       txs: c => countOf(c),
       recent: c => lastOf(c),
@@ -425,7 +427,7 @@ export default function AddressInspector(p: Props) {
               <div className="flex items-center gap-1.5 text-[11px]">
                 <select value={sort} onChange={e => setSort(e.target.value as SortKey)} aria-label="Sort counterparties"
                   className="h-7 px-1.5 bg-panel border border-line text-fg outline-none focus:border-accent">
-                  <option value="amount">{filter === 'in' ? 'Most received' : 'Most sent'}{asset ? ` (${asset})` : ' (NZD value)'}</option>
+                  <option value="amount">{filter === 'in' ? 'Most received' : 'Most sent'}{asset ? ` (${asset})` : ` (${currency} value)`}</option>
                   <option value="txs">Most transactions</option>
                   <option value="recent">Most recent</option>
                 </select>
@@ -502,7 +504,7 @@ export default function AddressInspector(p: Props) {
                     {filter === 'in'
                       ? <div className="text-green-500" title="Received from them">↓ {amounts(c.received, p.prices)}</div>
                       : <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent, p.prices)}</div>}
-                    {valueOf(c) > 0 && <div className="text-[10px] text-faint" title="Value at today's prices">≈ {fmtFiatShort(valueOf(c))} NZD</div>}
+                    {valueOf(c) > 0 && <div className="text-[10px] text-faint" title="Value at today's prices">≈ {fmtFiatShort(valueOf(c), currency)}</div>}
                   </div>
                   <button onClick={() => !on && p.onAdd([c.address])} disabled={on} title={on ? 'On the graph' : 'Add to graph'} aria-label={on ? 'On the graph' : 'Add to graph'}
                     className={clsx('grid place-items-center w-7 h-7 flex-shrink-0', on ? 'text-accent' : 'bg-raised hover:bg-accent hover:text-accent-fg text-fg')}>
@@ -538,6 +540,7 @@ export default function AddressInspector(p: Props) {
 }
 
 function TxList(p: Props) {
+  const { currency } = useSettings()
   const txs = p.page?.rawTxs
   const me = p.node.address
   const [q, setQ] = useState('')
@@ -692,7 +695,7 @@ function TxList(p: Props) {
               </div>
               <div className="text-right leading-tight">
                 {amountCell}
-                {value > 0 && <div className="text-[10px] text-faint">≈ {fmtFiatShort(value)} NZD</div>}
+                {value > 0 && <div className="text-[10px] text-faint">≈ {fmtFiatShort(value, currency)}</div>}
               </div>
               {actions(tx, dir)}
             </div>

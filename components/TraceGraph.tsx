@@ -25,6 +25,8 @@ import { ENTITY_STYLE, fiatValue, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort,
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
 import { NodeAction, NodeMenuContext } from './NodeMenu'
 import LabelEdge from './OffsetEdge'
+import { CurrencyCode } from '@/lib/currency'
+import { useSettings } from './Settings'
 
 const nodeTypes = { addressNode: AddressNode, tx: TxNode }
 const edgeTypes = { label: LabelEdge }
@@ -199,15 +201,15 @@ function placeNodes(laid: Node[], edges: Edge[], placed: Map<string, XY>): Node[
 }
 
 /** "2.15K USDT ($2.9K NZD)" */
-function amountWithValue(amount: number, asset: string, prices: Record<string, number>): string {
-  const fiat = fmtFiatShort(fiatValue(amount, asset, prices))
-  return `${fmtCompact(amount, asset)}${fiat ? ` (${fiat} NZD)` : ''}`
+function amountWithValue(amount: number, asset: string, prices: Record<string, number>, currency: CurrencyCode): string {
+  const fiat = fmtFiatShort(fiatValue(amount, asset, prices), currency)
+  return `${fmtCompact(amount, asset)}${fiat ? ` (${fiat})` : ''}`
 }
 
 /** "2.15K USDT ($2.9K NZD) + 1.2 ETH ($5.4K NZD) +3 tokens · 29 txs" */
-function relationshipLabel(es: EdgeData[], prices: Record<string, number>, txs: number): string {
+function relationshipLabel(es: EdgeData[], prices: Record<string, number>, txs: number, currency: CurrencyCode): string {
   const { shown, rest } = topAssets(es.map(x => [x.asset, x.amount] as [string, number]), prices)
-  const parts = shown.map(([asset, amt]) => amountWithValue(amt, asset, prices)).join(' + ')
+  const parts = shown.map(([asset, amt]) => amountWithValue(amt, asset, prices, currency)).join(' + ')
   return `${parts}${rest ? ` +${rest} token${rest === 1 ? '' : 's'}` : ''}${txs > 1 ? ` · ${txs} txs` : ''}`
 }
 
@@ -268,6 +270,7 @@ export function pairKey(a: string, b: string) {
 
 export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  const { currency } = useSettings()
   const menu = useMemo(() => onNodeAction
     ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) } }
     : null, [menuFor, onNodeAction])
@@ -389,7 +392,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const last = Math.max(...es.map(x => x.timestamp))
       const line1 = tr
         ? `${[...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')}${swappedBy.has(key) ? ` · swapped for ${[...swappedBy.get(key)!].map(([a, v]) => fmtCompact(v, a)).join(' + ')}` : ''}${pooledBy.has(key) ? ` · ${pooledBy.get(key)! > 0 && pooledBy.get(key)! < 0.01 ? '<1' : Math.round(pooledBy.get(key)! * 100)}% of pool` : ''}`
-        : `${relationshipLabel(es, prices, txs)}${isChange ? ' · likely change' : ''}`
+        : `${relationshipLabel(es, prices, txs, currency)}${isChange ? ' · likely change' : ''}`
       const line2 = !es.length ? '' : txs === 1 ? fmtDateTime(last) : isFinite(first) && fmtDay(first) !== fmtDay(last) ? `${fmtDay(first)} → ${fmtDay(last)}` : fmtDay(last)
       // The side panel shows both directions of a pair, so both lines highlight
       const isSel = selectedEdge === pairKey(source, target)
@@ -425,7 +428,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           type: 'label',
           data: {
             offset, parallel: true, line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))',
-            line1: isTraced ? `${fmtCompact(e.amount, e.asset)} traced` : amountWithValue(e.amount, e.asset, prices),
+            line1: isTraced ? `${fmtCompact(e.amount, e.asset)} traced` : amountWithValue(e.amount, e.asset, prices, currency),
             bold: isTraced, glow: isTraced,
           },
           zIndex: isTraced ? 2 : 1,
@@ -444,7 +447,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           source: from,
           target: to,
           type: 'label',
-          data: { line1: amountWithValue(amount, asset, prices) },
+          data: { line1: amountWithValue(amount, asset, prices, currency) },
           markerEnd: arrowFor('muted'),
           style: { stroke: 'rgb(var(--muted))', strokeWidth: 1.5, strokeDasharray: '6 3' },
         })
@@ -495,7 +498,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       })
     }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, selectedEdge, chains, bridges])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, currency, selectedEdge, chains, bridges])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])

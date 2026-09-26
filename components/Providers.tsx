@@ -10,6 +10,7 @@ import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { mainnet as akMainnet, sepolia as akSepolia } from '@reown/appkit/networks'
 import { createSiweMessage } from 'viem/siwe'
 import { setCaseAccount } from '@/lib/saved-cases'
+import { SettingsProvider } from './Settings'
 
 // Sign-in with a wallet or an email (Reown AppKit, formerly WalletConnect). An email
 // sign-in gets a wallet from Reown, so every account is a wallet address: the site
@@ -152,7 +153,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider><SettingsProvider>{children}</SettingsProvider></AuthProvider>
       </QueryClientProvider>
     </WagmiProvider>
   )

@@ -1,4 +1,5 @@
 import { Chain, EntityType } from './types'
+import { CurrencyCode, fmtMoney } from './currency'
 
 export function nativeAsset(chain: Chain): string {
   return chain === 'btc' ? 'BTC' : chain === 'tron' ? 'TRX' : 'ETH'
@@ -28,11 +29,9 @@ export function fmtCompact(amount: number, asset: string): string {
   return `${amount.toLocaleString('en-US', { maximumFractionDigits: a >= 1 ? 2 : 4 })} ${name}`
 }
 
-export function fmtFiatShort(v: number): string {
-  if (v <= 0) return ''
-  return v >= 1000
-    ? `$${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(v)}`
-    : `$${v.toLocaleString('en-US', { maximumFractionDigits: v >= 10 ? 0 : 2 })}`
+/** Short value in the display currency: "$2.9K NZD", "€2.9K" */
+export function fmtFiatShort(v: number, currency: CurrencyCode): string {
+  return fmtMoney(v, currency)
 }
 
 export function fmtDateTime(ts: number): string {
@@ -117,7 +116,7 @@ export const RISKY_TYPES: EntityType[] = ['sanctioned', 'scam', 'hack', 'ransomw
 export const MAJOR_ASSETS = new Set(['ETH', 'BTC', 'TRX', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
 
 /**
- * The few assets worth naming in a short label: highest NZD value first, then
+ * The few assets worth naming in a short label: highest value first, then
  * well-known assets. Obscure and fake (`*`) tokens are only named when nothing
  * better moved; the rest are counted. Returns the picks and how many were left out.
  */
