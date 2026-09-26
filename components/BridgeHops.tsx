@@ -34,8 +34,8 @@ export default function BridgeHops({ sender, service, txids, txTimes = {}, added
     let stale = false
     setHops(null)
     setError(null)
-    // deBridge is looked up by transaction; the others by wallet
-    const q = new URLSearchParams({ service, ...(service === 'deBridge' ? { txids: txKey } : {}) })
+    // deBridge and Relay are looked up by the transactions into them; the others by wallet
+    const q = new URLSearchParams({ service, ...(service === 'deBridge' || service === 'Relay' ? { txids: txKey } : {}) })
     fetch(`/api/bridges/${encodeURIComponent(sender)}?${q}`)
       .then(async r => {
         const b = await r.json()

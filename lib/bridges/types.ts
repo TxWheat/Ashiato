@@ -67,7 +67,7 @@ export const toOurChain = (name: string): Chain | undefined => CHAIN_ALIASES[nam
 const CHAIN_DISPLAY: Record<string, string> = {
   ETH: 'Ethereum', TRX: 'Tron', TRON: 'Tron', BTC: 'Bitcoin', BSC: 'BNB Chain', POLYGON: 'Polygon', MATIC: 'Polygon',
   ARBITRUM: 'Arbitrum', ARB: 'Arbitrum', OPTIMISM: 'Optimism', OP: 'Optimism', BASE: 'Base', AVAX: 'Avalanche', SOL: 'Solana', SOLANA: 'Solana',
-  ZKSYNC: 'zkSync Era', LINEA: 'Linea', SCROLL: 'Scroll', BLAST: 'Blast', GNOSIS: 'Gnosis', MANTLE: 'Mantle', UNICHAIN: 'Unichain', ZORA: 'Zora', MODE: 'Mode', WORLD: 'World Chain', HYPEREVM: 'HyperEVM', ROBINHOOD: 'Robinhood Chain', PLASMA: 'Plasma', FANTOM: 'Fantom',
+  ZKSYNC: 'zkSync Era', LINEA: 'Linea', SCROLL: 'Scroll', BLAST: 'Blast', GNOSIS: 'Gnosis', MANTLE: 'Mantle', UNICHAIN: 'Unichain', ZORA: 'Zora', MODE: 'Mode', WORLD: 'World Chain', HYPEREVM: 'HyperEVM', ROBINHOOD: 'Robinhood Chain', HYPERLIQUID: 'Hyperliquid', MONAD: 'Monad', ABSTRACT: 'Abstract', PLASMA: 'Plasma', FANTOM: 'Fantom',
 }
 export const chainDisplay = (name: string) => CHAIN_DISPLAY[name.trim().toUpperCase()] ?? name
 
