@@ -1,8 +1,9 @@
 'use client'
 
+import { clsx } from 'clsx'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { NodeResizer, NodeToolbar, Panel, Position } from 'reactflow'
-import { Circle, MoveRight, RotateCw, Square, Trash2, Type } from 'lucide-react'
+import { NodeResizer, NodeToolbar, Panel, Position, useReactFlow } from 'reactflow'
+import { Circle, Maximize, Minus, MoveRight, Plus, RotateCw, Square, Trash2, Type } from 'lucide-react'
 import { Annotation } from '@/lib/annotations'
 
 // Drawing tools for the graph: boxes, circles, arrows and text notes (Breadcrumbs-style)
@@ -82,14 +83,25 @@ const TOOLS: [Annotation['kind'], string, React.ReactNode][] = [
   ['text', 'Text', <Type key="t" size={15} />],
 ]
 
-/** Bottom-left drawing tools, beside the zoom controls */
-export function AnnotationTools({ onAdd }: { onAdd: (kind: Annotation['kind']) => void }) {
+const toolButton = 'grid place-items-center w-[26px] h-[26px] text-muted hover:text-fg hover:bg-raised'
+
+/** Bottom-left toolbar: zoom and fit, then the drawing tools, in one column */
+export function GraphTools({ onAdd, fit }: { onAdd?: (kind: Annotation['kind']) => void; fit: { padding: number; maxZoom: number } }) {
+  const rf = useReactFlow()
+  const zoom: [string, React.ReactNode, () => void][] = [
+    ['Zoom in', <Plus key="i" size={15} />, () => rf.zoomIn({ duration: 150 })],
+    ['Zoom out', <Minus key="o" size={15} />, () => rf.zoomOut({ duration: 150 })],
+    ['Fit the graph to the screen', <Maximize key="f" size={13} />, () => rf.fitView({ ...fit, duration: 250 })],
+  ]
   return (
-    <Panel position="bottom-left" style={{ left: 48 }}>
-      <div className="flex flex-col bg-panel border border-line shadow-sm" role="toolbar" aria-label="Draw on the graph">
-        {TOOLS.map(([kind, label, icon]) => (
+    <Panel position="bottom-left">
+      <div className="flex flex-col bg-panel border border-line divide-y divide-line" role="toolbar" aria-label="Zoom and draw">
+        {zoom.map(([label, icon, run]) => (
+          <button key={label} onClick={run} title={label} aria-label={label} className={toolButton}>{icon}</button>
+        ))}
+        {onAdd && TOOLS.map(([kind, label, icon], i) => (
           <button key={kind} onClick={() => onAdd(kind)} title={`Add ${label.toLowerCase()}`} aria-label={`Add ${label.toLowerCase()}`}
-            className="grid place-items-center w-[26px] h-[26px] text-muted hover:text-fg hover:bg-raised border-b border-line last:border-b-0">
+            className={clsx(toolButton, i === 0 && 'border-t-2 !border-t-line')}>
             {icon}
           </button>
         ))}

@@ -6,7 +6,6 @@ import ReactFlow, {
   Edge,
   NodeChange,
   Background,
-  Controls,
   MiniMap,
   useNodesState,
   useEdgesState,
@@ -28,7 +27,7 @@ import LabelEdge from './OffsetEdge'
 import { CurrencyCode } from '@/lib/currency'
 import { useSettings } from './Settings'
 import { Annotation, ANNOTATION_SIZE, NOTE_PREFIX } from '@/lib/annotations'
-import { AnnotationContext, AnnotationNode, AnnotationTools } from './Annotations'
+import { AnnotationContext, AnnotationNode, GraphTools } from './Annotations'
 import { edgeValue, Pricing, valueAt } from '@/lib/prices'
 import { usePricing } from './Pricing'
 
@@ -673,8 +672,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} color="rgb(var(--line))" gap={22} size={1.1} />
-        <Controls showInteractive={false} />
-        {onAnnotations && <AnnotationTools onAdd={addAnnotation} />}
+        <GraphTools onAdd={onAnnotations ? addAnnotation : undefined} fit={FIT} />
         <MiniMap
           nodeColor={n => {
             const d = n.data as AddressNodeData
