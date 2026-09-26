@@ -184,7 +184,7 @@ function TracePageInner() {
   const [loadingMore, setLoadingMore] = useState(false)
 
   const [selection, setSelection] = useState<Selection>(null)
-  const [tab, setTab] = useState<AddressTab>('counterparties')
+  const [tab, setTab] = useState<AddressTab>('transactions')
   const [caseCollapsed, setCaseCollapsed] = useState(false)
 
   const [taint, setTaint] = useState<TaintCfg | null>(null)
@@ -392,7 +392,7 @@ function TracePageInner() {
         // Start with just the address; the user adds counterparties from the panel
         absorb(r, [r.address])
         setSelection({ kind: 'address', id: r.address })
-        setTab('counterparties')
+        setTab('transactions')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
