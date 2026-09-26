@@ -45,6 +45,7 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Cleaner auto-trace: ignores poisoning spam and dust, follows the main trail (side payments are noted, not branched), stops at busy service wallets and bridges, forward and back
 - [x] Node quick actions (click a node: Transactions / Relationships / Details, label, copy, explorer, remove) and a Smart-expand transactions view: one-row header, table fills the panel
 - [x] Simpler interface: taint analysis removed; the case panel starts hidden and no longer carries client payments
+- [x] Scam address lists (MyEtherWallet darklist; ScamSniffer phishing/drainer list, fetched at runtime because it is GPL) and a "Cross-chain bridge" label for 30 major bridge contracts (Stargate, Wormhole, Arbitrum, Optimism, Base, Polygon, each checked against DefiLlama's bridge adapters); traces stop at bridges
 - [ ] More bridges (OmniBridge/SWFT, LI.FI, Across)
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams

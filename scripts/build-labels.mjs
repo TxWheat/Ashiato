@@ -34,7 +34,7 @@ const outDir = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 
 
 // Higher = wins when an address has several labels
 const PRIORITY = [
-  'wallet', 'miner', 'service', 'defi', 'gambling', 'exchange', 'deposit',
+  'wallet', 'miner', 'service', 'defi', 'bridge', 'gambling', 'exchange', 'deposit',
   'coinjoin', 'mixer', 'darknet', 'scam', 'hack', 'ransomware', 'illicit', 'sanctioned',
 ]
 

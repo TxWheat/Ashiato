@@ -5,6 +5,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import { Chain, EntityLabel, EntityType } from './types'
 import { normaliseAddress } from './detect-chain'
+import { scamSnifferLabel } from './scam-lists'
 
 interface Source { title: string; url: string; license: string }
 
@@ -32,6 +33,31 @@ function load() {
   return cache
 }
 
+// Small lists kept as plain TSV (chain, address, name, type). They take precedence over a
+// generic dataset tag ("service", "wallet"), never over an exchange or sanctions label.
+const EXTRAS: { file: string; source: string; sourceUrl: string }[] = [
+  { file: 'bridges.tsv', source: 'Bridge contracts (checked against DefiLlama bridges-server)', sourceUrl: 'https://github.com/DefiLlama/bridges-server' },
+  { file: 'scam-mew.tsv', source: 'MyEtherWallet darklist (MIT)', sourceUrl: 'https://github.com/MyEtherWallet/ethereum-lists' },
+]
+const WEAK: EntityType[] = ['service', 'defi', 'wallet', 'unknown']
+
+let extras: Map<string, EntityLabel> | null = null
+function loadExtras() {
+  if (extras) return extras
+  extras = new Map()
+  for (const x of EXTRAS) {
+    const file = path.join(DIR, x.file)
+    if (!fs.existsSync(file)) continue
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      if (!line || line.startsWith('#')) continue
+      const [chain, address, name, type] = line.split('\t')
+      const key = `${chain}|${normaliseAddress(address, chain as Chain)}`
+      if (!extras.has(key)) extras.set(key, { name, type: type as EntityType, source: x.source, sourceUrl: x.sourceUrl })
+    }
+  }
+  return extras
+}
+
 // Protocol addresses that public datasets mislabel (e.g. the zero address tagged as
 // a scam because blacklisted tokens were minted from it) or miss entirely
 const SPECIAL: Record<string, EntityLabel> = {
@@ -42,7 +68,7 @@ const SPECIAL: Record<string, EntityLabel> = {
   '0x6b175474e89094c44da98b954eedeac495271d0f': { name: 'Maker: DAI contract', type: 'service', source: 'Token contract' },
   '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { name: 'WETH contract', type: 'service', source: 'Token contract' },
   // Cross-chain swap router (Bridgers docs: same address on ETH, BSC, Polygon and other EVM chains)
-  '0xc1d13492285eb664951e201bf7c80c7c6318a1b5': { name: 'Bridgers: cross-chain swap router', type: 'service', source: 'Bridgers documentation', sourceUrl: 'https://docs-bridgers-en.bridgers.xyz/' },
+  '0xc1d13492285eb664951e201bf7c80c7c6318a1b5': { name: 'Bridgers: cross-chain swap router', type: 'bridge', source: 'Bridgers documentation', sourceUrl: 'https://docs-bridgers-en.bridgers.xyz/' },
   '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { name: 'WBTC contract', type: 'service', source: 'Token contract' },
   // Mixers missing from the public datasets (from Etherscan public name tags)
   '0x6818809eefce719e480a7526d76bd3e561526b46': { name: 'Privacy Pools: Deposit', type: 'mixer', source: 'Etherscan public name tag', sourceUrl: 'https://etherscan.io/address/0x6818809eefce719e480a7526d76bd3e561526b46' },
@@ -60,6 +86,9 @@ export function getLabel(address: string, chain: Chain): EntityLabel | undefined
   if (chain === 'eth' && SPECIAL[addr]) return SPECIAL[addr]
   if (chain === 'tron' && SPECIAL_TRON[addr]) return SPECIAL_TRON[addr]
   const hit = load()[chain].get(addr)
+  if (hit && !WEAK.includes(hit.type)) return hit
+  const extra = loadExtras().get(`${chain}|${addr}`) ?? (chain === 'eth' ? scamSnifferLabel(addr) : undefined)
+  if (extra) return extra
   if (hit) return hit
   // BitMEX gives every customer a vanity deposit address starting with 3BMEX
   if (chain === 'btc' && addr.startsWith('3BMEX')) {

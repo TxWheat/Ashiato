@@ -4,6 +4,7 @@ import { rpcBatch, ethCall } from '../rpc'
 import { getLabel } from '../labels'
 import { lookupEnsNames } from '../ens'
 import { tokenAsset, internalTransfersByHash, receiptViaEtherscan, toUnits } from './eth'
+import { warmScamLists } from '../scam-lists'
 
 // One Ethereum transaction and every value transfer inside it: the ETH value,
 // ERC-20 Transfer events from the receipt, and internal ETH transfers.
@@ -45,6 +46,7 @@ function decodeSymbol(result: string | undefined): string | null {
 }
 
 export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
+  await warmScamLists()
   const txid = hash.toLowerCase()
   const warnings: string[] = []
   const [tx, rpcReceipt] = await rpcBatch<RpcTx & RpcReceipt>([

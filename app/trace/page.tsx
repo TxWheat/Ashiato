@@ -52,7 +52,7 @@ interface Snapshot {
 }
 
 /** Trails end at cash-out points and mixers */
-const STOP_AT: EntityType[] = ['exchange', 'deposit', 'mixer', 'coinjoin', 'sanctioned', 'defi']
+const STOP_AT: EntityType[] = ['exchange', 'deposit', 'mixer', 'coinjoin', 'sanctioned', 'defi', 'bridge']
 /** Older pages loaded per address while following funds */
 const MAX_EXTRA_PAGES = 5
 /** Trace ends that are not part of the drawn trail */
