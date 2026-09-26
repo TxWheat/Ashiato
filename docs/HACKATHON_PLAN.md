@@ -1,5 +1,7 @@
 # ETHGlobal Tokyo 2026 (25–27 Sep), Continuity track: plan of attack
 
+> Update: community labels ended up as free wallet-signed (EIP-712) messages rather than on-chain EAS attestations. See [ATTESTATIONS.md](ATTESTATIONS.md).
+
 **Pitch:** an open, low-cost alternative to TRM Labs and Chainalysis for scam victims and small investigators. Tracing is free. Labels are public on-chain attestations that anyone can read, dispute or build on. Reports can be verified by anyone. There are no accounts: your wallet is your identity, and no personal data is stored.
 
 **Existing before the event:** the whole CryptoTracer web app (renamed Ashiato at the event) (BTC/ETH/Tron tracing, adaptive follow-the-funds, client payment intake, taint, open label datasets), up to commit `b6ed119` (25 Sep 2026, 11:45 JST), tagged `pre-hackathon-baseline`.

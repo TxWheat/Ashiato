@@ -23,10 +23,9 @@ export interface VoteInput {
 const P = {
   label: parseAbiParameters(SCHEMAS.label),
   vote: parseAbiParameters(SCHEMAS.vote),
-  report: parseAbiParameters(SCHEMAS.report),
 }
 
-/** Problems with a label before it goes on-chain (empty = fine) */
+/** Problems with a label before it is signed (empty = fine) */
 export function checkLabel(l: LabelInput): string[] {
   const errs: string[] = []
   if (!COMMUNITY_CATEGORIES.includes(l.category)) errs.push('Pick a category')
@@ -60,21 +59,6 @@ export function decodeVote(data: `0x${string}`): VoteInput | null {
   try {
     const [trust, reason] = decodeAbiParameters(P.vote, data)
     return [-2, -1, 1, 2].includes(trust) ? { trust: trust as VoteInput['trust'], reason } : null
-  } catch {
-    return null
-  }
-}
-
-export interface ReportInput { reportHash: `0x${string}`; chain: Chain; subject: string; summary: string }
-
-export function encodeReport(r: ReportInput): `0x${string}` {
-  return encodeAbiParameters(P.report, [r.reportHash, r.chain, normaliseAddress(r.subject, r.chain), r.summary.trim().slice(0, 200)])
-}
-
-export function decodeReport(data: `0x${string}`): ReportInput | null {
-  try {
-    const [reportHash, chain, subject, summary] = decodeAbiParameters(P.report, data)
-    return { reportHash, chain: chain as Chain, subject, summary }
   } catch {
     return null
   }

@@ -5,7 +5,7 @@ import { clsx } from 'clsx'
 import { ExternalLink, ShieldCheck, ThumbsDown, ThumbsUp, Users, Undo2 } from 'lucide-react'
 import { Chain } from '@/lib/types'
 import { truncate } from '@/lib/detect-chain'
-import { ACCUSING, ATTEST_CHAIN, COMMUNITY_CATEGORIES, CommunityCategory, attestationUrl } from '@/lib/attest/config'
+import { ACCUSING, COMMUNITY_CATEGORIES, CommunityCategory } from '@/lib/attest/config'
 import { checkLabel, LabelInput, VoteInput } from '@/lib/attest/encode'
 import type { CommunityLabel, TrustStatus } from '@/lib/attest/trust'
 
@@ -36,7 +36,7 @@ interface Props {
   attester?: Attester
 }
 
-/** Labels investigators attested on-chain for this address, with trust votes */
+/** Labels investigators signed for this address, with trust votes */
 export default function CommunityLabels({ chain, address, attester }: Props) {
   const [labels, setLabels] = useState<CommunityLabel[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -46,10 +46,10 @@ export default function CommunityLabels({ chain, address, attester }: Props) {
   const shown = useRef('')
   shown.current = `${chain}|${address}`
 
-  const load = useCallback(async (fresh = false) => {
+  const load = useCallback(async () => {
     const key = `${chain}|${address}`
     try {
-      const res = await fetch(`/api/community/${chain}/${encodeURIComponent(address)}${fresh ? '?fresh=1' : ''}`)
+      const res = await fetch(`/api/community/${chain}/${encodeURIComponent(address)}`)
       const body = await res.json()
       if (shown.current !== key) return
       setLabels(body.labels ?? [])
@@ -67,17 +67,16 @@ export default function CommunityLabels({ chain, address, attester }: Props) {
     load()
   }, [load])
 
-  /** Runs a wallet action, then re-reads (the indexer can take a little while) */
+  /** Signs with the wallet, then re-reads */
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key)
     setError(null)
     try {
       await fn()
-      await load(true)
-      setTimeout(() => load(true), 8000)
+      await load()
       return true
     } catch (e) {
-      setError(e instanceof Error ? e.message.split('\n')[0] : 'The wallet action failed')
+      setError(e instanceof Error ? e.message.split('\n')[0] : 'Signing failed')
       return false
     } finally {
       setBusy(null)
@@ -88,10 +87,10 @@ export default function CommunityLabels({ chain, address, attester }: Props) {
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-faint">
         <Users size={11} /> Community labels
-        <span className="normal-case tracking-normal font-normal">on {ATTEST_CHAIN.name}</span>
+        <span className="normal-case tracking-normal font-normal">signed by investigators</span>
         {attester && !flagging && (
           <button onClick={() => setFlagging(true)} className="ml-auto h-6 px-2 text-[10px] font-medium normal-case tracking-normal bg-accent hover:bg-accent-hover text-accent-fg">
-            Flag on-chain
+            Add label
           </button>
         )}
       </div>
@@ -109,7 +108,7 @@ export default function CommunityLabels({ chain, address, attester }: Props) {
             <div className="flex items-center gap-2">
               <span className="px-1.5 py-0.5 bg-raised text-fg font-medium">{CATEGORY_NAME[l.category]}</span>
               <span className="text-fg font-medium truncate flex-1">{l.name}</span>
-              <a href={attestationUrl(l.uid)} target="_blank" rel="noopener noreferrer" title="View the attestation" aria-label="View the attestation" className="text-faint hover:text-fg"><ExternalLink size={11} /></a>
+              <a href={`/api/community?uid=${l.uid}`} target="_blank" rel="noopener noreferrer" title="The signed record: anyone can check the signature" aria-label="View the signed record" className="text-faint hover:text-fg"><ExternalLink size={11} /></a>
             </div>
             <div className="flex items-center gap-2" title={`${l.support} support · ${l.disputes} dispute${l.disputes === 1 ? '' : 's'}, weighted (verified ENS names count double; the creator counts as a strong yes)`}>
               <span className="text-faint">Trust</span>
@@ -138,7 +137,7 @@ export default function CommunityLabels({ chain, address, attester }: Props) {
             {attester && (mine ? (
               <button onClick={() => act(`revoke-${l.uid}`, () => attester.revoke(l.uid as `0x${string}`))} disabled={!!busy}
                 className="flex items-center gap-1 h-6 px-2 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">
-                <Undo2 size={10} /> {busy === `revoke-${l.uid}` ? 'Confirm in wallet…' : 'Withdraw my label'}
+                <Undo2 size={10} /> {busy === `revoke-${l.uid}` ? 'Sign in your wallet…' : 'Withdraw my label'}
               </button>
             ) : (
               <VoteRow current={myVote?.trust} busy={busy?.startsWith(`vote-${l.uid}`) ? busy : null} disabled={!!busy}
@@ -168,7 +167,7 @@ export default function CommunityLabels({ chain, address, attester }: Props) {
 function VoteRow({ current, busy, disabled, onVote }: { current?: number; busy: string | null; disabled: boolean; onVote: (v: VoteInput) => void }) {
   const [disputing, setDisputing] = useState<VoteInput['trust'] | null>(null)
   const [reason, setReason] = useState('')
-  if (busy) return <p className="text-[10px] text-muted">Confirm in your wallet…</p>
+  if (busy) return <p className="text-[10px] text-muted">Sign in your wallet…</p>
   if (disputing) {
     return (
       <div className="flex gap-1">
@@ -208,7 +207,7 @@ function FlagForm({ chain, address, busy, onSubmit, onCancel }: {
   const field = 'w-full h-7 px-2 text-[11px] bg-bg border border-line text-fg outline-none focus:border-accent'
   return (
     <div className="border border-accent/50 p-2.5 space-y-2 text-[11px]">
-      <div className="flex items-center gap-1.5 text-fg font-medium"><ShieldCheck size={12} /> Flag this address on-chain</div>
+      <div className="flex items-center gap-1.5 text-fg font-medium"><ShieldCheck size={12} /> Label this address</div>
       <select value={category} onChange={e => setCategory(e.target.value as CommunityCategory)} className={field} aria-label="Category">
         {COMMUNITY_CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_NAME[c]}</option>)}
       </select>
@@ -221,11 +220,11 @@ function FlagForm({ chain, address, busy, onSubmit, onCancel }: {
         <input type="range" min={10} max={100} step={10} value={confidence} onChange={e => setConfidence(+e.target.value)} className="flex-1" />
         <span className="font-mono text-fg w-9 text-right">{confidence}%</span>
       </label>
-      <p className="text-[10px] text-faint">Public and permanent on {ATTEST_CHAIN.name}, signed by your wallet. Never include a victim&apos;s personal details.</p>
+      <p className="text-[10px] text-faint">Free: your wallet signs it, no transaction or fee. Public and linked to your wallet address. Never include a victim&apos;s personal details.</p>
       <div className="flex gap-1.5">
         <button onClick={() => onSubmit(input)} disabled={busy || errs.length > 0} title={errs.join('. ')}
           className="h-7 px-3 text-[11px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
-          {busy ? 'Confirm in wallet…' : 'Sign & publish'}
+          {busy ? 'Sign in your wallet…' : 'Sign & publish'}
         </button>
         <button onClick={onCancel} className="h-7 px-3 text-[11px] text-faint hover:text-fg">Cancel</button>
       </div>

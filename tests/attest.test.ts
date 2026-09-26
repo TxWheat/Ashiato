@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { encodeAbiParameters, encodeEventTopics, parseAbiParameters } from 'viem'
-import { ATTEST_CHAIN, SCHEMA_UID, SCHEMAS, schemaUid } from '@/lib/attest/config'
+import { encodeAbiParameters, parseAbiParameters } from 'viem'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+import { SCHEMAS } from '@/lib/attest/config'
 import { checkLabel, decodeLabel, decodeVote, encodeLabel, encodeVote, LabelInput } from '@/lib/attest/encode'
 import { buildCommunityLabels, RawAttestation } from '@/lib/attest/trust'
-import { EAS_ABI, uidFromLogs } from '@/lib/attest/write'
+import { cleanSigned, Signed, typedData, uidOf, Unsigned, verifySigned } from '@/lib/attest/signed'
 
 const SCAMMER = '0x1111111111111111111111111111111111111111'
 const A = '0xaaaa000000000000000000000000000000000001'
@@ -19,12 +20,6 @@ const att = (id: number, attester: string, time: number, data: `0x${string}`, re
   ({ id: uid(id), attester, time, revoked, refUID, data })
 
 describe('schemas', () => {
-  it('has a stable UID per schema, different per schema', () => {
-    expect(SCHEMA_UID.label).toBe(schemaUid(SCHEMAS.label))
-    expect(new Set(Object.values(SCHEMA_UID)).size).toBe(3)
-    expect(SCHEMA_UID.label).toMatch(/^0x[0-9a-f]{64}$/)
-  })
-
   it('round-trips a label, normalising the address', () => {
     const d = decodeLabel(encodeLabel(label({ subject: SCAMMER.toUpperCase().replace('0X', '0x') })))
     expect(d).toEqual(label())
@@ -93,24 +88,44 @@ describe('trust', () => {
   })
 })
 
-describe('write helpers', () => {
-  it('reads the new UID from the Attested event', () => {
-    const newUid = uid(0xbeef)
-    const topics = encodeEventTopics({ abi: EAS_ABI, eventName: 'Attested', args: { recipient: SCAMMER, attester: A, schemaUID: SCHEMA_UID.label } }) as `0x${string}`[]
-    const data = encodeAbiParameters(parseAbiParameters('bytes32'), [newUid])
-    expect(uidFromLogs([{ address: ATTEST_CHAIN.eas, data, topics }])).toBe(newUid)
-    expect(uidFromLogs([{ address: A, data, topics }])).toBeUndefined()
-  })
-})
+describe('signed labels', () => {
+  const wallet = privateKeyToAccount(generatePrivateKey())
+  const me = wallet.address.toLowerCase() as `0x${string}`
+  const now = 1_800_000_000
+  const sign = async (u: Unsigned) => ({ ...u, signature: await wallet.signTypedData(typedData(u) as Parameters<typeof wallet.signTypedData>[0]) }) as Signed
+  const labelMsg: Unsigned = { kind: 'label', message: { ...label(), attester: me, time: now } }
 
-describe('wallet network ids', () => {
-  it('reads numbers, hex and CAIP-2 text (Reown email wallets)', async () => {
-    const { parseChainId } = await import('@/lib/attest/write')
-    expect(parseChainId('eip155:1')).toBe(1)
-    expect(parseChainId('eip155:11155111')).toBe(11155111)
-    expect(parseChainId('0xaa36a7')).toBe(11155111)
-    expect(parseChainId(11155111)).toBe(11155111)
-    expect(parseChainId(1n)).toBe(1)
-    expect(parseChainId('nonsense')).toBeUndefined()
+  it('accepts a label signed by its attester, with a stable uid', async () => {
+    const s = await sign(labelMsg)
+    const clean = cleanSigned(JSON.parse(JSON.stringify(s)), now)
+    expect(typeof clean).not.toBe('string')
+    expect(await verifySigned(clean as Signed)).toBe(true)
+    expect(uidOf(clean as Signed)).toBe(uidOf(labelMsg))
+    expect(uidOf(labelMsg)).toMatch(/^0x[0-9a-f]{64}$/)
+  })
+
+  it('rejects a tampered message or another wallet', async () => {
+    const s = await sign(labelMsg)
+    const tampered = { ...s, message: { ...s.message, category: 'exchange' } } as Signed
+    expect(await verifySigned(tampered)).toBe(false)
+    const other = { ...s, message: { ...s.message, attester: A } } as Signed
+    expect(await verifySigned(other)).toBe(false)
+  })
+
+  it('refuses stale times, bad addresses and missing evidence', async () => {
+    const s = await sign(labelMsg)
+    expect(cleanSigned(s, now + 3600)).toMatch(/too old/)
+    expect(cleanSigned({ ...s, message: { ...s.message, subject: 'nope' } }, now)).toMatch(/Not a valid/)
+    expect(cleanSigned({ ...s, message: { ...s.message, evidence: '' } }, now)).toMatch(/needs evidence/)
+    expect(cleanSigned({ ...s, kind: 'gossip' }, now)).toBe('Bad request')
+  })
+
+  it('checks votes and withdrawals', async () => {
+    const vote = await sign({ kind: 'vote', message: { attester: me, time: now, label: uid(1), trust: 2, reason: '' } })
+    expect(await verifySigned(cleanSigned(vote, now) as Signed)).toBe(true)
+    expect(cleanSigned({ ...vote, message: { ...vote.message, trust: -1 } }, now)).toMatch(/why you dispute/)
+    expect(cleanSigned({ ...vote, message: { ...vote.message, label: 'x' } }, now)).toBe('Bad request')
+    const revoke = await sign({ kind: 'revoke', message: { attester: me, time: now, uid: uid(1) } })
+    expect(await verifySigned(cleanSigned(revoke, now) as Signed)).toBe(true)
   })
 })

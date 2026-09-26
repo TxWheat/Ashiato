@@ -33,7 +33,7 @@ Log (updated as work lands):
 | Change | Written by | Reviewed / merged by |
 |---|---|---|
 | Rename to Ashiato; repo links; HACKATHON.md; this file | Claude Code (drafted) | Owner |
-| EAS community labels: schemas, encode/decode, trust scoring, indexer reads, API route, Inspector panel, schema registration script, tests | Claude Code (drafted) | Owner |
+| Community labels: EAS version first, then gasless EIP-712 signed labels (owner's call to drop gas): validation, signature checks, Supabase store, API routes, trust scoring, Inspector panel, tests | Claude Code (drafted) | Owner |
 | Fixes from the owner's live testing (poisoning, clustering, graph lines, node removal); Tronscan labels | Claude Code (drafted), bugs found and verified by owner | Owner |
 | Bridgers cross-chain hops (owner researched the Bridgers API and chose it); email-wallet network fix; app icon | Claude Code (drafted) | Owner |
 | DEX swap detection and follow-through; graph layout/zoom fixes from the owner's testing | Claude Code (drafted) | Owner |

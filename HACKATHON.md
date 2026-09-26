@@ -34,8 +34,7 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 
 - [x] Renamed the project to **Ashiato** (足跡, "footprints")
 - [x] Accounts: sign in with a wallet or email (Reown AppKit + Sign-In with Ethereum); cases saved to your account (Supabase, keyed by wallet address, no emails stored); My cases page
-- [x] Community labels signed with the connected wallet (switches to Sepolia)
-- [x] On-chain community labels as EAS attestations (Sepolia): schemas, encoding, reading, trust scoring, Inspector panel ([docs/ATTESTATIONS.md](docs/ATTESTATIONS.md)); signing goes live once wallet sign-in lands
+- [x] Community labels and votes signed with the connected wallet: EIP-712 signatures, free (no gas, no network switch), checked by the server and publicly re-verifiable; trust scoring and Inspector panel ([docs/ATTESTATIONS.md](docs/ATTESTATIONS.md)). Started as EAS attestations on Sepolia; moved off-chain because paying gas to flag a scammer puts people off
 - [x] Trust voting on labels, with reputation weighting (ENS)
 - [x] Tron address labels from Tronscan tags (exchange hot wallets, red-flagged scams)
 - [x] Fixes from live testing: fake-ETH address poisoning, runaway deposit-reuse clusters, duplicate traced lines
