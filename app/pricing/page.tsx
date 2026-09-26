@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { Check, ExternalLink, ShieldAlert } from 'lucide-react'
 import { erc20Abi, formatEther, parseUnits } from 'viem'
-import { useAccount, useConfig, useSwitchChain, useWriteContract } from 'wagmi'
-import { estimateFeesPerGas, getBalance, readContract, waitForTransactionReceipt } from 'wagmi/actions'
+import { useAccount, useConfig, useSwitchChain } from 'wagmi'
+import { estimateFeesPerGas, getBalance, getWalletClient, readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import SiteNav from '@/components/SiteNav'
 import { useAuth } from '@/components/Providers'
+import { walletChainId } from '@/lib/wallet'
 import { PAY_CHAINS, PayChain, PRO_PLANS, TEST_USDC_FAUCET, USDC_DECIMALS } from '@/lib/billing/plans'
 
 interface Billing {
@@ -179,7 +180,6 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
   const [working, setWorking] = useState(false)
   const [hash, setHash] = useState('')
   const { switchChainAsync } = useSwitchChain()
-  const { writeContractAsync } = useWriteContract()
   const config = useConfig()
   const { signIn, openWallet } = useAuth()
   const net = PAY_CHAINS[chain]
@@ -207,7 +207,9 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
     setWorking(true)
     setStatus(null)
     try {
-      if (chainId !== net.id) await switchChainAsync({ chainId: net.id })
+      const walletClient = await getWalletClient(config)
+      if ((await walletChainId(walletClient)) !== net.id) await switchChainAsync({ chainId: net.id })
+      if ((await walletChainId(walletClient)) !== net.id) throw new Error(`Switch your wallet to ${net.name} and try again`)
       // Say plainly what's missing, rather than the wallet's generic "unknown error"
       const amount = parseUnits(String(price.usdc), USDC_DECIMALS)
       const [usdcHeld, ethHeld] = await Promise.all([
@@ -224,9 +226,10 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
         throw new Error(`The network fee on ${net.name} is about ${eth(needed)} ${test}ETH, and this wallet has ${eth(ethHeld)} ${test}ETH. Add a little ${net.name} ETH${chain === 'eth' ? ', or pay on Base instead (fees under 1¢)' : ''}`)
       }
       setStatus({ text: 'Confirm the payment in your wallet…' })
-      const tx = await writeContractAsync({
+      // Network checked above; chain: null skips viem's own check, which can't read email wallets' network ids
+      const tx = await walletClient.writeContract({
         address: net.usdc, abi: erc20Abi, functionName: 'transfer',
-        args: [payTo as `0x${string}`, amount], chainId: net.id,
+        args: [payTo as `0x${string}`, amount], account: walletClient.account, chain: null,
       })
       setHash(tx)
       setStatus({ text: 'Sent. Waiting for the network…' })
