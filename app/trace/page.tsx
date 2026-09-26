@@ -313,6 +313,8 @@ function TracePageInner() {
       seen.add(k)
       return true
     })
+      // Pages don't arrive in date order (Tron merges two lists; saved cases reload on top), so sort
+      .sort((a, b) => (b.timestamp || Infinity) - (a.timestamp || Infinity))
     pagesRef.current = new Map(pagesRef.current).set(result.address, { rawTxs, nextCursor: result.nextCursor, warnings: result.warnings })
     setPages(pagesRef.current)
     if (add.length) setVisible(prev => new Set([...prev, ...add]))
