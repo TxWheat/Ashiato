@@ -584,6 +584,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
+        // A click with a tiny hand movement is a click, not a drag
+        nodeDragThreshold={5}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={(_, node, dragged) => {
           for (const n of dragged?.length ? dragged : [node]) pinned.current.set(n.id, n.position)
