@@ -43,3 +43,15 @@ describe('USDC payments', () => {
     expect(usdcPaid([], PAY_CHAINS.base.usdc, ME, US)).toBe(0)
   })
 })
+
+describe('wallet network ids', () => {
+  it('reads numbers, hex and CAIP-2 text (Reown email wallets)', async () => {
+    const { parseChainId } = await import('@/lib/wallet')
+    expect(parseChainId('eip155:1')).toBe(1)
+    expect(parseChainId('eip155:8453')).toBe(8453)
+    expect(parseChainId('0x2105')).toBe(8453)
+    expect(parseChainId(8453)).toBe(8453)
+    expect(parseChainId(1n)).toBe(1)
+    expect(parseChainId('nonsense')).toBeUndefined()
+  })
+})
