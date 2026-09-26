@@ -32,8 +32,10 @@ export interface CaseFile {
   followedPairs: string[]
   traced?: TracedFlow[]
   traceEnds?: TraceEnd[]
-  /** Node positions on the canvas, so a reopened chart keeps its layout */
+  /** Positions of the addresses the user dragged (everything else is laid out automatically) */
   positions?: Record<string, { x: number; y: number }>
+  /** Addresses the user dragged */
+  moved?: string[]
   /** Transactions drawn as their own lines */
   itemizedIds?: string[]
   /** Links (address pairs) the user hid from the graph */

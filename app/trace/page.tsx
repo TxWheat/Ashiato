@@ -246,6 +246,8 @@ function TraceWorkspace() {
   const restoring = useRef<string | null>(null)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
+  /** Addresses the user dragged; everything else is laid out automatically */
+  const movedRef = useRef(new Set<string>())
   // Right panel width: drag to resize, or expand for a wide table view (remembered)
   const [panelW, setPanelW] = useState(400)
   const [panelExpanded, setPanelExpanded] = useState(false)
@@ -434,6 +436,7 @@ function TraceWorkspace() {
   const resetState = () => {
     newCase()
     positionsRef.current.clear()
+    movedRef.current.clear()
     savedOrigin.current = null
     setSaved(null)
     setDirty(false)
@@ -1180,7 +1183,9 @@ function TraceWorkspace() {
           followedPairs: [...followedPairs],
           traced,
           traceEnds,
-          positions: Object.fromEntries([...positionsRef.current].filter(([a]) => visible.has(a) || hubs.has(a.replace(/^tx:/, '')))),
+          // Only where the user moved things: the rest is laid out fresh when the case opens
+          positions: Object.fromEntries([...positionsRef.current].filter(([a]) => movedRef.current.has(a) && (visible.has(a) || hubs.has(a.replace(/^tx:/, ''))))),
+          moved: [...movedRef.current],
           itemizedIds: [...itemizedIds],
           hiddenLinks: [...hiddenLinks],
           clientPayments: payments,
@@ -1209,7 +1214,12 @@ function TraceWorkspace() {
     setLastSavedAt(from ? Date.parse(c.savedAt) : null)
     setDirty(false)
     positionsRef.current.clear()
-    for (const [id, pos] of Object.entries(c.positions ?? {})) positionsRef.current.set(id, pos)
+    movedRef.current.clear()
+    // Cases saved before tidy layouts kept every position: those are laid out afresh
+    for (const id of c.moved ?? []) {
+      const pos = c.positions?.[id]
+      if (pos) { positionsRef.current.set(id, pos); movedRef.current.add(id) }
+    }
     setKnownNow(new Map(c.known.map(n => [n.address, n])))
     // Older cases put peeled-off payments on the chart; take those off unless they're on the trail
     const trail = new Set((c.traced ?? []).flatMap(f => [f.from, f.to]))
@@ -1686,6 +1696,7 @@ function TraceWorkspace() {
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}
               positions={positionsRef.current}
+              moved={movedRef.current}
               onLayoutChange={() => setLayoutRev(v => v + 1)}
               onReady={api => (graphApi.current = api)}
             />
