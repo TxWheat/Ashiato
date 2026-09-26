@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createPublicClient, http } from 'viem'
-import { mainnet, sepolia } from 'viem/chains'
+import { base, baseSepolia, mainnet, sepolia } from 'viem/chains'
 import { parseSiweMessage } from 'viem/siwe'
 import { createSession, nonceValid, sessionCookie } from '@/lib/auth/session'
 
@@ -8,7 +8,9 @@ import { createSession, nonceValid, sessionCookie } from '@/lib/auth/session'
 // accepts smart-contract wallets (EIP-1271/6492), which is what email sign-ins create.
 const RPC: Record<number, string | undefined> = {
   1: process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com',
+  8453: process.env.BASE_RPC_URL || 'https://base-rpc.publicnode.com',
   11155111: process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com',
+  84532: process.env.BASE_SEPOLIA_RPC_URL || 'https://base-sepolia-rpc.publicnode.com',
 }
 
 export async function POST(req: NextRequest) {
@@ -28,7 +30,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This sign-in message is not for this site' }, { status: 400 })
   }
   if (!nonceValid(fields.nonce)) return NextResponse.json({ error: 'Sign-in expired. Try again.' }, { status: 400 })
-  const chain = fields.chainId === sepolia.id ? sepolia : mainnet
+  // Smart-contract wallets are checked on the network they signed on
+  const chain = [base, sepolia, baseSepolia].find(c => c.id === fields.chainId) ?? mainnet
   const client = createPublicClient({ chain, transport: http(RPC[chain.id]) })
   const ok = await client.verifySiweMessage({ message, signature, domain: host, nonce: fields.nonce }).catch(() => false)
   if (!ok) return NextResponse.json({ error: 'The signature does not match this wallet' }, { status: 401 })

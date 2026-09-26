@@ -7,7 +7,7 @@ import { WagmiProvider, createConfig, http, useAccount, useDisconnect, useSignMe
 import { base, baseSepolia, mainnet, sepolia } from 'wagmi/chains'
 import { createAppKit } from '@reown/appkit/react'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
-import { base as akBase, baseSepolia as akBaseSepolia, mainnet as akMainnet, sepolia as akSepolia } from '@reown/appkit/networks'
+import { base as akBase, baseSepolia as akBaseSepolia, mainnet as akMainnet, sepolia as akSepolia, type AppKitNetwork } from '@reown/appkit/networks'
 import { createSiweMessage } from 'viem/siwe'
 import { setCaseAccount } from '@/lib/saved-cases'
 import { SettingsProvider } from './Settings'
@@ -22,11 +22,14 @@ export const walletSignInEnabled = !!projectId
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://ashiato-six.vercel.app'
 
-const adapter = projectId ? new WagmiAdapter({ networks: [akMainnet, akBase, akSepolia, akBaseSepolia], projectId, ssr: true }) : null
+// Real networks only, so a wallet is never nudged onto a test network; payments test mode adds the test ones
+const testnets = process.env.NEXT_PUBLIC_PAYMENTS_TESTNET === '1'
+const networks: [AppKitNetwork, ...AppKitNetwork[]] = testnets ? [akMainnet, akBase, akBaseSepolia, akSepolia] : [akMainnet, akBase]
+const adapter = projectId ? new WagmiAdapter({ networks, projectId, ssr: true }) : null
 const modal = adapter && projectId
   ? createAppKit({
       adapters: [adapter],
-      networks: [akMainnet, akBase, akSepolia, akBaseSepolia],
+      networks,
       defaultNetwork: akMainnet,
       projectId,
       metadata: { name: 'Ashiato', description: 'Open, community-verified crypto tracing', url: siteUrl, icons: [`${siteUrl}/icon-512.png`] },
@@ -37,7 +40,9 @@ const modal = adapter && projectId
   : null
 
 // Without a project ID the app still works (signed out); wagmi just has nothing to connect
-const fallbackConfig = createConfig({ chains: [mainnet, base, sepolia, baseSepolia], transports: { [mainnet.id]: http(), [base.id]: http(), [sepolia.id]: http(), [baseSepolia.id]: http() }, ssr: true })
+const fallbackConfig = testnets
+  ? createConfig({ chains: [mainnet, base, baseSepolia, sepolia], transports: { [mainnet.id]: http(), [base.id]: http(), [baseSepolia.id]: http(), [sepolia.id]: http() }, ssr: true })
+  : createConfig({ chains: [mainnet, base], transports: { [mainnet.id]: http(), [base.id]: http() }, ssr: true })
 const wagmiConfig = adapter?.wagmiConfig ?? fallbackConfig
 const queryClient = new QueryClient()
 
