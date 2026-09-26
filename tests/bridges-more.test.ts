@@ -3,7 +3,7 @@ vi.mock('server-only', () => ({}))
 import { hopFromAcross } from '@/lib/bridges/across'
 import { hopFromRelay } from '@/lib/bridges/relay'
 import { hopFromDeBridge } from '@/lib/bridges/debridge'
-import { BRIDGE_NAME, lookupService, statusOk } from '@/lib/bridges/types'
+import { BRIDGE_NAME, lookupService, statusOk, statusText } from '@/lib/bridges/types'
 import { units } from '@/lib/bridges/util'
 
 const H = (c: string) => `0x${c.repeat(64)}`
@@ -26,6 +26,32 @@ describe('Across deposits', () => {
   })
   it('shows no amount for a token whose decimals are unknown', () => {
     expect(hopFromAcross({ ...d, outputToken: '0x9999999999999999999999999999999999999999' })).toMatchObject({ toAmount: 0, toAsset: '0x9999…' })
+  })
+})
+
+describe('Across deposits (real API response, 26 Sep 2026)', () => {
+  const filled = {
+    id: 23782332, relayHash: '0xd2358bd6acb5a7f4add8049092613688bbb00d97535d700b4a1df3396ef536a2',
+    depositId: '80717180384455562337988542929525184276410883053225890329314745146466711328707', originChainId: 42161, destinationChainId: 8453,
+    depositor: '0x2890c52D0D49537C75ECc7d4720F861e89b6D371', recipient: '0xfB1B9D621011b47C18CC425bfbC677C28a337Bc0',
+    inputToken: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', inputAmount: '10000000', outputToken: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', outputAmount: '10000000',
+    depositTxHash: '0xcdf28c3f71d8826260654123cd85e5d7388ea7fec0a8513feefd68941075104d', depositBlockTimestamp: '2026-09-26T03:50:06.000Z', status: 'filled',
+    fillTx: '0x4dbccfb0f343166a9209543b3ec0aafe4e74dbce41b1fc33d587392a94378f1d', depositTxnRef: '0xcdf28c3f71d8826260654123cd85e5d7388ea7fec0a8513feefd68941075104d',
+    fillTxnRef: '0x4dbccfb0f343166a9209543b3ec0aafe4e74dbce41b1fc33d587392a94378f1d',
+  }
+  it('reads a filled Arbitrum → Base USDC transfer', () => {
+    expect(hopFromAcross(filled)).toMatchObject({
+      fromChainName: 'ARBITRUM', toChainName: 'BASE', fromAmount: 10, fromAsset: 'USDC', toAmount: 10, toAsset: 'USDC',
+      toAddress: '0xfB1B9D621011b47C18CC425bfbC677C28a337Bc0', toHash: filled.fillTx, status: 'filled',
+      orderId: `across:42161:${filled.depositId}`,
+    })
+  })
+  it('reads an unfilled one (no payout yet)', () => {
+    const h = hopFromAcross({ ...filled, originChainId: 4663, destinationChainId: 1, inputToken: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', inputAmount: '2200000000000000',
+      outputToken: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', outputAmount: '2190558810991781', status: 'unfilled', fillTx: null, fillTxnRef: null })
+    expect(h).toMatchObject({ fromChainName: 'ROBINHOOD', toChainName: 'ETH', toAsset: 'ETH', toHash: undefined, fromAmount: 0 })
+    expect(h?.toAmount).toBeCloseTo(0.00219056)
+    expect(statusText('unfilled')).toBe('Not filled yet')
   })
 })
 
