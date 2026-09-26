@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createPublicClient, http } from 'viem'
-import { mainnet } from 'viem/chains'
+import { createPublicClient, http, recoverTypedDataAddress } from 'viem'
+import { mainnet, sepolia } from 'viem/chains'
 import { currentUser } from '@/lib/auth/session'
 import { StoreNotConfigured } from '@/lib/supabase'
 import { cleanSigned, Signed, typedData, uidOf, verifySigned } from '@/lib/attest/signed'
@@ -11,12 +11,25 @@ import { countSince, getSigned, insertSigned, revokeSigned } from '@/lib/attest/
 // anyone can check it themselves.
 
 const DAILY_LIMIT = 200
-const mainnetClient = createPublicClient({ chain: mainnet, transport: http(process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com') })
+// The networks the app's wallets connect to. A smart-contract wallet's signature is only
+// valid on the network it signed on, so each is tried
+const clients = [
+  createPublicClient({ chain: mainnet, transport: http(process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com') }),
+  createPublicClient({ chain: sepolia, transport: http(process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com') }),
+]
 
 /** Ordinary wallets are checked offline; smart-contract wallets (email sign-ins) over RPC */
 async function signedBy(s: Signed): Promise<boolean> {
   if (await verifySigned(s)) return true
-  return mainnetClient.verifyTypedData({ address: s.message.attester, signature: s.signature, ...typedData(s) } as unknown as Parameters<typeof mainnetClient.verifyTypedData>[0]).catch(() => false)
+  const args = { address: s.message.attester, signature: s.signature, ...typedData(s) } as unknown as Parameters<(typeof clients)[number]['verifyTypedData']>[0]
+  const results = await Promise.all(clients.map(c => c.verifyTypedData(args).catch(() => false)))
+  return results.some(Boolean)
+}
+
+/** Who an ordinary-wallet signature came from, to explain a mismatch */
+async function recovered(s: Signed): Promise<string | null> {
+  return recoverTypedDataAddress({ signature: s.signature, ...typedData(s) } as Parameters<typeof recoverTypedDataAddress>[0])
+    .then(a => a.toLowerCase()).catch(() => null)
 }
 
 const fail = (error: string, status: number) => NextResponse.json({ error }, { status })
@@ -27,7 +40,13 @@ export async function POST(req: NextRequest) {
   const s = cleanSigned(await req.json().catch(() => null))
   if (typeof s === 'string') return fail(s, 400)
   if (s.message.attester !== user) return fail('Sign with the wallet you signed in with', 403)
-  if (!(await signedBy(s))) return fail('The signature does not match your wallet', 401)
+  if (!(await signedBy(s))) {
+    const other = await recovered(s)
+    console.warn('community: signature check failed', { kind: s.kind, attester: s.message.attester, recovered: other, sigBytes: (s.signature.length - 2) / 2 })
+    return fail(other && other !== user
+      ? `Your wallet signed as ${other}, but you're signed in as ${user}. Sign out and in again with the same wallet.`
+      : 'The signature does not match your wallet', 401)
+  }
 
   try {
     if (s.kind === 'revoke') {
