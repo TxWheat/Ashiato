@@ -27,8 +27,10 @@ import { NodeAction, NodeMenuContext } from './NodeMenu'
 import LabelEdge from './OffsetEdge'
 import { CurrencyCode } from '@/lib/currency'
 import { useSettings } from './Settings'
+import { Annotation, ANNOTATION_SIZE, NOTE_PREFIX } from '@/lib/annotations'
+import { AnnotationContext, AnnotationNode, AnnotationTools } from './Annotations'
 
-const nodeTypes = { addressNode: AddressNode, tx: TxNode }
+const nodeTypes = { addressNode: AddressNode, tx: TxNode, annotation: AnnotationNode }
 const edgeTypes = { label: LabelEdge }
 
 const NODE_W = 196
@@ -251,6 +253,9 @@ interface Props {
   quietKey?: number
   /** Quick actions shown around a clicked node; without this, clicks go straight to onNodeClick */
   onNodeAction?: (address: string, action: NodeAction) => void
+  /** Shapes and text drawn on the graph (saved with the case) */
+  annotations?: Annotation[]
+  onAnnotations?: (next: Annotation[]) => void
 }
 
 export interface BridgeLine { id: string; from: string; to: string; line1: string; line2: string }
@@ -268,7 +273,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, annotations = [], onAnnotations }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const { currency } = useSettings()
   const menu = useMemo(() => onNodeAction
@@ -510,7 +515,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     // Only new nodes need the automatic layout; a selection or highlight change skips dagre
     const needsLayout = rawNodes.some(n => !pinned.current.has(n.id))
     const laid = placeNodes(needsLayout ? layoutGraph(rawNodes, rawEdges) : rawNodes, rawEdges, pinned.current)
-    setNodes(laid)
+    // Annotations keep their own positions and are never laid out
+    setNodes(prev => [...laid, ...prev.filter(n => n.id.startsWith(NOTE_PREFIX))])
     setEdges(rawEdges)
     // Refit on first draw. Otherwise keep the user's zoom: removing nodes never moves the
     // view, and added nodes only pan into view when they land off-screen.
@@ -549,12 +555,40 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     (changes: NodeChange[]) => {
       for (const c of changes) {
         // Remember where the user put a node; the final drag event can omit the position
-        if (c.type === 'position' && c.position) pinned.current.set(c.id, c.position)
+        if (c.type === 'position' && c.position && !c.id.startsWith(NOTE_PREFIX)) pinned.current.set(c.id, c.position)
       }
-      onNodesChange(changes)
+      // The Delete key removes a selected annotation; addresses are removed from the panel instead
+      const removed = changes.flatMap(c => (c.type === 'remove' && c.id.startsWith(NOTE_PREFIX) ? [c.id.slice(NOTE_PREFIX.length)] : []))
+      if (removed.length) onAnnotations?.(annotationsRef.current.filter(a => !removed.includes(a.id)))
+      onNodesChange(changes.filter(c => c.type !== 'remove' || c.id.startsWith(NOTE_PREFIX)))
     },
-    [onNodesChange]
+    [onNodesChange, onAnnotations]
   )
+
+  // Annotations as graph nodes: shapes behind the addresses, text above them
+  const annotationsRef = useRef(annotations)
+  annotationsRef.current = annotations
+  useEffect(() => {
+    const notes: Node[] = annotations.map(a => ({
+      id: `${NOTE_PREFIX}${a.id}`, type: 'annotation', position: { x: a.x, y: a.y }, data: a,
+      style: { width: a.w, height: a.h }, zIndex: a.kind === 'text' ? 5 : -1,
+    }))
+    setNodes(prev => [...prev.filter(n => !n.id.startsWith(NOTE_PREFIX)), ...notes.map(n => ({ ...n, selected: prev.find(p => p.id === n.id)?.selected }))])
+  }, [annotations, setNodes])
+  const noteApi = useMemo(() => ({
+    update: (id: string, patch: Partial<Annotation>) => onAnnotations?.(annotationsRef.current.map(a => (a.id === id ? { ...a, ...patch } : a))),
+    remove: (id: string) => onAnnotations?.(annotationsRef.current.filter(a => a.id !== id)),
+  }), [onAnnotations])
+  const addAnnotation = (kind: Annotation['kind']) => {
+    const inst = rf.current
+    const el = document.querySelector('.react-flow')
+    if (!inst || !el || !onAnnotations) return
+    const { w, h } = ANNOTATION_SIZE[kind]
+    const c = inst.screenToFlowPosition({ x: el.getBoundingClientRect().left + el.clientWidth / 2, y: el.getBoundingClientRect().top + el.clientHeight / 2 })
+    // Each new one steps down-right a little, so several added in a row don't stack exactly
+    const step = (annotationsRef.current.length % 6) * 28
+    onAnnotations([...annotationsRef.current, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind, x: c.x - w / 2 + step, y: c.y - h / 2 + step, w, h }])
+  }
 
   const exportPng = useCallback(async () => {
     const inst = rf.current
@@ -578,6 +612,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
   return (
     <NodeMenuContext.Provider value={menu}>
+    <AnnotationContext.Provider value={noteApi}>
     <div className="w-full h-full">
       <ArrowDefs />
       <ReactFlow
@@ -588,10 +623,14 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         nodeDragThreshold={5}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={(_, node, dragged) => {
-          for (const n of dragged?.length ? dragged : [node]) pinned.current.set(n.id, n.position)
+          const moved = dragged?.length ? dragged : [node]
+          for (const n of moved) if (!n.id.startsWith(NOTE_PREFIX)) pinned.current.set(n.id, n.position)
+          const notes = new Map(moved.filter(n => n.id.startsWith(NOTE_PREFIX)).map(n => [n.id.slice(NOTE_PREFIX.length), n.position]))
+          if (notes.size) onAnnotations?.(annotationsRef.current.map(a => (notes.has(a.id) ? { ...a, ...notes.get(a.id)! } : a)))
           onLayoutChange?.()
         }}
         onNodeClick={(_, n) => {
+          if (n.type === 'annotation') return
           if (n.type === 'tx') return onHubClick((n.data as TxHubData).txid)
           if (onNodeAction) setMenuFor(v => (v === n.id ? null : n.id))
           onNodeClick(n.id)
@@ -620,9 +659,11 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       >
         <Background variant={BackgroundVariant.Dots} color="rgb(var(--line))" gap={22} size={1.1} />
         <Controls showInteractive={false} />
+        {onAnnotations && <AnnotationTools onAdd={addAnnotation} />}
         <MiniMap
           nodeColor={n => {
             const d = n.data as AddressNodeData
+            if (n.type === 'annotation') return 'transparent'
             if (n.type === 'tx') return 'rgb(var(--faint))'
             return d.isOrigin ? 'rgb(var(--accent))' : ENTITY_STYLE[d.label?.type ?? 'unknown'].hex
           }}
@@ -631,6 +672,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         />
       </ReactFlow>
     </div>
+    </AnnotationContext.Provider>
     </NodeMenuContext.Provider>
   )
 }

@@ -40,6 +40,7 @@ import BridgeHops from '@/components/BridgeHops'
 import { BRIDGE_NAME, CrossChainHop, chainDisplay, lookupService } from '@/lib/bridges/types'
 import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { NodeAction } from '@/components/NodeMenu'
+import type { Annotation } from '@/lib/annotations'
 import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
 const TraceGraph = dynamic(() => import('@/components/TraceGraph'), { ssr: false })
@@ -223,6 +224,7 @@ function TraceWorkspace() {
   const [hiddenLinks, setHiddenLinks] = useState<Set<string>>(new Set())
   /** Cross-chain swaps put on the graph (a service's order records link the two chains) */
   const [bridgeHops, setBridgeHops] = useState<(CrossChainHop & { via: string; sender?: string; bridge?: string })[]>([])
+  const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [traced, setTraced] = useState<TracedFlow[]>([])
   const [traceEnds, setTraceEnds] = useState<TraceEnd[]>([])
   const [history, setHistory] = useState<Snapshot[]>([])
@@ -433,6 +435,7 @@ function TraceWorkspace() {
     setHiddenLinks(new Set())
     setPayments([])
     setBridgeHops([])
+    setAnnotations([])
     setTraced([])
     setTraceEnds([])
     setHistory([])
@@ -1134,6 +1137,7 @@ function TraceWorkspace() {
           hiddenLinks: [...hiddenLinks],
           clientPayments: payments,
           bridgeHops,
+          annotations,
         }
       : null
 
@@ -1171,6 +1175,7 @@ function TraceWorkspace() {
     setHiddenLinks(new Set(c.hiddenLinks ?? []))
     setPayments(c.clientPayments ?? [])
     setBridgeHops(c.bridgeHops ?? [])
+    setAnnotations(c.annotations ?? [])
     setTraced(uniqueFlows(c.traced ?? []))
     setTraceEnds(mergeEnds(c.traceEnds ?? []))
     setHistory([])
@@ -1247,7 +1252,7 @@ function TraceWorkspace() {
     }
     changeCount.current++
     setDirty(true)
-  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, payments, traced, traceEnds, layoutRev, myLabels, bridgeHops])
+  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, payments, traced, traceEnds, layoutRev, myLabels, bridgeHops, annotations])
   useEffect(() => {
     if (!autosave || !saved || !dirty || initialLoading) return
     const t = setTimeout(() => saveRef.current(saved.name, { quiet: true }), 1500)
@@ -1619,6 +1624,8 @@ function TraceWorkspace() {
               // A click shows the node's quick actions; the side panel follows along only if it's already on an address
               onNodeClick={a => { if (selection?.kind === 'address') openAddress(a) }}
               onNodeAction={nodeAction}
+              annotations={annotations}
+              onAnnotations={setAnnotations}
               onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}
