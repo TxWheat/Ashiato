@@ -84,3 +84,9 @@ code,
   outline: 3px solid rgb(var(--accent) / 0);
   animation: node-fresh 1.1s ease-in-out 3;
 }
+
+/* After a box selection, drag any selected address to move them all (the overlay ReactFlow
+   draws over a selection would otherwise catch the drag) */
+.react-flow__nodesselection-rect { display: none; }
+/* Dragging on the graph never highlights label text */
+.react-flow { user-select: none; }

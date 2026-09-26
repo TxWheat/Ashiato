@@ -3,7 +3,7 @@
 import { clsx } from 'clsx'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { NodeResizer, NodeToolbar, Panel, Position, useReactFlow } from 'reactflow'
-import { Circle, Maximize, Minus, MoveRight, Plus, RotateCw, Square, Trash2, Type } from 'lucide-react'
+import { Circle, Maximize, Minus, MousePointer2, MoveRight, Plus, RotateCw, Square, Trash2, Type } from 'lucide-react'
 import { Annotation } from '@/lib/annotations'
 
 // Drawing tools for the graph: boxes, circles, arrows and text notes (Breadcrumbs-style)
@@ -86,7 +86,13 @@ const TOOLS: [Annotation['kind'], string, React.ReactNode][] = [
 const toolButton = 'grid place-items-center w-[26px] h-[26px] text-muted hover:text-fg hover:bg-raised'
 
 /** Bottom-left toolbar: zoom and fit, then the drawing tools, in one column */
-export function GraphTools({ onAdd, fit }: { onAdd?: (kind: Annotation['kind']) => void; fit: { padding: number; maxZoom: number } }) {
+export function GraphTools({ onAdd, fit, selecting, onSelecting }: {
+  onAdd?: (kind: Annotation['kind']) => void
+  fit: { padding: number; maxZoom: number }
+  /** Select mode: dragging on the graph draws a box that selects the addresses in it */
+  selecting: boolean
+  onSelecting: (on: boolean) => void
+}) {
   const rf = useReactFlow()
   const zoom: [string, React.ReactNode, () => void][] = [
     ['Zoom in', <Plus key="i" size={15} />, () => rf.zoomIn({ duration: 150 })],
@@ -96,8 +102,13 @@ export function GraphTools({ onAdd, fit }: { onAdd?: (kind: Annotation['kind']) 
   return (
     <Panel position="bottom-left">
       <div className="flex flex-col bg-panel border border-line divide-y divide-line" role="toolbar" aria-label="Zoom and draw">
-        {zoom.map(([label, icon, run]) => (
-          <button key={label} onClick={run} title={label} aria-label={label} className={toolButton}>{icon}</button>
+        <button onClick={() => onSelecting(!selecting)} aria-pressed={selecting}
+          title={selecting ? 'Stop selecting (Esc)' : 'Select: drag a box around addresses, then drag any of them to move them all'}
+          aria-label="Select several addresses" className={clsx(toolButton, selecting && '!bg-accent !text-accent-fg')}>
+          <MousePointer2 size={14} />
+        </button>
+        {zoom.map(([label, icon, run], i) => (
+          <button key={label} onClick={run} title={label} aria-label={label} className={clsx(toolButton, i === 0 && 'border-t-2 !border-t-line')}>{icon}</button>
         ))}
         {onAdd && TOOLS.map(([kind, label, icon], i) => (
           <button key={kind} onClick={() => onAdd(kind)} title={`Add ${label.toLowerCase()}`} aria-label={`Add ${label.toLowerCase()}`}

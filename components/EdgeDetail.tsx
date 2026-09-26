@@ -11,6 +11,7 @@ import { fmtMoney } from '@/lib/currency'
 import { useSettings } from './Settings'
 import { valueAt } from '@/lib/prices'
 import { usePricing } from './Pricing'
+import { AUTO_TRACE } from '@/lib/features'
 
 type Tab = 'relationship' | 'transactions'
 
@@ -229,7 +230,7 @@ export default function EdgeDetail(p: Props) {
                       </a>
                       {r.isChange && <span className="text-[9px] px-1 bg-yellow-500/15 text-yellow-600">likely change</span>}
                       {r.kind === 'internal' && <InternalBadge />}
-                      <div className="ml-auto flex gap-1">
+                      {AUTO_TRACE && <div className="ml-auto flex gap-1">
                         <button onClick={() => p.onTraceBack(r)} disabled={p.busy}
                           className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">
                           <ArrowLeftToLine size={10} /> Source
@@ -238,7 +239,7 @@ export default function EdgeDetail(p: Props) {
                           className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
                           Trace <ArrowRightFromLine size={10} />
                         </button>
-                      </div>
+                      </div>}
                     </div>
                   </div>
                 </div>

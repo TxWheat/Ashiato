@@ -6,6 +6,7 @@ import { X, ExternalLink, CheckCircle2, AlertTriangle, HelpCircle, XCircle, Arro
 import { CheckedPayment, PaymentMatch, PaymentStatus } from '@/lib/client-payments'
 import { explorerTxUrl, fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
+import { AUTO_TRACE } from '@/lib/features'
 
 const STATUS: Record<PaymentStatus, { label: string; cls: string; icon: React.ReactNode }> = {
   verified: { label: 'Verified', cls: 'bg-green-500/15 text-green-500', icon: <CheckCircle2 size={12} /> },
@@ -167,10 +168,10 @@ export default function ClientPaymentsDialog(p: Props) {
           <span className="text-faint">
             {p.payments.filter(x => x.status === 'verified').length} verified · {p.payments.filter(x => x.status === 'mismatch' || x.status === 'ambiguous').length} to review · {p.payments.filter(x => x.status === 'not-found' || x.status === 'error').length} not found
           </span>
-          <button onClick={p.onTraceAll} disabled={!traceable.length || p.tracing}
+          {AUTO_TRACE && <button onClick={p.onTraceAll} disabled={!traceable.length || p.tracing}
             className="ml-auto flex items-center gap-1.5 h-8 px-4 text-xs font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-50">
             Trace {traceable.length} payment{traceable.length === 1 ? '' : 's'} <ArrowRightFromLine size={12} />
-          </button>
+          </button>}
         </div>
       </div>
     </div>

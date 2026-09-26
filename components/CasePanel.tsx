@@ -7,6 +7,7 @@ import { Cluster } from '@/lib/heuristics/cluster'
 import { TornadoLink } from '@/lib/heuristics/eth/tornado'
 import { TracedFlow, TraceEnd, EndReason } from '@/lib/follow'
 import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
+import { AUTO_TRACE } from '@/lib/features'
 import { truncate } from '@/lib/detect-chain'
 
 export interface FollowSettings { hops: number; branches: number; adaptive: boolean; minSharePct: number }
@@ -64,7 +65,7 @@ export default function CasePanel(p: CasePanelProps) {
   return (
     p.collapsed ? (
       <aside className="w-10 flex-shrink-0 border-r border-line bg-bg flex flex-col items-center pt-3">
-        <button onClick={p.onToggle} title="Show case panel: trace settings, where the money ended up, legend" aria-label="Show case panel" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
+        <button onClick={p.onToggle} title="Show case panel" aria-label="Show case panel" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
         {p.traced.length > 0 && <span className="mt-2 w-2 h-2 rounded-full bg-accent" title="Trace results" />}
       </aside>
     ) : (
@@ -76,7 +77,7 @@ export default function CasePanel(p: CasePanelProps) {
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-faint">Case</span>
         <button onClick={p.onToggle} title="Hide case panel" aria-label="Hide case panel" className="text-faint hover:text-fg p-1"><PanelLeftClose size={14} /></button>
       </div>
-      <Section
+      {(AUTO_TRACE || p.traced.length > 0) && <Section
         title="Follow the funds"
         right={p.traced.length > 0 && <button onClick={p.onClearTrace} className="text-[10px] text-faint hover:text-fg">Clear</button>}
       >
@@ -135,7 +136,7 @@ export default function CasePanel(p: CasePanelProps) {
           <input type="checkbox" checked={!p.follow.adaptive} onChange={e => p.onFollow({ ...p.follow, adaptive: !e.target.checked })} className="mt-0.5 accent-[rgb(var(--accent))]" />
           <span>Follow every output (no smart pruning). Off by default: the trace reads each transaction and keeps to the trail.</span>
         </label>
-      </Section>
+      </Section>}
 
       {p.clusters.length > 0 && (
         <Section title={`Clusters (${p.clusters.length})`}>

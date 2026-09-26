@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import SiteNav from '@/components/SiteNav'
+import { AUTO_TRACE } from '@/lib/features'
 
 export const metadata: Metadata = {
   title: 'Docs · Ashiato',
@@ -7,6 +8,9 @@ export const metadata: Metadata = {
 }
 
 interface Section { id: string; title: string; body: string[]; limits?: string; credit?: string }
+
+/** Automatic tracing is parked: its sections come back with it */
+const parked = (s: Section) => AUTO_TRACE || !['trace', 'follow'].includes(s.id)
 
 const GUIDE: Section[] = [
   {
@@ -25,7 +29,7 @@ const GUIDE: Section[] = [
       'Each box is an address, coloured by what it is: exchange, scam, mixer, bridge, sanctioned, service or unknown. Lines are money moving between them, with the total and the number of transactions; a line added by a trace is highlighted and shows the traced amount.',
       'Click an address for its menu: Transactions (every transfer in and out, newest first, incoming in green and outgoing in red), Relationships (who it sent to and received from, sortable, with a button to add any of them to the graph), Details (labels, risk, community labels), plus Label, Copy address, Open in block explorer and Remove from graph. Smart expand opens the transactions in a wide view.',
       'Click a line to see the transactions behind it. Each one can be removed from or shown on the graph on its own, so one relevant payment can stay while the noise goes.',
-      'Drag addresses to arrange them. To move several at once, Shift-, Ctrl- or ⌘-click each one (or hold Shift and drag a box around them), then drag any of them. After an auto trace, a run of pass-through hops is drawn as one line; click it for every address and transaction along it. The layout and zoom are kept when you save and reopen. The tools at the bottom left add boxes, circles, arrows and text notes, for highlighting a cluster or writing what you found; select one to resize, rotate (arrows) or delete it.',
+      'Drag addresses to arrange them. To move several at once, pick the Select tool (the arrow) at the bottom left, drag a box around them, then drag any of them; click the arrow again to go back to panning. The layout and zoom are kept when you save and reopen. The tools at the bottom left add boxes, circles, arrows and text notes, for highlighting a cluster or writing what you found; select one to resize, rotate (arrows) or delete it.',
     ],
   },
   {
@@ -128,7 +132,7 @@ const GUIDE: Section[] = [
       'Ashiato is open source. The code is on GitHub (Source, top right).',
     ],
   },
-]
+].filter(parked)
 
 const METHODS: Section[] = [
   {
@@ -214,7 +218,7 @@ const METHODS: Section[] = [
     limits: 'A balance already sitting at an Ethereum or Tron address before the traced funds arrived is not visible from loaded history, so the pool share can be overstated there. The Ethereum rule is a convention investigators commonly use, not proof: if the address already held other funds, a different outflow could be "the" victim\'s money. Only loaded history is searched (several pages per address).',
     credit: 'UTXO tracing via Esplora outspends; hop display after s0md3v/Orbit; source-of-funds walk after peterzen/heuristic',
   },
-]
+].filter(parked)
 
 const num = (i: number) => String(i + 1).padStart(2, '0')
 

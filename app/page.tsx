@@ -22,7 +22,7 @@ const FEATURES = [
   },
   {
     title: 'Follow the funds',
-    body: 'Auto-trace reads each transaction (peel chains, splits, DEX swaps, cross-chain bridges) and follows the main trail, stopping at exchanges, mixers and pooled wallets.',
+    body: 'Open any address or payment, add its counterparties to the graph and build the trail step by step, with DEX swaps and cross-chain bridges detected along the way.',
   },
   {
     title: 'Mixers & CoinJoins',
