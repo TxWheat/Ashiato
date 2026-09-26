@@ -129,7 +129,8 @@ export async function followFunds(
   const flows: TracedFlow[] = []
   const ends: TraceEnd[] = []
   const rootTotal = seeds.reduce((s, l) => s + l.amount, 0)
-  const minAmount = rootTotal * (opts.minFraction ?? 0.002)
+  const adaptiveOn = opts.adaptive !== false
+  const minAmount = rootTotal * (opts.minFraction ?? (adaptiveOn ? 0.02 : 0.002))
   // The dust threshold is in the traced asset; after a swap it converts at the swap's rate
   const minFor = new Map<string, number>(seeds.map(l => [l.asset, minAmount]))
   const minOf = (asset: string) => minFor.get(asset) ?? minAmount
@@ -179,7 +180,22 @@ export async function followFunds(
       children = children
         .filter(c => c.flow.amount >= minOf(c.flow.asset))
         .sort((a, b) => b.flow.amount - a.flow.amount)
-        .slice(0, adaptive ? 6 : opts.maxBranches)
+      if (adaptive && lot.chain !== 'btc' && children.length > 1) {
+        // Main trail: side branches carrying under MAIN_SHARE of this lot are noted, not followed
+        // (unless they land at an exchange or other stop: that's worth seeing)
+        const reaches = (c: { lot: Lot }) => { const l = deps.labelOf(c.lot.address); return !!l && (opts.stopAt.includes(l.type) || !!opts.stopWhen?.(l)) }
+        const isSide = (c: { lot: Lot; flow: TracedFlow }) => c.flow.amount < lot.amount * MAIN_SHARE && !reaches(c)
+        const side = children.filter(isSide)
+        if (side.length && side.length < children.length) {
+          children = children.filter(c => !isSide(c))
+          const total = side.reduce((sum, c) => sum + c.flow.amount, 0)
+          ends.push({
+            address: lot.address, amount: total, asset: lot.asset, reason: 'split',
+            detail: `${side.length} smaller branch${side.length === 1 ? '' : 'es'} (each under ${pct(MAIN_SHARE)} of the traced ${fmt(lot.amount, lot.asset)}) totalling ${fmt(total, lot.asset)}, not followed: the main trail is the larger move`,
+          })
+        }
+      }
+      children = children.slice(0, adaptive ? Math.min(opts.maxBranches, 3) : opts.maxBranches)
       for (const c of children) {
         // Change paid back to the same address continues there without drawing a self-loop
         if (c.flow.from !== c.flow.to) flows.push(c.flow)
@@ -345,6 +361,8 @@ function dustFloor(asset: string) {
 const BUSY_HUB = 1000
 /** Adaptive tracing follows outflows of at least this share of the traced amount */
 const SIGNIFICANT = 0.05
+/** Adaptive tracing only branches for moves of at least this share of the lot; smaller ones are noted */
+const MAIN_SHARE = 0.15
 
 /** Same amount within ~3% (or the gas tolerance), for spotting pass-throughs */
 function sameAmount(a: number, b: number, asset: string) {
@@ -473,7 +491,14 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
 
 async function ethBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive = true) {
   // Look back up to a year before the funds left
-  const txs = await deps.addressTxs(lot.address, lot.time - 365 * 86400)
+  const all = await deps.addressTxs(lot.address, lot.time - 365 * 86400)
+  if (adaptive && lot.hop > 0 && all.length >= BUSY_HUB) {
+    ends.push({ address: lot.address, amount: lot.amount, asset: lot.asset, reason: 'entity', detail: `Busy address (${all.length.toLocaleString('en-US')}+ transactions): almost certainly a service or exchange wallet, so the trail stops here` })
+    return []
+  }
+  // Dust, poisoning spam and fake tokens are never a source
+  const floor = Math.max(dustFloor(lot.asset), lot.amount * 0.01)
+  const txs = all.filter(t => !t.asset.endsWith('*') && !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < floor))
   const ins = txs
     .filter(t => t.asset === lot.asset && t.outputs[0]?.address === lot.address && t.inputs[0]?.address !== lot.address)
     .filter(t => t.timestamp <= lot.time && t.txid !== lot.via && (t.outputs[0]?.amount ?? 0) > 0)
@@ -492,10 +517,20 @@ async function ethBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptiv
     }]
   }
 
+  // Adaptive: only inflows that could be a real part of the money; small top-ups are noted
+  const sources = adaptive ? ins.filter(t => t.outputs[0].amount >= lot.amount * SIGNIFICANT) : ins
+  if (adaptive && sources.length < ins.length) {
+    const minor = ins.filter(t => t.outputs[0].amount < lot.amount * SIGNIFICANT)
+    const total = minor.reduce((sum, t) => sum + t.outputs[0].amount, 0)
+    ends.push({
+      address: lot.address, amount: Math.min(total, lot.amount), asset: lot.asset, reason: 'split',
+      detail: `${minor.length} small inflow${minor.length === 1 ? '' : 's'} (each under ${pct(SIGNIFICANT)} of the traced ${fmt(lot.amount, lot.asset)}) totalling ${fmt(total, lot.asset)}, not followed back`,
+    })
+  }
   let remaining = lot.amount
   const tol = tolerance(lot.amount, lot.asset)
   const picked: { amount: number; tx: RawTransaction }[] = []
-  for (const t of ins) {
+  for (const t of sources) {
     if (remaining <= tol) break
     const take = Math.min(remaining, t.outputs[0].amount)
     picked.push({ amount: take, tx: t })

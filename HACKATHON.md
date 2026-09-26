@@ -41,7 +41,8 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Fixes from live testing: fake-ETH address poisoning, runaway deposit-reuse clusters, duplicate traced lines
 - [x] Cross-chain hops (Bridgers): a transfer into Bridgers is looked up in Bridgers' order records; the destination chain, address, amount and both txids are shown, and the destination goes on the graph with a dashed "via Bridgers" line (Tron/Ethereum destinations keep tracing)
 - [x] DEX swaps: a transaction that sells one asset and pays a different one back (Uniswap, UniswapX, 1inch…) is shown as a swap, and follow-the-funds continues with what came back
-- [x] Graph keeps its layout and zoom (collapse/expand, delete); 'Tidy layout' on demand
+- [x] Graph keeps its layout and zoom (collapse/expand, delete); addresses can be added to an open case from search
+- [x] Cleaner auto-trace: ignores poisoning spam and dust, follows the main trail (side payments are noted, not branched), stops at busy service wallets and bridges, forward and back
 - [ ] More bridges (OmniBridge/SWFT, LI.FI, Across)
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams

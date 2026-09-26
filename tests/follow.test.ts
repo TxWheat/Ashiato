@@ -265,4 +265,44 @@ describe('adaptive trail: noise and hubs', () => {
     expect(r2.flows.map(f => f.to)).toEqual(['0xbridge'])
     expect(r2.ends.find(e => e.address === '0xbridge')?.reason).toBe('entity')
   })
+
+  it('follows the main trail: mid-sized side payments are noted, not branched', async () => {
+    const seed = ethTx('0xvictim', '0xw', 6.14, 100)
+    const txs = [
+      seed,
+      ethTx('0xw', '0xside1', 0.4, 120),   // 6.5%: significant, but a side move
+      ethTx('0xw', '0xside2', 0.6, 130),   // 9.8%
+      ethTx('0xw', '0xmain', 4.5, 200),
+      ethTx('0xmain', '0xnext', 4.49, 300),
+      ethTx('0xside1', '0xfar', 0.4, 400),
+    ]
+    const r = await followFunds(seedsFromTx(seed, '0xvictim').lots, opts, ethDeps(txs))
+    expect(r.flows.map(f => f.to)).toEqual(['0xmain', '0xnext'])
+    expect(r.ends.find(e => e.reason === 'split' && /2 smaller branches/.test(e.detail))?.amount).toBeCloseTo(1.0)
+  })
+
+  it('still shows a side payment that lands at an exchange', async () => {
+    const seed = ethTx('0xvictim', '0xw', 6, 100)
+    const txs = [seed, ethTx('0xw', '0xbinance', 0.5, 120), ethTx('0xw', '0xmain', 5.4, 200)]
+    const r = await followFunds(seedsFromTx(seed, '0xvictim').lots, opts,
+      ethDeps(txs, { '0xbinance': { name: 'Binance deposit', type: 'exchange' } }))
+    expect(r.flows.map(f => f.to).sort()).toEqual(['0xbinance', '0xmain'])
+  })
+
+  it('walks back without dust, spam or small top-ups', async () => {
+    const out = ethTx('0xw', '0xscam', 5, 500)
+    const txs = [
+      ethTx('0xa', '0xw', 3, 100),
+      ethTx('0xb', '0xw', 2.2, 200),
+      ...Array.from({ length: 6 }, (_, i) => ethTx(`0xspam${i}`, '0xw', 0.000000001, 300 + i)),
+      ethTx('0xtop', '0xw', 0.05, 400),
+      out,
+    ]
+    const seed = backSeedsFromTx(out, '0xscam')
+    const r = await followFunds(seed.lots, { ...opts, direction: 'backward' }, ethDeps(txs))
+    const froms = r.flows.map(f => f.from)
+    expect(froms).toContain('0xa')
+    expect(froms).toContain('0xb')
+    expect(froms.some(f => f.startsWith('0xspam') || f === '0xtop')).toBe(false)
+  })
 })
