@@ -41,7 +41,8 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Cross-chain hops (Bridgers): a transfer into Bridgers is looked up in Bridgers' order records; the destination chain, address, amount and both txids are shown, and the destination goes on the graph with a dashed "via Bridgers" line (Tron/Ethereum destinations keep tracing)
 - [x] DEX swaps: a transaction that sells one asset and pays a different one back (Uniswap, UniswapX, 1inch…) is shown as a swap, and follow-the-funds continues with what came back
 - [x] Graph keeps its layout and zoom (collapse/expand, delete); addresses can be added to an open case from search
-- [x] Pass-through runs always drawn as one line after an auto trace (click for every hop and transaction); multi-select addresses and drag them together
+- [x] Select tool (bottom left): drag a box around addresses and move them together
+- [ ] Automatic tracing parked for the demo (hidden behind `lib/features.ts`; the `auto-trace` branch keeps it on)
 - [x] Cleaner auto-trace: ignores poisoning spam and dust, follows the main trail (side payments are noted, not branched), stops at busy service wallets and bridges, forward and back
 - [x] Node quick actions (click a node: Transactions / Relationships / Details, label, copy, explorer, remove) and a Smart-expand transactions view: one-row header, table fills the panel
 - [x] Simpler interface: taint analysis removed; the case panel starts hidden and no longer carries client payments

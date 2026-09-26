@@ -19,6 +19,7 @@ import { truncate, detectChain, normaliseAddress } from '@/lib/detect-chain'
 import { useSettings } from './Settings'
 import { valueAt } from '@/lib/prices'
 import { usePricing } from './Pricing'
+import { AUTO_TRACE } from '@/lib/features'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
 
@@ -600,13 +601,13 @@ function TxList(p: Props) {
         className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg">
         <Plus size={10} /> Graph
       </button>
-      {dir !== 'out' && (
+      {AUTO_TRACE && dir !== 'out' && (
         <button onClick={() => p.onTraceTx(tx, 'backward')} disabled={p.tracing} title="Walk these funds back to their source"
           className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40">
           <ArrowLeftToLine size={10} /> Source
         </button>
       )}
-      {dir !== 'in' && (
+      {AUTO_TRACE && dir !== 'in' && (
         <button onClick={() => p.onTraceTx(tx, 'forward')} disabled={p.tracing} title="Follow this payment onward"
           className="flex items-center gap-1 h-6 px-1.5 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-40">
           Trace <ArrowRightFromLine size={10} />

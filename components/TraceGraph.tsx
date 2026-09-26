@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { clsx } from 'clsx'
 import ReactFlow, {
   Node,
   Edge,
@@ -204,7 +205,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-const MULTI_KEYS = ['Shift', 'Control', 'Meta']
+const MULTI_KEYS = ['Control', 'Meta']
 
 export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, moved, tidyKey, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, onNodeAction, watched, annotations = [], onAnnotations }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
@@ -450,6 +451,14 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     return out
   }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, currency, pricing, selectedEdge, chains, bridges])
 
+  const [selecting, setSelecting] = useState(false)
+  const selectedRef = useRef(selected)
+  useEffect(() => {
+    if (!selecting) return
+    const off = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelecting(false) }
+    window.addEventListener('keydown', off)
+    return () => window.removeEventListener('keydown', off)
+  }, [selecting])
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
@@ -476,8 +485,15 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       laid = placeNodes(needsLayout ? layoutGraph(rawNodes, rawEdges) : rawNodes, rawEdges, pinned.current, tracedRef.current)
     }
     prevChains.current = new Map(chainsRef.current.map(c => [c.id, c]))
+    // A box selection survives redraws (a label or price loading, a new address pulsing); only
+    // opening a different address replaces it
+    const keepSelection = selectedRef.current === selected
+    selectedRef.current = selected
     // Annotations keep their own positions and are never laid out
-    setNodes(prev => [...laid, ...prev.filter(n => n.id.startsWith(NOTE_PREFIX))])
+    setNodes(prev => {
+      const was = keepSelection ? new Set(prev.filter(n => n.selected).map(n => n.id)) : new Set<string>()
+      return [...laid.map(n => (was.has(n.id) ? { ...n, selected: true } : n)), ...prev.filter(n => n.id.startsWith(NOTE_PREFIX))]
+    })
     setEdges(rawEdges)
     // Refit on first draw and after a tidy. Otherwise keep the user's zoom: removing nodes never
     // moves the view, and added nodes only pan into view when they land off-screen.
@@ -510,7 +526,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         }
       }, 120)
     }
-  }, [rawNodes, rawEdges, setNodes, setEdges, chainsKey, moved, tidyKey])
+  }, [rawNodes, rawEdges, setNodes, setEdges, chainsKey, moved, tidyKey, selected])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -574,7 +590,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   return (
     <NodeMenuContext.Provider value={menu}>
     <AnnotationContext.Provider value={noteApi}>
-    <div className="w-full h-full">
+    <div className={clsx('w-full h-full', selecting && '[&_.react-flow__pane]:!cursor-crosshair')}>
       <ArrowDefs />
       <ReactFlow
         nodes={nodes}
@@ -594,12 +610,15 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           if (notes.size) onAnnotations?.(annotationsRef.current.map(a => (notes.has(a.id) ? { ...a, ...notes.get(a.id)! } : a)))
           onLayoutChange?.()
         }}
-        // Several addresses move together: Shift/Ctrl/⌘-click adds one to the selection, Shift-drag
-        // on empty space draws a box around several, then dragging any of them moves them all
+        // Several addresses move together: with the Select tool on, dragging on empty space draws a
+        // box around them (middle or right drag still pans); then dragging any of them moves them all.
+        // Ctrl/⌘-click adds or removes one.
+        selectionOnDrag={selecting}
+        panOnDrag={selecting ? [1, 2] : true}
         multiSelectionKeyCode={MULTI_KEYS}
         selectionMode={SelectionMode.Partial}
         onNodeClick={(ev, n) => {
-          if (ev.shiftKey || ev.ctrlKey || ev.metaKey) return setMenuFor(null)
+          if (selecting || ev.ctrlKey || ev.metaKey) return setMenuFor(null)
           if (n.type === 'annotation') return
           if (n.type === 'tx') return onHubClick((n.data as TxHubData).txid)
           if (onNodeAction) setMenuFor(v => (v === n.id ? null : n.id))
@@ -628,7 +647,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} color="rgb(var(--line))" gap={22} size={1.1} />
-        <GraphTools onAdd={onAnnotations ? addAnnotation : undefined} fit={FIT} />
+        <GraphTools onAdd={onAnnotations ? addAnnotation : undefined} fit={FIT} selecting={selecting} onSelecting={setSelecting} />
         <MiniMap
           nodeColor={n => {
             const d = n.data as AddressNodeData

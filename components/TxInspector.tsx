@@ -6,6 +6,7 @@ import { Copy, Check, X, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, A
 import { EntityLabel, RawTransaction, TxIO, TxLookup } from '@/lib/types'
 import { ENTITY_STYLE, explorerTxUrl, fmtAmount, fmtDate, chainDot } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
+import { AUTO_TRACE } from '@/lib/features'
 
 interface Props {
   lookup: TxLookup
@@ -77,7 +78,7 @@ export default function TxInspector(p: Props) {
             {lookup.warnings.map((w, i) => <div key={i} className="flex gap-1.5"><AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{w}</div>)}
           </div>
         )}
-        {btc && (
+        {AUTO_TRACE && btc && (
           <div className="flex gap-1.5 pt-1">
             <Btn onClick={() => p.onSourceIn(btc)}><ArrowLeftToLine size={10} /> Source of all inputs</Btn>
             <Btn primary onClick={() => p.onTraceOut(btc)}>Trace all outputs <ArrowRightFromLine size={10} /></Btn>
@@ -94,7 +95,7 @@ export default function TxInspector(p: Props) {
               <div key={k} className="flex items-center gap-3 px-4 py-2 border-b border-line/60">
                 <Addr a={i.address} />
                 <span className="font-mono text-[11px] text-muted whitespace-nowrap">{fmtAmount(i.amount, 'BTC', 8)}</span>
-                <Btn onClick={() => p.onSourceIn(btc, i)}><ArrowLeftToLine size={10} /> Source</Btn>
+                {AUTO_TRACE && <Btn onClick={() => p.onSourceIn(btc, i)}><ArrowLeftToLine size={10} /> Source</Btn>}
               </div>
             ))}
             <div className="px-4 pt-4 pb-1.5 text-[10px] uppercase tracking-wider text-faint">Outputs · {btc.outputs.length}</div>
@@ -103,7 +104,7 @@ export default function TxInspector(p: Props) {
                 <div className="flex items-center gap-3">
                   <Addr a={o.address} />
                   <span className="font-mono text-[11px] text-fg whitespace-nowrap">{fmtAmount(o.amount, 'BTC', 8)}</span>
-                  <Btn primary onClick={() => p.onTraceOut(btc, o.address)}>Trace <ArrowRightFromLine size={10} /></Btn>
+                  {AUTO_TRACE && <Btn primary onClick={() => p.onTraceOut(btc, o.address)}>Trace <ArrowRightFromLine size={10} /></Btn>}
                 </div>
                 <div className="mt-1 pl-4 flex gap-2 text-[10px]">
                   {o.isChange && <span className="px-1 bg-yellow-500/15 text-yellow-600" title={o.change?.reasons.join('; ')}>likely change {o.change ? `${Math.round(o.change.confidence * 100)}%` : ''}</span>}
@@ -121,10 +122,10 @@ export default function TxInspector(p: Props) {
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[13px] text-fg">{fmtAmount(t.outputs[0].amount, t.asset, 8)}</span>
                   <span className="text-[9px] px-1 bg-raised text-faint">{t.kind}</span>
-                  <div className="ml-auto flex gap-1">
+                  {AUTO_TRACE && <div className="ml-auto flex gap-1">
                     <Btn onClick={() => p.onSourceIn(t, t.inputs[0])}><ArrowLeftToLine size={10} /> Source</Btn>
                     <Btn primary onClick={() => p.onTraceOut(t, t.outputs[0].address)}>Trace <ArrowRightFromLine size={10} /></Btn>
-                  </div>
+                  </div>}
                 </div>
                 <div className="flex items-center gap-2"><span className="text-[10px] text-faint w-8">from</span><Addr a={t.inputs[0].address} /></div>
                 <div className="flex items-center gap-2"><span className="text-[10px] text-faint w-8">to</span><Addr a={t.outputs[0].address} /></div>
