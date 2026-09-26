@@ -158,11 +158,12 @@ function Plan({ title, price, note, items, highlight, children }: {
 /** Pays with the connected wallet, then asks the server to credit it */
 function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; account: string; networks: PayChain[]; onPaid: () => void }) {
   const [plan, setPlan] = useState(0)
-  const [chain, setChain] = useState<PayChain>(networks[0])
+  const { address: wallet, chainId } = useAccount()
+  // Start on the network the wallet is already on, when payments are taken there
+  const [chain, setChain] = useState<PayChain>(() => networks.find(k => PAY_CHAINS[k].id === chainId) ?? networks[0])
   const [status, setStatus] = useState<{ text: string; error?: boolean } | null>(null)
   const [working, setWorking] = useState(false)
   const [hash, setHash] = useState('')
-  const { address: wallet, chainId } = useAccount()
   const { switchChainAsync } = useSwitchChain()
   const { writeContractAsync } = useWriteContract()
   const config = useConfig()
