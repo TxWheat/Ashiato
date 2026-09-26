@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
-  Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
+  Copy, Check, X, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
   Shuffle,
 } from 'lucide-react'
 import { MyLabel } from '@/lib/my-labels'
@@ -219,7 +219,7 @@ function FlowBoxes({ summary, wide }: { summary: FlowSummary; wide?: boolean }) 
 
 export default function AddressInspector(p: Props) {
   const { node } = p
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<boolean | 'failed'>(false)
   const [filter, setFilter] = useState<'in' | 'out'>('in')
   const [sort, setSort] = useState<SortKey>('amount')
   const [asset, setAsset] = useState('')
@@ -324,13 +324,13 @@ export default function AddressInspector(p: Props) {
   const notOnGraph = list.filter(c => !p.onGraph.has(c.address))
 
   const copy = () => {
-    navigator.clipboard.writeText(node.address)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1200)
+    // Only claim "copied" when the browser actually copied (it can refuse, e.g. without focus)
+    navigator.clipboard?.writeText(node.address).then(() => setCopied(true), () => setCopied('failed'))
+    setTimeout(() => setCopied(false), 1500)
   }
 
   const ActionBtn = ({ onClick, icon, children, disabled, title: t }: { onClick: () => void; icon: React.ReactNode; children?: React.ReactNode; disabled?: boolean; title?: string }) => (
-    <button onClick={onClick} disabled={disabled} title={t}
+    <button onClick={onClick} disabled={disabled} title={t} aria-label={children ? undefined : t}
       className="flex items-center justify-center gap-1.5 h-8 px-2.5 text-[11px] font-medium bg-raised hover:bg-line text-fg disabled:opacity-40 disabled:cursor-not-allowed">
       {icon}{children}
     </button>
@@ -351,8 +351,10 @@ export default function AddressInspector(p: Props) {
         {title && <div className="text-lg font-medium text-fg leading-tight">{title}</div>}
         <div className="flex items-start gap-2">
           <code className="text-[11px] text-muted break-all leading-relaxed flex-1">{node.address}</code>
-          <button onClick={copy} title="Copy address" className="text-faint hover:text-fg mt-0.5">{copied ? <Check size={13} /> : <Copy size={13} />}</button>
-          <a href={explorerAddressUrl(node.address, node.chain)} target="_blank" rel="noopener noreferrer" title="Open in block explorer" className="text-faint hover:text-fg mt-0.5">
+          <button onClick={copy} title={copied === 'failed' ? 'Could not copy' : 'Copy address'} aria-label="Copy address" className={clsx('mt-0.5', copied === 'failed' ? 'text-red-500' : 'text-faint hover:text-fg')}>
+            {copied === 'failed' ? <X size={13} /> : copied ? <Check size={13} /> : <Copy size={13} />}
+          </button>
+          <a href={explorerAddressUrl(node.address, node.chain)} target="_blank" rel="noopener noreferrer" title="Open in block explorer" aria-label="Open in block explorer" className="text-faint hover:text-fg mt-0.5">
             <ExternalLink size={13} />
           </a>
         </div>
@@ -505,7 +507,7 @@ export default function AddressInspector(p: Props) {
                       : <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent, p.prices)}</div>}
                     {valueOf(c) > 0 && <div className="text-[10px] text-faint" title="Value at today's prices">≈ {fmtFiatShort(valueOf(c))} NZD</div>}
                   </div>
-                  <button onClick={() => !on && p.onAdd([c.address])} disabled={on} title={on ? 'On the graph' : 'Add to graph'}
+                  <button onClick={() => !on && p.onAdd([c.address])} disabled={on} title={on ? 'On the graph' : 'Add to graph'} aria-label={on ? 'On the graph' : 'Add to graph'}
                     className={clsx('grid place-items-center w-7 h-7 flex-shrink-0', on ? 'text-accent' : 'bg-raised hover:bg-accent hover:text-accent-fg text-fg')}>
                     {on ? <CheckCircle2 size={14} /> : <Plus size={14} />}
                   </button>

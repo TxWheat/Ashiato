@@ -221,7 +221,16 @@ function TracePageInner() {
     } catch { /* storage blocked */ }
   }, [])
   const panelCss = panelExpanded ? 'min(1180px, 78vw)' : `min(${panelW}px, 70vw)`
-  const panelWide = panelExpanded || panelW >= 680
+  // Phones always get the stacked list: the wide table (smart expand) doesn't fit
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setNarrow(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  const panelWide = !narrow && (panelExpanded || panelW >= 680)
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault()
     setResizing(true)
@@ -1067,12 +1076,14 @@ function TracePageInner() {
     return perTx.filter(e => itemizedIds.has(e.id) && !hiddenLinks.has(pairKey(e.source, e.target)) && !seen.has(e.id) && seen.add(e.id))
   }, [perTx, itemizedIds, hiddenLinks])
 
-  // Delete / Backspace hides the selected link
+  // Delete / Backspace hides the selected link, but only while you're on the graph or its
+  // panel (not typing, and not in a dialog such as client payments)
   useEffect(() => {
     if (selection?.kind !== 'flow') return
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !/INPUT|TEXTAREA|SELECT/.test(t.tagName) && !t.isContentEditable) {
+      const onGraph = t === document.body || !!t.closest('.react-flow, [data-panel="inspector"]')
+      if ((e.key === 'Delete' || e.key === 'Backspace') && onGraph && !/INPUT|TEXTAREA|SELECT/.test(t.tagName) && !t.isContentEditable) {
         e.preventDefault()
         hideLink(selection.from, selection.to)
       }
@@ -1448,25 +1459,26 @@ function TracePageInner() {
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-bg">
       {/* Header */}
-      <header className="flex items-center gap-3 h-14 px-3 sm:px-4 border-b border-line flex-shrink-0">
+      {/* Phones: the search drops to its own row and the buttons wrap instead of running off-screen */}
+      <header className="flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 min-h-14 py-2 md:py-0 md:h-14 px-3 sm:px-4 border-b border-line flex-shrink-0">
         <Link href="/" className="text-faint hover:text-fg p-1.5" aria-label="Home"><ArrowLeft size={16} /></Link>
         <Link href="/" className="hidden xl:block text-[13px] font-medium tracking-[0.24em] text-fg pr-3 border-r border-line">ASHIATO</Link>
         <button
           onClick={() => setSelection(originTx ? { kind: 'tx', id: originTx } : { kind: 'address', id: originAddress })}
-          className="flex items-center gap-2 min-w-0 max-w-[260px] text-left hover:text-accent"
+          className="flex items-center gap-2 min-w-0 max-w-[140px] sm:max-w-[260px] text-left hover:text-accent"
           title="Show the starting point"
         >
           {originChain && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${chainDot(originChain)}`} />}
           <span className="text-[10px] uppercase tracking-wider text-faint flex-shrink-0">{originTx ? 'tx' : originChain}</span>
           <span className="text-xs text-fg truncate font-mono">{originNode?.label?.name ?? originNode?.ens ?? truncate(originKey, 8)}</span>
         </button>
-        <div className="flex-1 flex justify-center min-w-0 px-2">
+        <div className="order-last basis-full md:order-none md:basis-auto flex-1 flex justify-center min-w-0 md:px-2">
           <SearchForm compact onAddAddress={originChain ? a => {
             openAddress(a)
             flash(`Added ${truncate(a, 6)} to this case`)
           } : undefined} />
         </div>
-        <div className="flex items-center gap-2.5 text-xs text-faint flex-shrink-0">
+        <div className="ml-auto flex flex-wrap justify-end items-center gap-2.5 text-xs text-faint md:flex-shrink-0">
           {traceStatus && (
             <span className="flex items-center gap-2 text-accent">
               <span className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" />
@@ -1493,7 +1505,7 @@ function TracePageInner() {
             </button>
           )}
           <span className="hidden lg:block whitespace-nowrap">{graphNodes.length} addresses</span>
-          <button onClick={undo} disabled={!history.length} className="flex items-center gap-1 hover:text-fg disabled:opacity-30 p-1" title="Undo">
+          <button onClick={undo} disabled={!history.length} className="flex items-center gap-1 hover:text-fg disabled:opacity-30 p-1" title="Undo" aria-label="Undo">
             <Undo2 size={14} />{history.length > 0 && <span className="text-[10px]">{history.length}</span>}
           </button>
           <button onClick={loadOrigin} className="hover:text-fg p-1" title="Start over"><RefreshCw size={14} /></button>
@@ -1517,11 +1529,11 @@ function TracePageInner() {
             onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
           />
           <AccountButton compact />
-          <ThemeToggle />
+          <div className="hidden sm:block"><ThemeToggle /></div>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden min-h-0">
+      <div className="relative flex flex-1 overflow-hidden min-h-0">
         {!initialLoading && !error && (
           <CasePanel
             payments={payments}
@@ -1666,9 +1678,12 @@ function TracePageInner() {
 
         {!initialLoading && !error && (
           <aside
+            data-panel="inspector"
             aria-hidden={!selection}
             className={clsx(
               'relative flex-shrink-0 bg-bg overflow-hidden',
+              // Phones: an open panel covers the graph (full width) rather than squeezing it
+              selection && 'max-md:absolute max-md:inset-0 max-md:z-30 max-md:!w-full',
               !resizing && 'transition-[width] duration-200 ease-out',
               selection && 'border-l border-line'
             )}
@@ -1692,7 +1707,11 @@ function TracePageInner() {
                   {panelExpanded ? <ChevronsRight size={12} /> : <ChevronsLeft size={12} />}
                 </button>
                 {/* Fixed inner width so content doesn't reflow while the panel slides */}
-                <div className="h-full flex flex-col min-h-0" style={{ width: panelCss }}>{inspector}</div>
+                <div className="h-full flex flex-col min-h-0 max-md:!w-full" style={{ width: panelCss }}>{inspector}</div>
+                <button onClick={() => setSelection(null)} aria-label="Back to the graph"
+                  className="md:hidden absolute top-2 right-2 z-40 grid place-items-center w-8 h-8 bg-panel border border-line text-muted hover:text-fg">
+                  <X size={16} />
+                </button>
               </>
             )}
           </aside>

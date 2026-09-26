@@ -43,20 +43,22 @@ export default function SearchForm({ compact = false, onAddAddress }: { compact?
 
   if (compact) {
     return (
-      <form onSubmit={submit} className="relative w-full max-w-md" title={error || undefined}>
+      <form onSubmit={submit} className="relative w-full max-w-md">
         <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
         <input
           value={value}
           onChange={e => { setValue(e.target.value); setError('') }}
           placeholder={onAddAddress ? 'Add an address to this case, or search a transaction…' : 'Search address or transaction…'}
           aria-label="Search address or transaction"
+          aria-invalid={!!error}
+          aria-describedby={error ? 'search-error' : undefined}
           spellCheck={false}
           autoComplete="off"
-          className={clsx('w-full h-8 bg-panel border pl-8 font-mono text-xs text-fg placeholder:text-faint outline-none', adds ? 'pr-[15.5rem]' : 'pr-36', error ? 'border-red-500' : 'border-line focus:border-accent')}
+          className={clsx('w-full h-8 bg-panel border pl-8 font-mono text-xs text-fg placeholder:text-faint outline-none', adds ? 'pr-40 sm:pr-[15.5rem]' : 'pr-36', error ? 'border-red-500' : 'border-line focus:border-accent')}
         />
         {adds ? (
           <span className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted pointer-events-none pr-1">
+            <span className="hidden sm:flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted pointer-events-none pr-1">
               <span className={`w-1.5 h-1.5 rounded-full ${chainDot(target!.chain)}`} />{target!.chain}
             </span>
             <button type="submit" className="h-6 px-2 text-[10px] font-medium bg-accent hover:bg-accent-hover text-accent-fg whitespace-nowrap" title="Put this address on the graph of the open case (Enter)">
@@ -67,6 +69,11 @@ export default function SearchForm({ compact = false, onAddAddress }: { compact?
             </button>
           </span>
         ) : badge}
+        {error && (
+          <div id="search-error" role="alert" className="absolute left-0 right-0 top-full mt-1 z-30 flex items-center gap-1.5 bg-panel border border-red-500/50 px-2 py-1.5 text-[11px] text-red-500 shadow-lg">
+            <AlertCircle size={12} className="flex-shrink-0" />{error}
+          </div>
+        )}
       </form>
     )
   }
