@@ -962,6 +962,20 @@ function TracePageInner() {
     }
   }, [drawn, graphNodes, graphEdges, graphTraced, collapsed, graphBridges])
   const inTrail = trailView && traced.length > 0
+  /** Transactions on the trail, coloured in the address panel: traced steps plus cross-chain
+   *  swaps added to the graph (money into the bridge and out on the other chain). Bridges
+   *  write hashes with or without 0x and in either case, so each is stored every way. */
+  const tracedTxids = useMemo(() => {
+    const ids = new Set(traced.map(f => f.txid))
+    for (const h of bridgeHops) {
+      for (const raw of [h.fromHash, h.toHash]) {
+        if (!raw) continue
+        const bare = raw.toLowerCase().replace(/^0x/, '')
+        ids.add(raw).add(bare).add(`0x${bare}`)
+      }
+    }
+    return ids
+  }, [traced, bridgeHops])
   const trailIds = useMemo(() => new Set(trail.nodes.map(n => n.address)), [trail])
 
   const legendTypes = useMemo(() => {
@@ -1211,7 +1225,7 @@ function TracePageInner() {
             setItemizedIds(prev => new Set([...prev, ...legs.map(e => e.id)]))
           }}
           onGraph={visible}
-          tracedTxids={new Set(traced.map(f => f.txid))}
+          tracedTxids={tracedTxids}
           tab={tab}
           canRemove={a !== originAddress}
           tracing={!!traceStatus}

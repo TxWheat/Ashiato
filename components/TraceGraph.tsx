@@ -548,7 +548,12 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           const sx = n.position.x * zoom + x, sy = n.position.y * zoom + y
           return sx < 0 || sy < 0 || sx + 200 * zoom > w || sy + 60 * zoom > h
         })
-        if (offscreen) inst.fitView({ ...FIT, duration: 250 })
+        // Pan to what was added, keeping the user's zoom (fitting everything zoomed right out)
+        if (offscreen) {
+          const xs = added.map(n => n.position.x), ys = added.map(n => n.position.y)
+          const cx = (Math.min(...xs) + Math.max(...xs) + 200) / 2, cy = (Math.min(...ys) + Math.max(...ys) + 60) / 2
+          inst.setCenter(cx, cy, { zoom, duration: 300 })
+        }
       }, 120)
     }
   }, [rawNodes, rawEdges, setNodes, setEdges, layoutKey, quietKey, chainsKey])
