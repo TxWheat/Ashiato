@@ -75,6 +75,27 @@ describe('Relay requests', () => {
   })
 })
 
+describe('Relay: only transfers that belong to the wallet', () => {
+  it('drops strangers when Relay ignores the search filter', async () => {
+    process.env.RELAY_API_KEY = 'test'
+    const wallet = '0xAbC0000000000000000000000000000000000001'
+    const ours = H('7')
+    const req = (id: string, user: string, inHash: string) => ({
+      id, status: 'success', user, recipient: '0x9999999999999999999999999999999999999999',
+      data: { inTxs: [{ hash: inHash, chainId: 1 }], outTxs: [{ hash: H('8'), chainId: 8453 }],
+        route: { actual: { origin: { inputCurrency: { currency: { symbol: 'USDC', chainId: 1 }, amountFormatted: '10' } }, destination: { outputCurrency: { currency: { symbol: 'USDC', chainId: 8453 }, amountFormatted: '9.9' } } } } },
+    })
+    // Every query returns everyone's latest requests
+    const everyone = { requests: [req('a', '0x1234000000000000000000000000000000000000', H('1')), req('b', '0x0000000000000000000000000000000000000000', ours), req('c', wallet.toLowerCase(), H('2'))] }
+    const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify(everyone)))
+    vi.stubGlobal('fetch', fetchMock)
+    const hops = await relayRequests(wallet, [ours])
+    vi.unstubAllGlobals()
+    expect(hops.map(h => h.orderId).sort()).toEqual(['relay:b', 'relay:c'])
+    expect(String(fetchMock.mock.calls[0][0])).toContain(`hash=${ours}`)
+  })
+})
+
 describe('Relay API key', () => {
   it('explains that a key is needed instead of failing obscurely', async () => {
     const saved = process.env.RELAY_API_KEY

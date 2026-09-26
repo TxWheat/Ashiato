@@ -34,7 +34,7 @@ export function hopFromRelay(r: Raw): CrossChainHop | null {
     status: str(r.status) || 'unknown',
     fromChainName, toChainName,
     fromChain: toOurChain(fromChainName), toChain: toOurChain(toChainName),
-    fromAddress: str(r.user) || str(r.sender),
+    fromAddress: [str(r.user), str(r.sender)].find(a => a && !/^0x0{40}$/i.test(a)) ?? '',
     toAddress,
     fromHash,
     toHash: str(outTx?.hash) || str(outTx?.txHash) || undefined,
@@ -44,10 +44,33 @@ export function hopFromRelay(r: Raw): CrossChainHop | null {
   }
 }
 
-/** Cross-chain requests a wallet made through Relay, newest first. Relay's API needs a key (x-api-key) */
-export async function relayRequests(user: string): Promise<CrossChainHop[]> {
+const ZERO = /^0x0{40}$/i
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+/**
+ * Relay transfers from a wallet, newest first. Relay's API needs a key (x-api-key).
+ * Its search filters can be ignored (it then returns everyone's latest requests), so
+ * nothing is trusted unless it provably belongs here: the incoming transaction is one of
+ * `txids`, or the request's user / sender is the wallet.
+ */
+export async function relayRequests(wallet: string, txids: string[] = []): Promise<CrossChainHop[]> {
   const key = process.env.RELAY_API_KEY
   if (!key) throw new Error('Relay lookups need an API key on this server (RELAY_API_KEY, free from relay.link)')
-  const res = await fetchJson<Raw>(`${BASE}/requests/v3?user=${encodeURIComponent(checksum(user))}&limit=50`, 120, 2, undefined, { headers: { 'x-api-key': key } })
-  return list(res?.requests).map(hopFromRelay).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
+  const get = (q: string) => fetchJson<Raw>(`${BASE}/requests/v3?${q}`, 120, 2, undefined, { headers: { 'x-api-key': key } })
+  const ours = new Set(txids.map(t => t.toLowerCase()))
+  const found = new Map<string, CrossChainHop>()
+  const keep = (r: Raw, hop: CrossChainHop | null) => {
+    if (!hop) return
+    const inHashes = list(obj(r.data).inTxs).map(t => (str(t.hash) || str(t.txHash)).toLowerCase())
+    const byTx = inHashes.some(h => ours.has(h))
+    const byWallet = [str(r.user), str(r.sender)].some(a => a && !ZERO.test(a) && same(a, wallet))
+    if (byTx || byWallet) found.set(hop.orderId, hop)
+  }
+  for (const tx of txids.slice(0, 5)) {
+    const res = await get(`hash=${encodeURIComponent(tx)}`).catch(() => null)
+    for (const r of list(res?.requests)) keep(r, hopFromRelay(r))
+  }
+  const res = await get(`user=${encodeURIComponent(checksum(wallet))}&limit=50`)
+  for (const r of list(res?.requests)) keep(r, hopFromRelay(r))
+  return [...found.values()].sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
 }

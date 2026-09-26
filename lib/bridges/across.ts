@@ -67,5 +67,7 @@ export function hopFromAcross(d: Raw): CrossChainHop | null {
 export async function acrossDeposits(depositor: string): Promise<CrossChainHop[]> {
   const res = await fetchJson<unknown>(`${BASE}/deposits?depositor=${encodeURIComponent(checksum(depositor))}&limit=100`, 120, 2)
   const rows = Array.isArray(res) ? list(res) : list((res as Raw)?.deposits)
-  return rows.map(hopFromAcross).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
+  // Only this wallet's deposits, even if the filter were ignored upstream
+  return rows.filter(r => str(r.depositor).toLowerCase() === depositor.toLowerCase())
+    .map(hopFromAcross).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
 }

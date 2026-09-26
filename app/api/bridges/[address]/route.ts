@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ addr
   try {
     const hops =
       service === 'Across' ? await acrossDeposits(address)
-        : service === 'Relay' ? await relayRequests(address)
+        : service === 'Relay' ? await relayRequests(address, txids)
           : service === 'deBridge' ? await deBridgeOrders(txids)
             : service === 'Bridgers' ? await bridgersOrders(address)
               : null
