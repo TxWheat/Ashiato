@@ -109,7 +109,7 @@ export default function CommunityLabels({ chain, address, attester }: Props) {
             <div className="flex items-center gap-2">
               <span className="px-1.5 py-0.5 bg-raised text-fg font-medium">{CATEGORY_NAME[l.category]}</span>
               <span className="text-fg font-medium truncate flex-1">{l.name}</span>
-              <a href={attestationUrl(l.uid)} target="_blank" rel="noopener noreferrer" title="View the attestation" className="text-faint hover:text-fg"><ExternalLink size={11} /></a>
+              <a href={attestationUrl(l.uid)} target="_blank" rel="noopener noreferrer" title="View the attestation" aria-label="View the attestation" className="text-faint hover:text-fg"><ExternalLink size={11} /></a>
             </div>
             <div className="flex items-center gap-2" title={`${l.support} support · ${l.disputes} dispute${l.disputes === 1 ? '' : 's'}, weighted (verified ENS names count double; the creator counts as a strong yes)`}>
               <span className="text-faint">Trust</span>
@@ -184,7 +184,7 @@ function VoteRow({ current, busy, disabled, onVote }: { current?: number; busy: 
     <div className="flex items-center gap-1">
       <span className="text-[10px] text-faint mr-1">Your vote</span>
       {VOTES.map(([t, name]) => (
-        <button key={t} disabled={disabled} title={name}
+        <button key={t} disabled={disabled} title={name} aria-label={name}
           onClick={() => (t < 0 ? setDisputing(t) : onVote({ trust: t, reason: '' }))}
           className={clsx('flex items-center gap-0.5 h-6 px-1.5 text-[10px] font-medium disabled:opacity-40',
             current === t ? (t > 0 ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500') : 'bg-raised hover:bg-line text-fg')}>

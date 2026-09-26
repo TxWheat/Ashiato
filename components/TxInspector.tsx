@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { Copy, Check, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, AlertTriangle } from 'lucide-react'
+import { Copy, Check, X, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, AlertTriangle } from 'lucide-react'
 import { EntityLabel, RawTransaction, TxIO, TxLookup } from '@/lib/types'
 import { ENTITY_STYLE, explorerTxUrl, fmtAmount, fmtDate, chainDot } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
@@ -23,11 +23,10 @@ interface Props {
 
 export default function TxInspector(p: Props) {
   const { lookup } = p
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<boolean | 'failed'>(false)
   const copy = () => {
-    navigator.clipboard.writeText(lookup.txid)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1200)
+    navigator.clipboard?.writeText(lookup.txid).then(() => setCopied(true), () => setCopied('failed'))
+    setTimeout(() => setCopied(false), 1500)
   }
 
   const Addr = ({ a }: { a: string }) => {
@@ -39,7 +38,7 @@ export default function TxInspector(p: Props) {
         <button onClick={() => p.onOpen(a)} className={clsx('truncate text-left text-[12px] text-fg hover:text-accent', !p.nameOf(a) && 'font-mono')} title={a}>
           {p.nameOf(a) ?? truncate(a, 8)}
         </button>
-        <button onClick={() => !on && p.onAdd([a])} disabled={on} title={on ? 'On the graph' : 'Add to graph'}
+        <button onClick={() => !on && p.onAdd([a])} disabled={on} title={on ? 'On the graph' : 'Add to graph'} aria-label={on ? 'On the graph' : 'Add to graph'}
           className={clsx('grid place-items-center w-6 h-6 flex-shrink-0 ml-auto', on ? 'text-accent' : 'bg-raised hover:bg-accent hover:text-accent-fg text-fg')}>
           {on ? <CheckCircle2 size={12} /> : <Plus size={12} />}
         </button>
@@ -67,8 +66,10 @@ export default function TxInspector(p: Props) {
         </div>
         <div className="flex items-start gap-2">
           <code className="text-[11px] text-fg break-all leading-relaxed flex-1">{lookup.txid}</code>
-          <button onClick={copy} title="Copy" className="text-faint hover:text-fg mt-0.5">{copied ? <Check size={13} /> : <Copy size={13} />}</button>
-          <a href={explorerTxUrl(lookup.txid, lookup.chain)} target="_blank" rel="noopener noreferrer" className="text-faint hover:text-fg mt-0.5" title="Open in block explorer"><ExternalLink size={13} /></a>
+          <button onClick={copy} title={copied === 'failed' ? 'Could not copy' : 'Copy transaction hash'} aria-label="Copy transaction hash" className={clsx('mt-0.5', copied === 'failed' ? 'text-red-500' : 'text-faint hover:text-fg')}>
+            {copied === 'failed' ? <X size={13} /> : copied ? <Check size={13} /> : <Copy size={13} />}
+          </button>
+          <a href={explorerTxUrl(lookup.txid, lookup.chain)} target="_blank" rel="noopener noreferrer" className="text-faint hover:text-fg mt-0.5" title="Open in block explorer" aria-label="Open in block explorer"><ExternalLink size={13} /></a>
         </div>
         <div className="text-[11px] text-faint">{fmtDate(lookup.timestamp)}{btc?.fee !== undefined ? ` · fee ${fmtAmount(btc.fee, 'BTC', 8)}` : ''}</div>
         {!!lookup.warnings?.length && (

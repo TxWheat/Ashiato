@@ -80,15 +80,18 @@ export default function CasePanel(p: CasePanelProps) {
 
   return (
     p.collapsed ? (
-      <aside className="w-10 flex-shrink-0 border-r border-line bg-bg hidden md:flex flex-col items-center pt-3">
-        <button onClick={p.onToggle} title="Show case panel: trace settings, where the money ended up, client payments, taint, legend" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
+      <aside className="w-10 flex-shrink-0 border-r border-line bg-bg flex flex-col items-center pt-3">
+        <button onClick={p.onToggle} title="Show case panel: trace settings, where the money ended up, client payments, taint, legend" aria-label="Show case panel" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
         {p.traced.length > 0 && <span className="mt-2 w-2 h-2 rounded-full bg-accent" title="Trace results" />}
       </aside>
     ) : (
-    <aside className="w-64 flex-shrink-0 border-r border-line bg-bg overflow-y-auto hidden md:block">
+    <>
+    {/* Phones: the panel opens over the graph as a drawer; tap outside to close */}
+    <button onClick={p.onToggle} aria-label="Close case panel" className="md:hidden fixed inset-0 z-40 bg-black/50" />
+    <aside className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shadow-2xl md:static md:z-auto md:w-64 md:max-w-none md:shadow-none flex-shrink-0 border-r border-line bg-bg overflow-y-auto">
       <div className="flex items-center justify-between h-10 px-4 border-b border-line">
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-faint">Case</span>
-        <button onClick={p.onToggle} title="Hide case panel" className="text-faint hover:text-fg p-1"><PanelLeftClose size={14} /></button>
+        <button onClick={p.onToggle} title="Hide case panel" aria-label="Hide case panel" className="text-faint hover:text-fg p-1"><PanelLeftClose size={14} /></button>
       </div>
       <Section
         title="Client payments"
@@ -266,6 +269,7 @@ export default function CasePanel(p: CasePanelProps) {
       </Section>
 
     </aside>
+    </>
     )
   )
 }
