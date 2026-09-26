@@ -55,10 +55,12 @@ interface Auth {
   /** Opens the sign-in modal; after signing, goes to `then` (e.g. /cases), or stays on the page */
   signIn: (then?: string) => void
   signOut: () => Promise<void>
+  /** Opens the wallet window: balances, or adding funds (buy with a card, or receive) */
+  openWallet: (view?: 'Account' | 'OnRampProviders') => void
 }
 
 const AuthContext = createContext<Auth>({
-  address: undefined, busy: false, error: null, enabled: false, signIn: () => {}, signOut: async () => {},
+  address: undefined, busy: false, error: null, enabled: false, signIn: () => {}, signOut: async () => {}, openWallet: () => {},
 })
 export const useAuth = () => useContext(AuthContext)
 
@@ -140,6 +142,11 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     modal.open({ view: 'Connect' })
   }, [isConnected, wallet, siwe])
 
+  // Not connected (e.g. after a reload): connect first; an email wallet asks for the same email again
+  const openWallet = useCallback((view: 'Account' | 'OnRampProviders' = 'Account') => {
+    modal?.open({ view: isConnected ? view : 'Connect' })
+  }, [isConnected])
+
   const signOut = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
     await disconnectAsync().catch(() => {})
@@ -148,7 +155,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [disconnectAsync, router])
 
   return (
-    <AuthContext.Provider value={{ address, busy, error, enabled: !!modal, signIn, signOut }}>
+    <AuthContext.Provider value={{ address, busy, error, enabled: !!modal, signIn, signOut, openWallet }}>
       {children}
     </AuthContext.Provider>
   )

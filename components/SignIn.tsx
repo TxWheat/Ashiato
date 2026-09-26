@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, FolderOpen, LogOut, Mail, Sparkles, Wallet } from 'lucide-react'
+import { ChevronDown, FolderOpen, LogOut, Mail, Plus, Sparkles, Wallet } from 'lucide-react'
 import { truncate } from '@/lib/detect-chain'
 import { REMIND_DAYS } from '@/lib/billing/plans'
 import { useAuth } from './Providers'
@@ -50,7 +50,7 @@ export function SignInPanel() {
 
 /** Compact account control for the top bars */
 export function AccountButton({ compact = false }: { compact?: boolean }) {
-  const { address, busy, signIn, signOut } = useAuth()
+  const { address, busy, signIn, signOut, openWallet } = useAuth()
   if (address === undefined) return null
   if (!address) {
     // In the trace header, stay on the open trace rather than leaving it for the cases list
@@ -61,11 +61,11 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
       </button>
     )
   }
-  return <AccountMenu address={address} onSignOut={signOut} />
+  return <AccountMenu address={address} onSignOut={signOut} onWallet={openWallet} />
 }
 
 /** Signed in: one button with the account's cases and sign-out */
-function AccountMenu({ address, onSignOut }: { address: string; onSignOut: () => void }) {
+function AccountMenu({ address, onSignOut, onWallet }: { address: string; onSignOut: () => void; onWallet: (view: 'Account' | 'OnRampProviders') => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const pro = useProStatus(address)
@@ -94,6 +94,12 @@ function AccountMenu({ address, onSignOut }: { address: string; onSignOut: () =>
           <Link href="/cases" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 h-8 text-fg hover:bg-raised">
             <FolderOpen size={13} /> My cases
           </Link>
+          <button onClick={() => { setOpen(false); onWallet('Account') }} className="w-full flex items-center gap-2 px-3 h-8 text-fg hover:bg-raised">
+            <Wallet size={13} /> My wallet
+          </button>
+          <button onClick={() => { setOpen(false); onWallet('OnRampProviders') }} className="w-full flex items-center gap-2 px-3 h-8 text-fg hover:bg-raised">
+            <Plus size={13} /> Add funds
+          </button>
           <button onClick={() => { setOpen(false); onSignOut() }} className="w-full flex items-center gap-2 px-3 h-8 text-muted hover:text-fg hover:bg-raised">
             <LogOut size={13} /> Sign out
           </button>

@@ -167,7 +167,7 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
   const { switchChainAsync } = useSwitchChain()
   const { writeContractAsync } = useWriteContract()
   const config = useConfig()
-  const { signIn } = useAuth()
+  const { signIn, openWallet } = useAuth()
   const net = PAY_CHAINS[chain]
   const price = PRO_PLANS[plan]
   const sameWallet = wallet?.toLowerCase() === account
@@ -259,9 +259,17 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
         </button>
       )}
       <p className="text-[11px] text-faint">
+        No USDC yet? <button onClick={() => openWallet('OnRampProviders')} className="underline underline-offset-2 hover:text-fg">Add funds</button> (buy with a card, or use My wallet → Receive to send it from an exchange).{' '}
         Sent straight to Ashiato&apos;s wallet <span className="font-mono">{payTo}</span>. You also need a little {net.name} {net.test ? 'test ' : ''}ETH for the network fee.
       </p>
-      {status && <p className={clsx('text-xs', status.error ? 'text-red-500' : 'text-muted')}>{status.text}</p>}
+      {status && (
+        <p className={clsx('text-xs', status.error ? 'text-red-500' : 'text-muted')}>
+          {status.text}
+          {status.error && /USDC|ETH to pay/.test(status.text) && (
+            <> <button onClick={() => openWallet('OnRampProviders')} className="underline underline-offset-2 hover:text-fg">Add funds</button></>
+          )}
+        </p>
+      )}
       <details className="text-xs text-muted">
         <summary className="cursor-pointer hover:text-fg">Already paid? Check a transaction</summary>
         <div className="mt-2 flex gap-2 max-w-xl">
