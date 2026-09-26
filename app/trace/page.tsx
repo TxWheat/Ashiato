@@ -776,7 +776,8 @@ function TraceWorkspace() {
       n.delete(addr)
       return n
     })
-    setSelection(originAddress && addr !== originAddress ? { kind: 'address', id: originAddress } : originTx ? { kind: 'tx', id: originTx } : null)
+    // Removing never opens a panel: only a selection of the removed address itself is cleared
+    setSelection(s => (s?.kind === 'address' && s.id === addr ? null : s))
   }
 
   // ── Follow the funds ─────────────────────────────────────────────────────
@@ -1087,9 +1088,15 @@ function TraceWorkspace() {
    *  swaps added to the graph (money into the bridge and out on the other chain). Bridges
    *  write hashes with or without 0x and in either case, so each is stored every way. */
   const tracedTxids = useMemo(() => {
-    const ids = new Set(traced.map(f => f.txid))
+    // Only what is still on the graph: a removed address or hidden link takes its
+    // transactions off the trail colouring too
+    const onGraph = (from: string, to: string) => visible.has(from) && visible.has(to) && !hiddenLinks.has(pairKey(from, to))
+    const ids = new Set(traced.filter(f => onGraph(f.from, f.to)).map(f => f.txid))
     // Transactions you put on the graph yourself ('+ Graph', ticked in a link) are on the trail too
-    for (const id of itemizedIds) ids.add(id.split('|')[0])
+    for (const id of itemizedIds) {
+      const [txid, , from, to] = id.split('|')
+      if (!from || !to || onGraph(from, to)) ids.add(txid)
+    }
     for (const h of bridgeHops) {
       for (const raw of [h.fromHash, h.toHash]) {
         if (!raw) continue
@@ -1098,7 +1105,7 @@ function TraceWorkspace() {
       }
     }
     return ids
-  }, [traced, bridgeHops, itemizedIds])
+  }, [traced, bridgeHops, itemizedIds, visible, hiddenLinks])
 
   const legendTypes = useMemo(() => {
     const present = new Set(graphNodes.map(n => n.label?.type).filter(Boolean) as EntityType[])
