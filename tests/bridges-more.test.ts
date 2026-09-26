@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('server-only', () => ({}))
 import { hopFromAcross } from '@/lib/bridges/across'
-import { hopFromRelay } from '@/lib/bridges/relay'
+import { hopFromRelay, relayRequests } from '@/lib/bridges/relay'
 import { hopFromDeBridge } from '@/lib/bridges/debridge'
 import { BRIDGE_NAME, lookupService, statusOk, statusText } from '@/lib/bridges/types'
 import { units } from '@/lib/bridges/util'
@@ -72,6 +72,15 @@ describe('Relay requests', () => {
       service: 'Relay', fromChainName: 'ETH', toChainName: 'TRON', toChain: 'tron', fromAmount: 0.5, fromAsset: 'ETH',
       toAmount: 1300.12, toAsset: 'USDT', fromHash: H('c'), toHash: 'd'.repeat(64), toAddress: r.recipient,
     })
+  })
+})
+
+describe('Relay API key', () => {
+  it('explains that a key is needed instead of failing obscurely', async () => {
+    const saved = process.env.RELAY_API_KEY
+    delete process.env.RELAY_API_KEY
+    await expect(relayRequests('0x1111111111111111111111111111111111111111')).rejects.toThrow(/RELAY_API_KEY/)
+    if (saved !== undefined) process.env.RELAY_API_KEY = saved
   })
 })
 
