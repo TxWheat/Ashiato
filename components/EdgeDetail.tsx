@@ -36,6 +36,8 @@ interface Props {
   onClose: () => void
   /** Remove this link from the graph (both directions); the addresses stay */
   onHide: () => void
+  /** Remove one traced transaction (and what was traced onward from it only) */
+  onRemoveTraced?: (flow: TracedFlow) => void
   /** Shown above the tabs (e.g. where a cross-chain swap went) */
   extra?: React.ReactNode
 }
@@ -166,7 +168,14 @@ export default function EdgeDetail(p: Props) {
                 <div className="text-[10px] uppercase tracking-wider text-faint">Traced funds on this relationship</div>
                 {p.traced.map((f, i) => (
                   <div key={i} className="border-l-2 border-accent pl-3">
-                    <div className="text-xs font-mono text-accent">{fmtAmount(f.amount, f.asset, 8)} · hop {f.hop}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-mono text-accent">{fmtAmount(f.amount, f.asset, 8)} · hop {f.hop}</div>
+                      <span className="text-[10px] font-mono text-faint">{truncate(f.txid, 6)}</span>
+                      {p.onRemoveTraced && (
+                        <button onClick={() => p.onRemoveTraced!(f)} disabled={p.busy} title="Remove this traced transaction, and anything traced onward only from it"
+                          className="ml-auto text-faint hover:text-red-500 disabled:opacity-30" aria-label="Remove traced transaction"><X size={12} /></button>
+                      )}
+                    </div>
                     <div className="text-[11px] text-muted leading-relaxed">{f.reason}</div>
                   </div>
                 ))}

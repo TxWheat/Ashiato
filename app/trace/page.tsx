@@ -873,6 +873,23 @@ function TracePageInner() {
   /** Bumped when a view toggle (collapse / expand) adds or hides nodes, so the zoom stays put */
   const [quietRev, setQuietRev] = useState(0)
   const layoutKey = 'fixed'
+  /** One traced transaction goes, with whatever was traced onward from it and from nothing else */
+  const removeTraced = (flow: TracedFlow) => {
+    snapshot()
+    const same = (f: TracedFlow) => f.txid === flow.txid && f.from === flow.from && f.to === flow.to
+    let left = traced.filter(f => !same(f))
+    const queue = [flow]
+    while (queue.length) {
+      const cut = queue.shift()!
+      // Other traced money still reaches this address: its onward trail stays
+      if (left.some(f => f.to === cut.to && f.from !== cut.to)) continue
+      const onward = left.filter(f => f.from === cut.to && f.hop > cut.hop && f.time >= cut.time)
+      left = left.filter(f => !onward.includes(f))
+      queue.push(...onward)
+    }
+    setTraced(left)
+    flash(`Removed ${traced.length - left.length} traced transaction${traced.length - left.length === 1 ? '' : 's'}`)
+  }
   const hideLink = (a: string, b: string) => {
     setHiddenLinks(prev => new Set(prev).add(pairKey(a, b)))
     setSelection(null)
@@ -1248,6 +1265,7 @@ function TracePageInner() {
           }}
           onClose={() => setSelection(null)}
           onHide={() => hideLink(selection.from, selection.to)}
+          onRemoveTraced={removeTraced}
           extra={(() => {
             // Swaps: a transaction on this link paid the sender a different asset back (DEX, UniswapX, 1inch…)
             const swaps = edgeRows.flatMap(r => {
