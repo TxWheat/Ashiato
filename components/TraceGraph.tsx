@@ -32,7 +32,6 @@ const edgeTypes = { label: LabelEdge }
 const NODE_W = 196
 const NODE_H = 78
 const FIT = { padding: 0.3, maxZoom: 1.1 }
-const TAINT = '#ef4444'
 
 /** Cross-chain swaps: money leaves one chain and arrives on another */
 const BRIDGE = '#f97316'
@@ -45,7 +44,6 @@ const ARROWS = {
   accent: 'rgb(var(--accent))',
   muted: 'rgb(var(--muted))',
   faint: 'rgb(var(--faint))',
-  taint: TAINT,
   bridge: BRIDGE,
 } as const
 const arrowFor = (k: keyof typeof ARROWS) => `ct-arrow-${k}`
@@ -227,7 +225,6 @@ interface Props {
   /** Individual transactions drawn as their own lines (replacing the pair's relationship line) */
   itemized: EdgeData[]
   prices: Record<string, number>
-  taintByEdge?: Map<string, number>
   selected?: string | null
   /** The selected link, as `pairKey(a, b)` (either direction) */
   selectedEdge?: string | null
@@ -269,7 +266,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const menu = useMemo(() => onNodeAction
     ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) } }
@@ -382,21 +379,17 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const tr = tracedBy.get(key)
       const isChange = es.length > 0 && es.every(x => x.isChange) && !tr
       const followed = followedPairs.has(pairKey(source, target))
-      const taint = taintByEdge?.get(key)
-      const tainted = !!taint && taint > 0
       const weight = es.length ? Math.max(...es.map(x => Math.log1p(x.amount) / Math.log1p(maxByAsset.get(x.asset) || 1))) : 0.6
       // Change keeps its value-based width (it can be most of the money), drawn dashed
       const width = tr ? 2.5 + 2 * Math.min(1, weight) : 1 + 3 * Math.min(1, Math.max(0, weight))
-      const color = tainted ? TAINT : tr || followed ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--muted))'
+      const color = tr || followed ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--muted))'
       // Breadcrumbs-style label written along the line: amount (value) · count, then dates
       const txs = es.reduce((n, x) => n + (x.txCount ?? 1), 0)
       const first = Math.min(...es.map(x => x.firstTimestamp || x.timestamp).filter(Boolean))
       const last = Math.max(...es.map(x => x.timestamp))
       const line1 = tr
         ? `${[...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')}${swappedBy.has(key) ? ` · swapped for ${[...swappedBy.get(key)!].map(([a, v]) => fmtCompact(v, a)).join(' + ')}` : ''}${pooledBy.has(key) ? ` · ${pooledBy.get(key)! > 0 && pooledBy.get(key)! < 0.01 ? '<1' : Math.round(pooledBy.get(key)! * 100)}% of pool` : ''}`
-        : tainted
-          ? `${fmtCompact(taint!, es[0]?.asset ?? '')} tainted`
-          : `${relationshipLabel(es, prices, txs)}${isChange ? ' · likely change' : ''}`
+        : `${relationshipLabel(es, prices, txs)}${isChange ? ' · likely change' : ''}`
       const line2 = !es.length ? '' : txs === 1 ? fmtDateTime(last) : isFinite(first) && fmtDay(first) !== fmtDay(last) ? `${fmtDay(first)} → ${fmtDay(last)}` : fmtDay(last)
       // The side panel shows both directions of a pair, so both lines highlight
       const isSel = selectedEdge === pairKey(source, target)
@@ -406,9 +399,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         target,
         type: 'label',
         // Money flowing both ways: bow the two lines apart (opposite sides) so labels don't stack
-        data: { offset: groups.has(`${target}->${source}`) ? 26 : 0, line1, line2, color: tainted ? TAINT : tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', bold: !!tr || tainted || isSel, glow: !!tr || tainted },
+        data: { offset: groups.has(`${target}->${source}`) ? 26 : 0, line1, line2, color: tr ? 'rgb(var(--accent))' : isChange ? 'rgb(var(--faint))' : 'rgb(var(--fg))', bold: !!tr || isSel, glow: !!tr },
         zIndex: tr ? 2 : 1,
-        markerEnd: arrowFor(tainted ? 'taint' : tr || followed ? 'accent' : isChange ? 'faint' : 'muted'),
+        markerEnd: arrowFor(tr || followed ? 'accent' : isChange ? 'faint' : 'muted'),
         style: { stroke: color, strokeWidth: isSel ? width + 1.5 : width, strokeDasharray: isChange ? '5 4' : undefined, opacity: isChange ? 0.85 : 1, cursor: 'pointer' },
       }
     })
@@ -502,7 +495,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       })
     }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selectedEdge, chains, bridges])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, selectedEdge, chains, bridges])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])

@@ -3,7 +3,7 @@ import SiteNav from '@/components/SiteNav'
 import SearchForm from '@/components/SearchForm'
 import { SignInPanel } from '@/components/SignIn'
 import { labelStats } from '@/lib/labels'
-import { Bitcoin, ShieldAlert, Droplets } from 'lucide-react'
+import { Bitcoin, ShieldAlert, Coins } from 'lucide-react'
 
 function EthGlyph({ size = 96 }: { size?: number }) {
   return (
@@ -21,8 +21,8 @@ const FEATURES = [
     body: 'Spots the customer deposit address where stolen funds were cashed out, the detail an exchange needs to identify the account holder.',
   },
   {
-    title: 'Taint analysis',
-    body: 'Poison, haircut and FIFO models show how much of the stolen amount reached each address, traced exactly through Bitcoin UTXOs.',
+    title: 'Follow the funds',
+    body: 'Auto-trace reads each transaction (peel chains, splits, DEX swaps, cross-chain bridges) and follows the main trail, stopping at exchanges, mixers and pooled wallets.',
   },
   {
     title: 'Mixers & CoinJoins',
@@ -98,7 +98,7 @@ export default function Home() {
             { label: 'Bitcoin: UTXO-exact tracing', value: 'BTC', icon: <Bitcoin size={96} strokeWidth={1.25} />, dot: 'bg-orange-500' },
             { label: 'Ethereum: ETH + ERC-20', value: 'ETH', icon: <EthGlyph />, dot: 'bg-violet-500' },
             { label: 'Screened on every lookup', value: 'OFAC', icon: <ShieldAlert size={96} strokeWidth={1.25} />, dot: 'bg-red-500' },
-            { label: 'Poison · Haircut · FIFO', value: 'Taint', icon: <Droplets size={96} strokeWidth={1.25} />, dot: 'bg-green-500' },
+            { label: 'Tron: TRX + USDT (TRC-20)', value: 'TRON', icon: <Coins size={96} strokeWidth={1.25} />, dot: 'bg-green-500' },
           ].map((t, i) => (
             <div
               key={t.label}

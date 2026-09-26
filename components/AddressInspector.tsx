@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
-  Copy, Check, X, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Droplets, Trash2, AlertTriangle, Tag,
+  Copy, Check, X, ExternalLink, Plus, CheckCircle2, ArrowRightFromLine, ArrowLeftToLine, Trash2, AlertTriangle, Tag,
   Shuffle,
 } from 'lucide-react'
 import { MyLabel } from '@/lib/my-labels'
@@ -70,7 +70,6 @@ interface Props {
   canRemove: boolean
   tracing: boolean
   cluster?: Cluster
-  taint?: { amount: number; asset: string; isSeed: boolean }
   nameOf: (a: string) => string | undefined
   labelOf: (a: string) => EntityLabel | undefined
   onTab: (t: AddressTab) => void
@@ -82,7 +81,6 @@ interface Props {
   onOpenRelationship: (address: string) => void
   /** Draw one transaction on the graph as its own line */
   onShowTx: (tx: RawTransaction) => void
-  onTaint: () => void
   onRemove: () => void
   onLoadMore: () => void
   onNote: (note: string) => void
@@ -369,7 +367,6 @@ export default function AddressInspector(p: Props) {
             </span>
           )}
           <div className="flex gap-1.5 ml-auto">
-          <ActionBtn onClick={p.onTaint} icon={<Droplets size={12} />} title="Treat this address's funds as stolen and see where they went">Taint</ActionBtn>
           <ActionBtn onClick={() => setEditing(v => !v)} icon={<Tag size={12} />} title="Name this address yourself">{p.myLabel ? 'Edit label' : 'Label'}</ActionBtn>
           {p.canRemove && <ActionBtn onClick={p.onRemove} icon={<Trash2 size={12} />} title="Remove from graph" />}
           </div>
@@ -787,12 +784,6 @@ function Details(p: Props) {
           </div>
           {p.cluster.label && <div className="text-xs text-fg">Controlled by: {p.cluster.label.name.replace(' (cluster)', '')}</div>}
           <ul className="space-y-0.5 text-[11px] text-muted list-disc pl-4">{p.cluster.evidence.slice(0, 4).map((e, i) => <li key={i}>{e}</li>)}</ul>
-        </section>
-      )}
-      {p.taint && (
-        <section className="p-4">
-          <div className="text-[10px] uppercase tracking-wider text-faint mb-1">Taint</div>
-          <div className="text-xs font-mono text-red-500">{p.taint.isSeed ? 'This address is the taint source' : `${fmtAmount(p.taint.amount, p.taint.asset, 8)} tainted received`}</div>
         </section>
       )}
       <section className="p-4">

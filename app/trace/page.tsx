@@ -12,7 +12,6 @@ import { aggregateEdges, txEdges } from '@/lib/graph'
 import { counterparties as findCounterparties, flowSummary } from '@/lib/counterparties'
 import { clusterAddresses } from '@/lib/heuristics/cluster'
 import { tornadoLinks as findTornadoLinks } from '@/lib/heuristics/eth/tornado'
-import { runTaint, TaintMethod } from '@/lib/taint'
 import { BtcTxInfo, Direction, followFunds, Lot, seedsFromTx, backSeedsFromTx, TracedFlow, TraceEnd } from '@/lib/follow'
 import { saveCase as saveChartToBrowser, getCase as getSavedChart, newCaseId } from '@/lib/saved-cases'
 import { collapseChains } from '@/lib/collapse'
@@ -21,7 +20,7 @@ import ClientPaymentsDialog from '@/components/ClientPayments'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
-import { ENTITY_STYLE, nativeAsset, chainDot, fmtCompact, fmtDay, explorerAddressUrl } from '@/lib/format'
+import { ENTITY_STYLE, chainDot, fmtCompact, fmtDay, explorerAddressUrl } from '@/lib/format'
 import AddressInspector, { AddressTab } from '@/components/AddressInspector'
 import TxInspector from '@/components/TxInspector'
 import EdgeDetail from '@/components/EdgeDetail'
@@ -43,7 +42,6 @@ import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
 const TraceGraph = dynamic(() => import('@/components/TraceGraph'), { ssr: false })
 
-type TaintCfg = { seed: string; method: TaintMethod; asset: string }
 type Selection = { kind: 'address'; id: string } | { kind: 'flow'; from: string; to: string } | { kind: 'tx'; id: string } | null
 
 interface Snapshot {
@@ -198,18 +196,12 @@ function TracePageInner() {
     try { if (localStorage.getItem('ashiato.caseOpen') === '1') setCaseCollapsed(false) } catch { /* storage blocked */ }
   }, [])
 
-  const [taint, setTaint] = useState<TaintCfg | null>(null)
   const [follow, setFollow] = useState<FollowSettings>({ hops: 10, branches: 3, adaptive: true, minSharePct: 35 })
   const [traceStatus, setTraceStatus] = useState<string | null>(null)
   const traceCancel = useRef(false)
   const restoring = useRef<string | null>(null)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
-  /** Trail view: only the traced path, laid out fresh by hop (its positions are never saved) */
-  const [trailView, setTrailView] = useState(false)
-  const trailPositions = useRef(new Map<string, XY>())
-  const [trailRev, setTrailRev] = useState(0)
-  const freshTrail = () => { trailPositions.current = new Map(); setTrailRev(v => v + 1) }
   // Right panel width: drag to resize, or expand for a wide table view (remembered)
   const [panelW, setPanelW] = useState(400)
   const [panelExpanded, setPanelExpanded] = useState(false)
@@ -395,7 +387,6 @@ function TracePageInner() {
     setTraceEnds([])
     setHistory([])
     setSelection(null)
-    setTaint(null)
   }
 
   const loadOrigin = useCallback(async () => {
@@ -810,7 +801,6 @@ function TracePageInner() {
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
     }
     show(seed.flows)
-    freshTrail()
     setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
     try {
       const res = await followFunds(
@@ -841,11 +831,7 @@ function TracePageInner() {
     } catch (e) {
       if (caseGen.current === gen) flash(e instanceof Error ? e.message : 'Trace failed')
     } finally {
-      if (caseGen.current === gen) {
-        setTraceStatus(null)
-        // Lay the finished trail out afresh, hop by hop
-        freshTrail()
-      }
+      if (caseGen.current === gen) setTraceStatus(null)
     }
   }
 
@@ -889,8 +875,6 @@ function TracePageInner() {
 
   const tornado = useMemo(() => (originChain === 'eth' ? findTornadoLinks(allTxs, labelOf) : []), [allTxs, labelOf, originChain])
 
-  const taintAssets = useMemo(() => [...new Set(allTxs.map(t => t.asset))].sort(), [allTxs])
-  const taintResult = useMemo(() => (taint ? runTaint(allTxs, [taint.seed], taint.method, taint.asset) : null), [taint, allTxs])
 
   const selectedAddress = selection?.kind === 'address' ? selection.id : null
 
@@ -914,17 +898,14 @@ function TracePageInner() {
         label: mine(a) ?? n.label ?? btcLabels.current.get(a) ?? cluster?.label,
         isOrigin: a === originAddress,
         clusterId: cluster?.id,
-        taint: taintResult?.byAddress.get(a)?.received,
         view: {
           clusterSize: cluster?.members.length,
-          taintAsset: taint?.asset,
-          isTaintSeed: taint?.seed === a,
           loading: loadingAddrs.has(a),
           pooled: pooledAt.get(a),
         },
       }]
     })
-  }, [visible, known, clusters, taintResult, taint, loadingAddrs, originAddress, displayEnds, mine])
+  }, [visible, known, clusters, loadingAddrs, originAddress, displayEnds, mine])
 
   const graphEdges = useMemo(() => {
     const ids = new Set(graphNodes.map(n => n.address))
@@ -941,7 +922,7 @@ function TracePageInner() {
     if (!collapseOn) return { chains: [], hidden: new Set<string>() }
     // Selection isn't part of this: clicking a node must never fold or unfold chains (that moves nodes)
     const keep = new Set<string>([originAddress, ...pinned].filter(Boolean))
-    for (const n of graphNodes) if (n.label || n.note || n.view.isTaintSeed) keep.add(n.address)
+    for (const n of graphNodes) if (n.label || n.note) keep.add(n.address)
     return collapseChains({ nodes: graphNodes.map(n => n.address), edges: graphEdges, traced: graphTraced, keep, expanded: expandedChains })
   }, [collapseOn, graphNodes, graphEdges, graphTraced, expandedChains, originAddress, pinned])
   // Opening an address hidden inside a collapsed chain (from search or a list) keeps it out for good
@@ -1008,23 +989,6 @@ function TracePageInner() {
   }, [bridgeHops])
   const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
 
-  // Trail view: the traced lines and the addresses on them, nothing else
-  const trail = useMemo(() => {
-    const base = drawn ?? { nodes: graphNodes, edges: graphEdges, traced: graphTraced }
-    const pairs = new Set(base.traced.map(f => pairKey(f.from, f.to)))
-    const on = new Set(base.traced.flatMap(f => [f.from, f.to]))
-    for (const c of collapsed.chains) if (on.has(c.from) || on.has(c.to)) { on.add(c.from); on.add(c.to) }
-    const bridges = graphBridges.filter(b => on.has(b.from))
-    for (const b of bridges) on.add(b.to)
-    return {
-      nodes: base.nodes.filter(n => on.has(n.address)),
-      edges: base.edges.filter(e => pairs.has(pairKey(e.source, e.target))),
-      traced: base.traced,
-      chains: collapsed.chains.filter(c => on.has(c.from) && on.has(c.to)),
-      bridges,
-    }
-  }, [drawn, graphNodes, graphEdges, graphTraced, collapsed, graphBridges])
-  const inTrail = trailView && traced.length > 0
   /** Transactions on the trail, coloured in the address panel: traced steps, ones you added, and cross-chain
    *  swaps added to the graph (money into the bridge and out on the other chain). Bridges
    *  write hashes with or without 0x and in either case, so each is stored every way. */
@@ -1041,7 +1005,6 @@ function TracePageInner() {
     }
     return ids
   }, [traced, bridgeHops, itemizedIds])
-  const trailIds = useMemo(() => new Set(trail.nodes.map(n => n.address)), [trail])
 
   const legendTypes = useMemo(() => {
     const present = new Set(graphNodes.map(n => n.label?.type).filter(Boolean) as EntityType[])
@@ -1116,7 +1079,6 @@ function TracePageInner() {
           followedPairs: [...followedPairs],
           traced,
           traceEnds,
-          taint,
           positions: Object.fromEntries([...positionsRef.current].filter(([a]) => visible.has(a) || hubs.has(a.replace(/^tx:/, '')))),
           itemizedIds: [...itemizedIds],
           hiddenLinks: [...hiddenLinks],
@@ -1160,9 +1122,7 @@ function TracePageInner() {
     setPayments(c.clientPayments ?? [])
     setBridgeHops(c.bridgeHops ?? [])
     setTraced(uniqueFlows(c.traced ?? []))
-    setTrailView(false)
     setTraceEnds(mergeEnds(c.traceEnds ?? []))
-    setTaint(c.taint ?? null)
     setHistory([])
     setError('')
     setInitialLoading(false)
@@ -1228,7 +1188,7 @@ function TracePageInner() {
     }
     changeCount.current++
     setDirty(true)
-  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, payments, traced, traceEnds, taint, layoutRev, myLabels, bridgeHops])
+  }, [known, visible, pages, hubs, followedPairs, itemizedIds, hiddenLinks, payments, traced, traceEnds, layoutRev, myLabels, bridgeHops])
   useEffect(() => {
     if (!autosave || !saved || !dirty || initialLoading) return
     const t = setTimeout(() => saveRef.current(saved.name, { quiet: true }), 1500)
@@ -1245,7 +1205,7 @@ function TracePageInner() {
 
   const openReport = () => {
     if (!originChain) return
-    const html = buildReport({ origin: originKey, chain: originChain, nodes: nodeMap, edges: graphEdges, taint: taintResult, traced, traceEnds, nameOf, payments })
+    const html = buildReport({ origin: originKey, chain: originChain, nodes: nodeMap, edges: graphEdges, traced, traceEnds, nameOf, payments })
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank', 'noopener')
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -1300,17 +1260,12 @@ function TracePageInner() {
           canRemove={a !== originAddress}
           tracing={!!traceStatus}
           cluster={clusters.byAddress.get(a)}
-          taint={taint ? { amount: taintResult?.byAddress.get(a)?.received ?? 0, asset: taint.asset, isSeed: taint.seed === a } : undefined}
           nameOf={nameOf}
           labelOf={labelOf}
           onTab={setTab}
           onAdd={addToGraph}
           onOpen={openAddress}
           onTraceTx={(tx, dir) => runFollow(dir, dir === 'forward' ? seedsFromTx(tx, a, undefined, follow.adaptive) : backSeedsFromTx(tx, a))}
-          onTaint={() => {
-            setTaint(t => ({ seed: a, method: t?.method ?? 'haircut', asset: nativeAsset(selectedNode.chain) }))
-            ensurePage(a)
-          }}
           onRemove={() => removeNode(a)}
           editLabel={labelFor === a}
           onEditLabelShown={() => setLabelFor(null)}
@@ -1486,15 +1441,6 @@ function TracePageInner() {
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
           )}
-          {traced.length > 0 && (
-            <button
-              onClick={() => { if (!trailView) freshTrail(); setTrailView(v => !v) }}
-              title={trailView ? 'Show every address in the case' : 'Show only the traced trail, laid out hop by hop'}
-              className={`h-7 px-2.5 border border-line text-[11px] font-medium ${trailView ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
-            >
-              {trailView ? 'Show whole case' : 'Show trail only'}
-            </button>
-          )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
             <button
               onClick={() => { setQuietRev(v => v + 1); setCollapseOn(v => !v); setExpandedChains(new Set()); setPinned(new Set()) }}
@@ -1525,7 +1471,7 @@ function TracePageInner() {
             onLoadCase={loadCaseFile}
             onReport={openReport}
             onPng={exportPng}
-            onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges, taintResult?.byEdge), 'text/csv')}
+            onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges), 'text/csv')}
             onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
           />
           <AccountButton compact />
@@ -1536,8 +1482,6 @@ function TracePageInner() {
       <div className="relative flex flex-1 overflow-hidden min-h-0">
         {!initialLoading && !error && (
           <CasePanel
-            payments={payments}
-            onOpenPayments={() => setPaymentsOpen(true)}
             collapsed={caseCollapsed}
             onToggle={() => setCaseCollapsed(c => {
               try { localStorage.setItem('ashiato.caseOpen', c ? '1' : '0') } catch { /* storage blocked */ }
@@ -1548,13 +1492,7 @@ function TracePageInner() {
             onFollow={setFollow}
             traced={traced}
             traceEnds={displayEnds}
-            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]); setTrailView(false) }}
-            taint={taint}
-            taintResult={taintResult}
-            taintAssets={taintAssets}
-            onTaintMethod={m => setTaint(t => (t ? { ...t, method: m } : t))}
-            onTaintAsset={a => setTaint(t => (t ? { ...t, asset: a } : t))}
-            onTaintClear={() => setTaint(null)}
+            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]) }}
             clusters={clusters.clusters}
             tornadoLinks={tornado}
             labelOf={labelOf}
@@ -1588,16 +1526,16 @@ function TracePageInner() {
 
           {!initialLoading && !error && (graphNodes.length > 0 || graphHubs.length > 0) && (
             <TraceGraph
-              key={inTrail ? `trail-${trailRev}` : `case-${caseRev}`}
-              nodes={inTrail ? trail.nodes : drawn?.nodes ?? graphNodes}
-              edges={inTrail ? trail.edges : drawn?.edges ?? graphEdges}
+              key={`case-${caseRev}`}
+              nodes={drawn?.nodes ?? graphNodes}
+              edges={drawn?.edges ?? graphEdges}
               followedPairs={followedPairs}
-              traced={inTrail ? trail.traced : drawn?.traced ?? graphTraced}
-              chains={inTrail ? trail.chains : collapsed.chains}
+              traced={drawn?.traced ?? graphTraced}
+              chains={collapsed.chains}
               onChainClick={id => { setQuietRev(v => v + 1); setExpandedChains(prev => new Set(prev).add(id)) }}
               quietKey={quietRev}
-              hubs={inTrail ? [] : graphHubs}
-              bridges={inTrail ? trail.bridges : graphBridges}
+              hubs={graphHubs}
+              bridges={graphBridges}
               onBridgeClick={id => {
                 // Reopen the link the swap was found on, where it can be removed
                 const ids = id.split('+')
@@ -1613,9 +1551,8 @@ function TracePageInner() {
                   setBridgeHops(prev => prev.filter(x => !ids.includes(x.orderId)))
                 }
               }}
-              itemized={inTrail ? itemizedEdges.filter(e => trailIds.has(e.source) && trailIds.has(e.target)) : itemizedEdges}
+              itemized={itemizedEdges}
               prices={prices}
-              taintByEdge={taintResult?.byEdge}
               selected={selectedAddress}
               selectedEdge={selection?.kind === 'flow' ? pairKey(selection.from, selection.to) : null}
               selectedHub={selection?.kind === 'tx' ? selection.id : null}
@@ -1625,8 +1562,8 @@ function TracePageInner() {
               onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}
-              positions={inTrail ? trailPositions.current : positionsRef.current}
-              onLayoutChange={inTrail ? undefined : () => setLayoutRev(v => v + 1)}
+              positions={positionsRef.current}
+              onLayoutChange={() => setLayoutRev(v => v + 1)}
               onReady={api => (graphApi.current = api)}
             />
           )}
@@ -1634,13 +1571,6 @@ function TracePageInner() {
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
               Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>. To follow money, open a transaction and press <b className="text-fg font-medium">Trace</b>. Click empty space to hide the panel.
-            </div>
-          )}
-
-          {inTrail && !initialLoading && !error && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-3 bg-panel border border-accent px-3 h-8 text-[11px] text-muted">
-              Trail view: {trail.nodes.length} of {graphNodes.length} addresses shown. Nothing is removed from your case.
-              <button onClick={() => setTrailView(false)} className="font-medium text-fg underline underline-offset-2 hover:text-accent">Show whole case</button>
             </div>
           )}
 

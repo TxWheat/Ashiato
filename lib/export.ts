@@ -1,5 +1,4 @@
 import { Chain, EdgeData, NodeData, RawTransaction, TxLookup } from './types'
-import { TaintMethod } from './taint'
 import type { CheckedPayment } from './client-payments'
 import type { TracedFlow, TraceEnd } from './follow'
 import type { CrossChainHop } from './bridges/types'
@@ -32,7 +31,6 @@ export interface CaseFile {
   followedPairs: string[]
   traced?: TracedFlow[]
   traceEnds?: TraceEnd[]
-  taint?: { seed: string; method: TaintMethod; asset: string } | null
   /** Node positions on the canvas, so a reopened chart keeps its layout */
   positions?: Record<string, { x: number; y: number }>
   /** Transactions drawn as their own lines */
@@ -86,10 +84,9 @@ function csvCell(v: unknown): string {
 
 export function flowsToCsv(
   nodes: Map<string, NodeData>,
-  edges: EdgeData[],
-  taintByEdge?: Map<string, number>
+  edges: EdgeData[]
 ): string {
-  const header = ['from', 'from_label', 'to', 'to_label', 'asset', 'amount', 'tx_count', 'last_seen_utc', 'likely_change', 'tainted_amount', 'txids']
+  const header = ['from', 'from_label', 'to', 'to_label', 'asset', 'amount', 'tx_count', 'last_seen_utc', 'likely_change', 'txids']
   const rows = edges.map(e => [
     e.source,
     nodes.get(e.source)?.label?.name ?? '',
@@ -100,7 +97,6 @@ export function flowsToCsv(
     e.txCount ?? 1,
     e.timestamp ? new Date(e.timestamp * 1000).toISOString() : '',
     e.isChange ? 'yes' : '',
-    taintByEdge?.get(`${e.source}->${e.target}`) ?? '',
     (e.txids ?? [e.txid]).join(' '),
   ])
   return [header, ...rows].map(r => r.map(csvCell).join(',')).join('\n') + '\n'

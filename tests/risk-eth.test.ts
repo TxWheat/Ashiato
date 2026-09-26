@@ -1,61 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { runTaint } from '@/lib/taint'
 import { scoreRisk } from '@/lib/risk'
 import { detectDepositAddress } from '@/lib/heuristics/deposit'
 import { tornadoFindings, tornadoLinks } from '@/lib/heuristics/eth/tornado'
 import { toUnits } from '@/lib/chains/eth'
 import { EntityLabel } from '@/lib/types'
 import { btcTx, ethTx } from './fixtures'
-
-describe('runTaint (BTC, UTXO level)', () => {
-  // Thief (1T, 1 BTC stolen) merges with 1 BTC clean from 1C, pays 1.5 to 1P and 0.5 to 1Q
-  const t1 = btcTx([['1T', 1, 'stolen:0'], ['1C', 1, 'clean:0']], [['1P', 1.5], ['1Q', 0.5]], 100, 'a'.repeat(64))
-  // 1P then forwards everything to exchange 1X
-  const t2 = btcTx([['1P', 1.5, `${'a'.repeat(64)}:0`]], [['1X', 1.5]], 200, 'b'.repeat(64))
-
-  it('poison taints everything downstream in full', () => {
-    const r = runTaint([t2, t1], ['1T'], 'poison', 'BTC')
-    expect(r.byAddress.get('1P')!.received).toBeCloseTo(1.5)
-    expect(r.byAddress.get('1Q')!.received).toBeCloseTo(0.5)
-    expect(r.byAddress.get('1X')!.received).toBeCloseTo(1.5)
-  })
-
-  it('haircut spreads taint in proportion', () => {
-    const r = runTaint([t1, t2], ['1T'], 'haircut', 'BTC')
-    expect(r.byAddress.get('1P')!.received).toBeCloseTo(0.75)
-    expect(r.byAddress.get('1Q')!.received).toBeCloseTo(0.25)
-    expect(r.byAddress.get('1X')!.received).toBeCloseTo(0.75)
-    expect(r.reached[0].address).toBe('1P')
-  })
-
-  it('FIFO fills outputs in input order', () => {
-    const r = runTaint([t1, t2], ['1T'], 'fifo', 'BTC')
-    // Tainted 1 BTC comes first, so it all lands in the first output (1P)
-    expect(r.byAddress.get('1P')!.received).toBeCloseTo(1)
-    expect(r.byAddress.get('1Q')?.received ?? 0).toBeCloseTo(0)
-    expect(r.byAddress.get('1X')!.received).toBeCloseTo(1)
-  })
-})
-
-describe('runTaint (ETH, account level)', () => {
-  const txs = [
-    ethTx('0xclean', '0xmule', 3, 10),
-    ethTx('0xthief', '0xmule', 1, 20),
-    ethTx('0xmule', '0xexchange', 2, 30),
-  ]
-  it('haircut uses the mule balance share', () => {
-    const r = runTaint(txs, ['0xthief'], 'haircut', 'ETH')
-    expect(r.byAddress.get('0xexchange')!.received).toBeCloseTo(0.5) // 2 × (1/4)
-  })
-  it('FIFO spends the older clean lot first', () => {
-    const r = runTaint(txs, ['0xthief'], 'fifo', 'ETH')
-    expect(r.byAddress.get('0xexchange')?.received ?? 0).toBeCloseTo(0)
-  })
-  it('poison marks the mule and everything it sends', () => {
-    const r = runTaint(txs, ['0xthief'], 'poison', 'ETH')
-    expect(r.byAddress.get('0xexchange')!.received).toBeCloseTo(2)
-  })
-})
 
 describe('scoreRisk', () => {
   const labels: Record<string, EntityLabel> = {

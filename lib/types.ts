@@ -101,8 +101,6 @@ export interface NodeData {
   risk?: RiskResult
   findings?: Finding[]
   clusterId?: number
-  /** Taint currently attributed to this address, in the taint asset */
-  taint?: number
   note?: string
 }
 
