@@ -13,18 +13,24 @@ import { detectInput, searchUrl, SearchTarget, truncate } from '@/lib/detect-cha
  */
 const PLACEHOLDER = 'Address or transaction hash'
 
-/** Types the text out once, a letter at a time (all at once for reduced motion) */
-function useTypewriter(text: string, enabled: boolean, perChar = 70, startAfter = 400): string {
+/** Types the text out, holds, erases and repeats (all at once for reduced motion) */
+function useTypewriter(text: string, enabled: boolean, typeMs = 70, eraseMs = 35, holdMs = 2500, pauseMs = 500): string {
   const [shown, setShown] = useState(enabled ? '' : text)
   useEffect(() => {
     if (!enabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return setShown(text)
     let i = 0
-    let timer = setTimeout(function tick() {
-      setShown(text.slice(0, ++i))
-      if (i < text.length) timer = setTimeout(tick, perChar)
-    }, startAfter)
+    let erasing = false
+    const tick = () => {
+      i += erasing ? -1 : 1
+      setShown(text.slice(0, i))
+      let wait = erasing ? eraseMs : typeMs
+      if (!erasing && i === text.length) { erasing = true; wait = holdMs }
+      else if (erasing && i === 0) { erasing = false; wait = pauseMs }
+      timer = setTimeout(tick, wait)
+    }
+    let timer = setTimeout(tick, 400)
     return () => clearTimeout(timer)
-  }, [text, enabled, perChar, startAfter])
+  }, [text, enabled, typeMs, eraseMs, holdMs, pauseMs])
   return shown
 }
 

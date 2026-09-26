@@ -5,7 +5,7 @@ import { encodeLabel, encodeVote } from './encode'
 import { LabelMessage, Signed, VoteMessage } from './signed'
 import { RawAttestation } from './trust'
 
-// Signed community labels and votes in Supabase. Table: supabase/community.sql
+// Signed community labels and votes in Supabase. Table: community_attestations
 
 export interface SignedRow {
   uid: string

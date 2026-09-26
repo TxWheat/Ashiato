@@ -1,7 +1,6 @@
 import 'server-only'
 
 // Supabase (Postgres via its REST API), server-side only with the service role key.
-// Tables: supabase/*.sql
 
 const URL_ = process.env.SUPABASE_URL?.replace(/\/$/, '')
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY

@@ -38,7 +38,7 @@ uid is the EIP-712 hash of the signed message.
 
 ## Setup
 
-Run `supabase/community.sql` once in Supabase → SQL Editor. It uses the same
+Create the `community_attestations` table once in Supabase → SQL Editor. It uses the same
 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` as saved cases.
 
 ## Code
