@@ -18,6 +18,7 @@ import { collapseChains } from '@/lib/collapse'
 import { CheckedPayment, PaymentMatch, choosePayment, judgePayment, parseClientPayments, seedsFromPayments, transfersOf } from '@/lib/client-payments'
 import ClientPaymentsDialog from '@/components/ClientPayments'
 import SummaryDialog from '@/components/SummaryDialog'
+import ChainDetail, { type ChainStep } from '@/components/ChainDetail'
 import { summaryFacts } from '@/lib/summary-facts'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
@@ -49,7 +50,7 @@ import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
 const TraceGraph = dynamic(() => import('@/components/TraceGraph'), { ssr: false })
 
-type Selection = { kind: 'address'; id: string } | { kind: 'flow'; from: string; to: string } | { kind: 'tx'; id: string } | null
+type Selection = { kind: 'address'; id: string } | { kind: 'flow'; from: string; to: string } | { kind: 'tx'; id: string } | { kind: 'chain'; id: string } | null
 
 interface Snapshot {
   visible: Set<string>
@@ -260,7 +261,8 @@ function TraceWorkspace() {
       if (w >= 320) setPanelW(w)
     } catch { /* storage blocked */ }
   }, [])
-  const panelCss = panelExpanded ? 'min(1180px, 78vw)' : `min(${panelW}px, 70vw)`
+  // Expanded: about half the screen (the wide table needs ~720px), the graph keeps the rest
+  const panelCss = panelExpanded ? 'min(max(50vw, 720px), 90vw)' : `min(${panelW}px, 70vw)`
   // Phones always get the stacked list: the wide table (smart expand) doesn't fit
   const [narrow, setNarrow] = useState(false)
   useEffect(() => {
@@ -432,7 +434,6 @@ function TraceWorkspace() {
     autoLoaded.current.clear()
     setTraceStatus(null)
     setPinned(new Set())
-    setExpandedChains(new Set())
   }
 
   const resetState = () => {
@@ -1015,18 +1016,16 @@ function TraceWorkspace() {
   }, [allEdges, graphNodes, hiddenLinks])
   const graphTraced = useMemo(() => traced.filter(f => !hiddenLinks.has(pairKey(f.from, f.to))), [traced, hiddenLinks])
 
-  // Long pass-through runs (peel chains, relays) drawn as one line; the hops stay in the data
-  const [collapseOn, setCollapseOn] = useState(true)
-  const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set())
+  // Runs of pass-through hops (peel chains, relays) are always drawn as one line; clicking it
+  // lists every hop and its transactions. The hops stay in the data.
   /** Addresses never folded into a chain (they were on screen when you removed something) */
   const [pinned, setPinned] = useState<Set<string>>(new Set())
   const collapsed = useMemo(() => {
-    if (!collapseOn) return { chains: [], hidden: new Set<string>() }
     // Selection isn't part of this: clicking a node must never fold or unfold chains (that moves nodes)
     const keep = new Set<string>([originAddress, ...pinned].filter(Boolean))
     for (const n of graphNodes) if (n.label || n.note) keep.add(n.address)
-    return collapseChains({ nodes: graphNodes.map(n => n.address), edges: graphEdges, traced: graphTraced, keep, expanded: expandedChains })
-  }, [collapseOn, graphNodes, graphEdges, graphTraced, expandedChains, originAddress, pinned])
+    return collapseChains({ nodes: graphNodes.map(n => n.address), edges: graphEdges, traced: graphTraced, keep, expanded: new Set(), minHops: 2 })
+  }, [graphNodes, graphEdges, graphTraced, originAddress, pinned])
   // Opening an address hidden inside a collapsed chain (from search or a list) keeps it out for good
   useEffect(() => {
     if (selectedAddress && collapsed.hidden.has(selectedAddress)) setPinned(prev => new Set(prev).add(selectedAddress))
@@ -1041,10 +1040,6 @@ function TraceWorkspace() {
     }
   }, [collapsed, graphNodes, graphEdges, graphTraced])
   const drawnNodes = drawn?.nodes ?? graphNodes
-  // The layout is never re-done wholesale: collapsing chains, removing or adding nodes keeps
-  // everything where it is (collapsed chains pull their end in), and the zoom where the user left it
-  /** Bumped when a view toggle (collapse / expand) adds or hides nodes, so the zoom stays put */
-  const [quietRev, setQuietRev] = useState(0)
   /** One traced transaction goes, with whatever was traced onward from it and from nothing else */
   const removeTraced = (flow: TracedFlow) => {
     snapshot()
@@ -1347,6 +1342,23 @@ function TraceWorkspace() {
 
   // ── Inspector ────────────────────────────────────────────────────────────
   const inspector = (() => {
+    if (selection?.kind === 'chain') {
+      const c = collapsed.chains.find(x => x.id === selection.id)
+      if (c) {
+        const path = [c.from, ...c.middle, c.to]
+        const steps: ChainStep[] = path.slice(1).map((to, k) => {
+          const from = path[k]
+          const flows = graphTraced.filter(f => f.from === from && f.to === to)
+          const txs = flows.length
+            ? flows.map(f => ({ txid: f.txid, amount: f.amount, asset: f.asset, time: f.time, why: f.reason }))
+            : graphEdges.filter(e => e.source === from && e.target === to).flatMap(e => (e.parts?.length === (e.txids?.length ?? 1) && e.txids
+              ? e.txids.map((txid, i) => ({ txid, amount: e.parts![i].amount, asset: e.asset, time: e.parts![i].timestamp }))
+              : [{ txid: e.txid, amount: e.amount, asset: e.asset, time: e.timestamp }]))
+          return { from, to, txs }
+        })
+        return <ChainDetail chain={c} steps={steps} chainOf={chainOf} nameOf={nameOf} onSelect={openAddress} onClose={() => setSelection(null)} />
+      }
+    }
     if (selection?.kind === 'address' && selectedNode) {
       const a = selectedNode.address
       return (
@@ -1570,15 +1582,6 @@ function TraceWorkspace() {
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
           )}
-          {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
-            <button
-              onClick={() => { setQuietRev(v => v + 1); setCollapseOn(v => !v); setExpandedChains(new Set()); setPinned(new Set()) }}
-              title={collapseOn ? 'Show every hop of long chains' : 'Draw long pass-through chains as one line'}
-              className={`h-7 px-2.5 border border-line text-[11px] font-medium ${collapseOn ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
-            >
-              {collapseOn ? `Chains collapsed${collapsed.chains.length ? ` (${collapsed.chains.length})` : ''}` : 'Collapse chains'}
-            </button>
-          )}
           <span className="hidden xl:block whitespace-nowrap">{graphNodes.length} addresses</span>
           <button onClick={undo} disabled={!history.length} className="flex items-center gap-1 hover:text-fg disabled:opacity-30 p-1" title="Undo" aria-label="Undo">
             <Undo2 size={14} />{history.length > 0 && <span className="text-[10px]">{history.length}</span>}
@@ -1663,8 +1666,7 @@ function TraceWorkspace() {
               followedPairs={followedPairs}
               traced={drawn?.traced ?? graphTraced}
               chains={collapsed.chains}
-              onChainClick={id => { setQuietRev(v => v + 1); setExpandedChains(prev => new Set(prev).add(id)) }}
-              quietKey={quietRev}
+              onChainClick={id => setSelection({ kind: 'chain', id })}
               hubs={graphHubs}
               bridges={graphBridges}
               onBridgeClick={id => {

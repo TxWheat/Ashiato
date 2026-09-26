@@ -8,6 +8,7 @@ import ReactFlow, {
   Background,
   MiniMap,
   useNodesState,
+  SelectionMode,
   useEdgesState,
   BackgroundVariant,
   ReactFlowInstance,
@@ -179,8 +180,6 @@ interface Props {
   /** Cross-chain hops: from the swap service's node to where the money came out */
   bridges?: BridgeLine[]
   onBridgeClick?: (id: string) => void
-  /** Changes when nodes appear or vanish because of a view toggle (collapsing chains): keep the zoom */
-  quietKey?: number
   /** Quick actions shown around a clicked node; without this, clicks go straight to onNodeClick */
   onNodeAction?: (address: string, action: NodeAction) => void
   /** Addresses with watch alerts on (shown in the node menu) */
@@ -205,7 +204,9 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, moved, tidyKey, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, watched, annotations = [], onAnnotations }: Props) {
+const MULTI_KEYS = ['Shift', 'Control', 'Meta']
+
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, moved, tidyKey, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, onNodeAction, watched, annotations = [], onAnnotations }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const { currency } = useSettings()
   const pricing = usePricing()
@@ -222,7 +223,6 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   const nodeCount = useRef(0)
   /** Node ids on the canvas last time, to tell what was just added */
   const shownIds = useRef(new Set<string>())
-  const lastQuiet = useRef(quietKey)
   /** Collapsed chains last time, and how far each one's end (and everything after it) was slid in */
   const prevChains = useRef(new Map<string, CollapsedChain>())
   const chainsRef = useRef(chains)
@@ -418,7 +418,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         type: 'label',
         data: {
           line1: `${c.hops} hops · ${amt}${c.peels ? ` · ${c.peels} peel${c.peels === 1 ? '' : 's'}` : ''}`,
-          line2: `${c.firstTime ? (fmtDay(c.firstTime) === fmtDay(c.lastTime) ? fmtDay(c.lastTime) : `${fmtDay(c.firstTime)} → ${fmtDay(c.lastTime)}`) + ' · ' : ''}click to expand`,
+          line2: `${c.firstTime ? (fmtDay(c.firstTime) === fmtDay(c.lastTime) ? fmtDay(c.lastTime) : `${fmtDay(c.firstTime)} → ${fmtDay(c.lastTime)}`) + ' · ' : ''}click for the transactions`,
           color: 'rgb(var(--accent))',
           bold: true,
           glow: true,
@@ -482,8 +482,6 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     // Refit on first draw and after a tidy. Otherwise keep the user's zoom: removing nodes never
     // moves the view, and added nodes only pan into view when they land off-screen.
     const firstDraw = nodeCount.current === 0
-    const quiet = lastQuiet.current !== quietKey
-    lastQuiet.current = quietKey
     const added = laid.filter(n => !shownIds.current.has(n.id))
     nodeCount.current = rawNodes.length
     shownIds.current = new Set(laid.map(n => n.id))
@@ -493,7 +491,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       setTimeout(() => rf.current?.fitView({ ...FIT, duration: 250 }), 400)
     } else if (tidy) {
       setTimeout(() => rf.current?.fitView({ ...FIT, duration: 300 }), 80)
-    } else if (added.length && !quiet) {
+    } else if (added.length) {
       setTimeout(() => {
         const inst = rf.current
         const el = document.querySelector('.react-flow')
@@ -512,7 +510,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         }
       }, 120)
     }
-  }, [rawNodes, rawEdges, setNodes, setEdges, quietKey, chainsKey, moved, tidyKey])
+  }, [rawNodes, rawEdges, setNodes, setEdges, chainsKey, moved, tidyKey])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -596,7 +594,12 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           if (notes.size) onAnnotations?.(annotationsRef.current.map(a => (notes.has(a.id) ? { ...a, ...notes.get(a.id)! } : a)))
           onLayoutChange?.()
         }}
-        onNodeClick={(_, n) => {
+        // Several addresses move together: Shift/Ctrl/⌘-click adds one to the selection, Shift-drag
+        // on empty space draws a box around several, then dragging any of them moves them all
+        multiSelectionKeyCode={MULTI_KEYS}
+        selectionMode={SelectionMode.Partial}
+        onNodeClick={(ev, n) => {
+          if (ev.shiftKey || ev.ctrlKey || ev.metaKey) return setMenuFor(null)
           if (n.type === 'annotation') return
           if (n.type === 'tx') return onHubClick((n.data as TxHubData).txid)
           if (onNodeAction) setMenuFor(v => (v === n.id ? null : n.id))

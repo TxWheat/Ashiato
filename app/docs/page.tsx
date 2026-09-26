@@ -25,7 +25,7 @@ const GUIDE: Section[] = [
       'Each box is an address, coloured by what it is: exchange, scam, mixer, bridge, sanctioned, service or unknown. Lines are money moving between them, with the total and the number of transactions; a line added by a trace is highlighted and shows the traced amount.',
       'Click an address for its menu: Transactions (every transfer in and out, newest first, incoming in green and outgoing in red), Relationships (who it sent to and received from, sortable, with a button to add any of them to the graph), Details (labels, risk, community labels), plus Label, Copy address, Open in block explorer and Remove from graph. Smart expand opens the transactions in a wide view.',
       'Click a line to see the transactions behind it. Each one can be removed from or shown on the graph on its own, so one relevant payment can stay while the noise goes.',
-      'Drag addresses to arrange them; the layout and zoom are kept when you save and reopen. The tools at the bottom left add boxes, circles, arrows and text notes, for highlighting a cluster or writing what you found; select one to resize, rotate (arrows) or delete it.',
+      'Drag addresses to arrange them. To move several at once, Shift-, Ctrl- or ⌘-click each one (or hold Shift and drag a box around them), then drag any of them. After an auto trace, a run of pass-through hops is drawn as one line; click it for every address and transaction along it. The layout and zoom are kept when you save and reopen. The tools at the bottom left add boxes, circles, arrows and text notes, for highlighting a cluster or writing what you found; select one to resize, rotate (arrows) or delete it.',
     ],
   },
   {
