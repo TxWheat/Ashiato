@@ -1,4 +1,5 @@
 // Shared by the bridge API clients: tolerant field readers and chain ids
+import { getAddress } from 'viem'
 
 export type Raw = Record<string, unknown>
 
@@ -34,4 +35,9 @@ const CHAIN_BY_ID: Record<string, string> = {
   // Non-EVM chains, as Across / Relay / deBridge number them
   728126428: 'TRON', 34268394551451: 'SOLANA', 792703809: 'SOLANA', 7565164: 'SOLANA', 8253038: 'BTC', 100000026: 'TRON',
 }
+/** EVM addresses in checksum case (as the bridges' own sites send them); anything else as given */
+export const checksum = (a: string) => {
+  try { return getAddress(a) } catch { return a }
+}
+
 export const chainName = (id: unknown) => CHAIN_BY_ID[str(id)] ?? (str(id) ? `Chain ${str(id)}` : '?')

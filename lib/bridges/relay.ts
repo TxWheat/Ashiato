@@ -1,7 +1,7 @@
 import 'server-only'
 import { fetchJson } from '../http'
 import { CrossChainHop, toOurChain } from './types'
-import { chainName, list, num, obj, Raw, str } from './util'
+import { chainName, checksum, list, num, obj, Raw, str } from './util'
 
 // Relay (relay.link) requests: a solver pays out on the destination chain.
 //   GET https://api.relay.link/requests/v3?user=0x…&limit=50
@@ -46,6 +46,6 @@ export function hopFromRelay(r: Raw): CrossChainHop | null {
 
 /** Cross-chain requests a wallet made through Relay, newest first */
 export async function relayRequests(user: string): Promise<CrossChainHop[]> {
-  const res = await fetchJson<Raw>(`${BASE}/requests/v3?user=${encodeURIComponent(user)}&limit=50`, 120, 2)
+  const res = await fetchJson<Raw>(`${BASE}/requests/v3?user=${encodeURIComponent(checksum(user))}&limit=50`, 120, 2)
   return list(res?.requests).map(hopFromRelay).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
 }
