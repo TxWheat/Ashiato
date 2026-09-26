@@ -17,6 +17,8 @@ import { saveCase as saveChartToBrowser, getCase as getSavedChart, newCaseId } f
 import { collapseChains } from '@/lib/collapse'
 import { CheckedPayment, PaymentMatch, choosePayment, judgePayment, parseClientPayments, seedsFromPayments, transfersOf } from '@/lib/client-payments'
 import ClientPaymentsDialog from '@/components/ClientPayments'
+import SummaryDialog from '@/components/SummaryDialog'
+import { summaryFacts } from '@/lib/summary-facts'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
@@ -1271,9 +1273,14 @@ function TraceWorkspace() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty, saved, autosave])
 
-  const openReport = () => {
+  // Plain-English summary (Pro): kept for this session so the report can include it
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [summary, setSummary] = useState<string | null>(null)
+  useEffect(() => setSummary(null), [traced])
+
+  const openReport = (withSummary = summary) => {
     if (!originChain) return
-    const html = buildReport({ origin: originKey, chain: originChain, nodes: nodeMap, edges: graphEdges, traced, traceEnds, nameOf, payments })
+    const html = buildReport({ origin: originKey, chain: originChain, nodes: nodeMap, edges: graphEdges, traced, traceEnds, nameOf, payments, summary: withSummary ?? undefined })
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank', 'noopener')
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -1538,7 +1545,8 @@ function TraceWorkspace() {
           <ExportMenu
             onSaveCase={saveCaseFile}
             onLoadCase={loadCaseFile}
-            onReport={openReport}
+            onReport={() => openReport()}
+            onSummary={() => setSummaryOpen(true)}
             onPng={exportPng}
             onCsv={() => download(`${fileBase}.flows.csv`, flowsToCsv(nodeMap, graphEdges), 'text/csv')}
             onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
@@ -1650,6 +1658,16 @@ function TraceWorkspace() {
               <EyeOff size={12} /> {hiddenLinks.size} hidden link{hiddenLinks.size === 1 ? '' : 's'}
               <button onClick={() => setHiddenLinks(new Set())} className="font-medium text-fg underline underline-offset-2 hover:text-accent">Show all</button>
             </div>
+          )}
+
+          {summaryOpen && originChain && (
+            <SummaryDialog
+              facts={summaryFacts({ chain: originChain, origin: originKey, nodes: nodeMap, edges: graphEdges, traced, ends: traceEnds, nameOf })}
+              summary={summary}
+              onSummary={setSummary}
+              onReport={() => openReport()}
+              onClose={() => setSummaryOpen(false)}
+            />
           )}
 
           {paymentsOpen && (
