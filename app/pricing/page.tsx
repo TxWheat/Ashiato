@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { Check, ExternalLink, ShieldAlert } from 'lucide-react'
-import { erc20Abi, parseUnits } from 'viem'
+import { erc20Abi, formatEther, parseUnits } from 'viem'
 import { useAccount, useConfig, useSwitchChain, useWriteContract } from 'wagmi'
-import { getBalance, readContract, waitForTransactionReceipt } from 'wagmi/actions'
+import { estimateFeesPerGas, getBalance, readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import SiteNav from '@/components/SiteNav'
 import { useAuth } from '@/components/Providers'
 import { PAY_CHAINS, PayChain, PRO_PLANS, TEST_USDC_FAUCET, USDC_DECIMALS } from '@/lib/billing/plans'
@@ -216,7 +216,13 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
       ])
       const test = net.test ? 'test ' : ''
       if (usdcHeld < amount) throw new Error(`This wallet has ${Number(usdcHeld) / 10 ** USDC_DECIMALS} ${test}USDC on ${net.name}; ${price.usdc} is needed${net.test ? ' (free at faucet.circle.com)' : ''}`)
-      if (ethHeld === 0n) throw new Error(`This wallet needs a little ${net.name} ${test}ETH to pay the network fee`)
+      // A USDC transfer uses about 65k gas (more for a smart-contract wallet): allow 100k at today's fee
+      const fees = await estimateFeesPerGas(config, { chainId: net.id }).catch(() => null)
+      const needed = fees?.maxFeePerGas ? 100_000n * fees.maxFeePerGas : 1n
+      if (ethHeld < needed) {
+        const eth = (v: bigint) => Number(formatEther(v)).toPrecision(2)
+        throw new Error(`The network fee on ${net.name} is about ${eth(needed)} ${test}ETH, and this wallet has ${eth(ethHeld)} ${test}ETH. Add a little ${net.name} ETH${chain === 'eth' ? ', or pay on Base instead (fees under 1¢)' : ''}`)
+      }
       setStatus({ text: 'Confirm the payment in your wallet…' })
       const tx = await writeContractAsync({
         address: net.usdc, abi: erc20Abi, functionName: 'transfer',
@@ -280,7 +286,7 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
       {status && (
         <p className={clsx('text-xs', status.error ? 'text-red-500' : 'text-muted')}>
           {status.text}
-          {status.error && /USDC|ETH to pay/.test(status.text) && (
+          {status.error && /USDC on|network fee/.test(status.text) && (
             <> <button onClick={() => openWallet('OnRampProviders')} className="underline underline-offset-2 hover:text-fg">Add funds</button></>
           )}
         </p>
