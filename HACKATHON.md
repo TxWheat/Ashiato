@@ -43,7 +43,6 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] DEX swaps: a transaction that sells one asset and pays a different one back (Uniswap, UniswapX, 1inch…) is shown as a swap, and follow-the-funds continues with what came back
 - [x] Graph keeps its layout and zoom (collapse/expand, delete); addresses can be added to an open case from search
 - [x] Cleaner auto-trace: ignores poisoning spam and dust, follows the main trail (side payments are noted, not branched), stops at busy service wallets and bridges, forward and back
-- [x] Trail view: after an auto-trace the graph shows only the traced path, laid out hop by hop; one click back to the whole case
 - [x] Node quick actions (click a node: Transactions / Relationships / Details, label, copy, explorer, remove) and a Smart-expand transactions view: one-row header, table fills the panel
 - [x] Simpler interface: taint analysis removed; the case panel starts hidden and no longer carries client payments
 - [ ] More bridges (OmniBridge/SWFT, LI.FI, Across)

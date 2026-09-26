@@ -202,11 +202,6 @@ function TracePageInner() {
   const restoring = useRef<string | null>(null)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
-  /** Trail view: only the traced path, laid out fresh by hop (its positions are never saved) */
-  const [trailView, setTrailView] = useState(false)
-  const trailPositions = useRef(new Map<string, XY>())
-  const [trailRev, setTrailRev] = useState(0)
-  const freshTrail = () => { trailPositions.current = new Map(); setTrailRev(v => v + 1) }
   // Right panel width: drag to resize, or expand for a wide table view (remembered)
   const [panelW, setPanelW] = useState(400)
   const [panelExpanded, setPanelExpanded] = useState(false)
@@ -806,7 +801,6 @@ function TracePageInner() {
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
     }
     show(seed.flows)
-    freshTrail()
     setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
     try {
       const res = await followFunds(
@@ -837,11 +831,7 @@ function TracePageInner() {
     } catch (e) {
       if (caseGen.current === gen) flash(e instanceof Error ? e.message : 'Trace failed')
     } finally {
-      if (caseGen.current === gen) {
-        setTraceStatus(null)
-        // Lay the finished trail out afresh, hop by hop
-        freshTrail()
-      }
+      if (caseGen.current === gen) setTraceStatus(null)
     }
   }
 
@@ -999,23 +989,6 @@ function TracePageInner() {
   }, [bridgeHops])
   const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
 
-  // Trail view: the traced lines and the addresses on them, nothing else
-  const trail = useMemo(() => {
-    const base = drawn ?? { nodes: graphNodes, edges: graphEdges, traced: graphTraced }
-    const pairs = new Set(base.traced.map(f => pairKey(f.from, f.to)))
-    const on = new Set(base.traced.flatMap(f => [f.from, f.to]))
-    for (const c of collapsed.chains) if (on.has(c.from) || on.has(c.to)) { on.add(c.from); on.add(c.to) }
-    const bridges = graphBridges.filter(b => on.has(b.from))
-    for (const b of bridges) on.add(b.to)
-    return {
-      nodes: base.nodes.filter(n => on.has(n.address)),
-      edges: base.edges.filter(e => pairs.has(pairKey(e.source, e.target))),
-      traced: base.traced,
-      chains: collapsed.chains.filter(c => on.has(c.from) && on.has(c.to)),
-      bridges,
-    }
-  }, [drawn, graphNodes, graphEdges, graphTraced, collapsed, graphBridges])
-  const inTrail = trailView && traced.length > 0
   /** Transactions on the trail, coloured in the address panel: traced steps, ones you added, and cross-chain
    *  swaps added to the graph (money into the bridge and out on the other chain). Bridges
    *  write hashes with or without 0x and in either case, so each is stored every way. */
@@ -1032,7 +1005,6 @@ function TracePageInner() {
     }
     return ids
   }, [traced, bridgeHops, itemizedIds])
-  const trailIds = useMemo(() => new Set(trail.nodes.map(n => n.address)), [trail])
 
   const legendTypes = useMemo(() => {
     const present = new Set(graphNodes.map(n => n.label?.type).filter(Boolean) as EntityType[])
@@ -1150,7 +1122,6 @@ function TracePageInner() {
     setPayments(c.clientPayments ?? [])
     setBridgeHops(c.bridgeHops ?? [])
     setTraced(uniqueFlows(c.traced ?? []))
-    setTrailView(false)
     setTraceEnds(mergeEnds(c.traceEnds ?? []))
     setHistory([])
     setError('')
@@ -1470,15 +1441,6 @@ function TracePageInner() {
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
           )}
-          {traced.length > 0 && (
-            <button
-              onClick={() => { if (!trailView) freshTrail(); setTrailView(v => !v) }}
-              title={trailView ? 'Show every address in the case' : 'Show only the traced trail, laid out hop by hop'}
-              className={`h-7 px-2.5 border border-line text-[11px] font-medium ${trailView ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
-            >
-              {trailView ? 'Show whole case' : 'Show trail only'}
-            </button>
-          )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
             <button
               onClick={() => { setQuietRev(v => v + 1); setCollapseOn(v => !v); setExpandedChains(new Set()); setPinned(new Set()) }}
@@ -1530,7 +1492,7 @@ function TracePageInner() {
             onFollow={setFollow}
             traced={traced}
             traceEnds={displayEnds}
-            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]); setTrailView(false) }}
+            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]) }}
             clusters={clusters.clusters}
             tornadoLinks={tornado}
             labelOf={labelOf}
@@ -1564,16 +1526,16 @@ function TracePageInner() {
 
           {!initialLoading && !error && (graphNodes.length > 0 || graphHubs.length > 0) && (
             <TraceGraph
-              key={inTrail ? `trail-${trailRev}` : `case-${caseRev}`}
-              nodes={inTrail ? trail.nodes : drawn?.nodes ?? graphNodes}
-              edges={inTrail ? trail.edges : drawn?.edges ?? graphEdges}
+              key={`case-${caseRev}`}
+              nodes={drawn?.nodes ?? graphNodes}
+              edges={drawn?.edges ?? graphEdges}
               followedPairs={followedPairs}
-              traced={inTrail ? trail.traced : drawn?.traced ?? graphTraced}
-              chains={inTrail ? trail.chains : collapsed.chains}
+              traced={drawn?.traced ?? graphTraced}
+              chains={collapsed.chains}
               onChainClick={id => { setQuietRev(v => v + 1); setExpandedChains(prev => new Set(prev).add(id)) }}
               quietKey={quietRev}
-              hubs={inTrail ? [] : graphHubs}
-              bridges={inTrail ? trail.bridges : graphBridges}
+              hubs={graphHubs}
+              bridges={graphBridges}
               onBridgeClick={id => {
                 // Reopen the link the swap was found on, where it can be removed
                 const ids = id.split('+')
@@ -1589,7 +1551,7 @@ function TracePageInner() {
                   setBridgeHops(prev => prev.filter(x => !ids.includes(x.orderId)))
                 }
               }}
-              itemized={inTrail ? itemizedEdges.filter(e => trailIds.has(e.source) && trailIds.has(e.target)) : itemizedEdges}
+              itemized={itemizedEdges}
               prices={prices}
               selected={selectedAddress}
               selectedEdge={selection?.kind === 'flow' ? pairKey(selection.from, selection.to) : null}
@@ -1600,8 +1562,8 @@ function TracePageInner() {
               onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}
-              positions={inTrail ? trailPositions.current : positionsRef.current}
-              onLayoutChange={inTrail ? undefined : () => setLayoutRev(v => v + 1)}
+              positions={positionsRef.current}
+              onLayoutChange={() => setLayoutRev(v => v + 1)}
               onReady={api => (graphApi.current = api)}
             />
           )}
@@ -1609,13 +1571,6 @@ function TracePageInner() {
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
               Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>. To follow money, open a transaction and press <b className="text-fg font-medium">Trace</b>. Click empty space to hide the panel.
-            </div>
-          )}
-
-          {inTrail && !initialLoading && !error && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-3 bg-panel border border-accent px-3 h-8 text-[11px] text-muted">
-              Trail view: {trail.nodes.length} of {graphNodes.length} addresses shown. Nothing is removed from your case.
-              <button onClick={() => setTrailView(false)} className="font-medium text-fg underline underline-offset-2 hover:text-accent">Show whole case</button>
             </div>
           )}
 
