@@ -24,7 +24,8 @@ const BOTTOM: [NodeAction, string, React.ReactNode][] = [
   ['remove', 'Remove from graph', <Trash2 key="x" size={14} />],
 ]
 
-const bubble = 'flex items-center gap-0.5 bg-panel border border-line shadow-xl p-1'
+// nodrag/nopan/nowheel: clicks on the menu are clicks, never graph drags or pans
+const bubble = 'nodrag nopan nowheel flex items-center gap-0.5 bg-panel border border-line shadow-xl p-1'
 
 export default function NodeMenu({ id }: { id: string }) {
   const menu = useContext(NodeMenuContext)

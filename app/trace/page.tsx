@@ -962,11 +962,13 @@ function TracePageInner() {
     }
   }, [drawn, graphNodes, graphEdges, graphTraced, collapsed, graphBridges])
   const inTrail = trailView && traced.length > 0
-  /** Transactions on the trail, coloured in the address panel: traced steps plus cross-chain
+  /** Transactions on the trail, coloured in the address panel: traced steps, ones you added, and cross-chain
    *  swaps added to the graph (money into the bridge and out on the other chain). Bridges
    *  write hashes with or without 0x and in either case, so each is stored every way. */
   const tracedTxids = useMemo(() => {
     const ids = new Set(traced.map(f => f.txid))
+    // Transactions you put on the graph yourself ('+ Graph', ticked in a link) are on the trail too
+    for (const id of itemizedIds) ids.add(id.split('|')[0])
     for (const h of bridgeHops) {
       for (const raw of [h.fromHash, h.toHash]) {
         if (!raw) continue
@@ -975,7 +977,7 @@ function TracePageInner() {
       }
     }
     return ids
-  }, [traced, bridgeHops])
+  }, [traced, bridgeHops, itemizedIds])
   const trailIds = useMemo(() => new Set(trail.nodes.map(n => n.address)), [trail])
 
   const legendTypes = useMemo(() => {
