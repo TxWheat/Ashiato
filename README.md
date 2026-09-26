@@ -34,7 +34,7 @@ Requires Node.js 20+.
 git clone https://github.com/TxWheat/Ashiato.git
 cd Ashiato
 npm install
-cp .env.local.example .env.local   # add ETHERSCAN_API_KEY for Ethereum; optional TRONGRID_API_KEY for Tron
+echo 'ETHERSCAN_API_KEY=your-key' > .env.local   # optional: TRONGRID_API_KEY for Tron
 npm run dev
 ```
 
