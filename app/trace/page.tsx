@@ -31,6 +31,7 @@ import SearchForm from '@/components/SearchForm'
 import ThemeToggle from '@/components/ThemeToggle'
 import { AccountButton } from '@/components/SignIn'
 import { useAuth } from '@/components/Providers'
+import { SettingsButton, useSettings } from '@/components/Settings'
 import type { Attester } from '@/components/CommunityLabels'
 import { usePublicClient, useSwitchChain, useWalletClient } from 'wagmi'
 import { attestLabel, revokeAttestation, voteOnLabel, walletChainId } from '@/lib/attest/write'
@@ -311,13 +312,18 @@ function TraceWorkspace() {
   const btcTxCache = useRef(new Map<string, BtcTxInfo>())
   const btcLabels = useRef(new Map<string, EntityLabel>())
 
+  // Today's prices in the display currency (Settings)
+  const { currency } = useSettings()
   const [prices, setPrices] = useState<Record<string, number>>({})
   useEffect(() => {
-    fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,tron&vs_currencies=nzd')
+    const c = currency.toLowerCase()
+    let stale = false
+    fetch(`https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,tron&vs_currencies=${c}`)
       .then(r => r.json())
-      .then(d => setPrices({ BTC: d.bitcoin?.nzd ?? 0, ETH: d.ethereum?.nzd ?? 0, WETH: d.ethereum?.nzd ?? 0, TRX: d.tron?.nzd ?? 0, USD: d.tether?.nzd ?? 0 }))
+      .then(d => { if (!stale) setPrices({ BTC: d.bitcoin?.[c] ?? 0, ETH: d.ethereum?.[c] ?? 0, WETH: d.ethereum?.[c] ?? 0, TRX: d.tron?.[c] ?? 0, USD: d.tether?.[c] ?? 0 }) })
       .catch(() => {})
-  }, [])
+    return () => { stale = true }
+  }, [currency])
 
   // One timer: an older toast's timeout must not cut a newer one short
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -1528,6 +1534,7 @@ function TraceWorkspace() {
             onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
           />
           <AccountButton compact />
+          <SettingsButton />
           <div className="hidden sm:block"><ThemeToggle /></div>
         </div>
       </header>
