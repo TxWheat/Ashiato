@@ -158,7 +158,7 @@ function TracePageInner() {
   return (
     <div className="min-h-screen grid place-items-center bg-bg px-4">
       <div className="w-full max-w-md border border-line bg-panel p-6 space-y-5">
-        <Link href="/" className="flex items-center gap-2 text-[13px] font-medium tracking-[0.24em] text-fg"><LogoMark size={22} />ASHIATO</Link>
+        <Link href="/" className="flex items-center gap-2 text-[13px] font-medium tracking-[0.24em] text-fg"><LogoMark size={26} />ASHIATO</Link>
         <div className="space-y-2">
           <h1 className="text-xl font-medium text-fg">Sign in to trace</h1>
           <p className="text-sm text-muted leading-relaxed">
@@ -1559,7 +1559,7 @@ function TraceWorkspace() {
       {/* Phones: the search drops to its own row and the buttons wrap instead of running off-screen */}
       <header className="flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 min-h-14 py-2 md:py-0 md:h-14 px-3 sm:px-4 border-b border-line flex-shrink-0">
         <Link href="/" className="text-faint hover:text-fg p-1.5" aria-label="Home"><ArrowLeft size={16} /></Link>
-        <Link href="/" className="hidden xl:flex items-center gap-2 text-[13px] font-medium tracking-[0.24em] text-fg pr-3 border-r border-line"><LogoMark size={20} />ASHIATO</Link>
+        <Link href="/" className="hidden xl:flex items-center gap-2 text-[13px] font-medium tracking-[0.24em] text-fg pr-3 border-r border-line"><LogoMark size={24} />ASHIATO</Link>
         <button
           onClick={() => setSelection(originTx ? { kind: 'tx', id: originTx } : { kind: 'address', id: originAddress })}
           className="flex items-center gap-2 min-w-0 max-w-[140px] sm:max-w-[260px] text-left hover:text-accent"

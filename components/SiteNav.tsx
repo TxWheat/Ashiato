@@ -20,7 +20,7 @@ export default function SiteNav() {
   return (
     <nav className="flex items-center justify-between h-16 px-4 sm:px-10 border-b border-line">
       <Link href="/" className="flex items-center gap-2.5 text-[15px] font-medium tracking-[0.28em] text-fg">
-        <LogoMark size={26} />
+        <LogoMark size={30} />
         ASHIATO <span className="ml-1 tracking-normal text-faint font-normal" lang="ja">足跡</span>
       </Link>
       <div className="flex items-center gap-6 text-sm font-medium">

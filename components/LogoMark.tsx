@@ -1,20 +1,26 @@
-/** The Ashiato mark: two footprints and the trail between them (same drawing as app/icon.svg) */
-export default function LogoMark({ size = 22, className }: { size?: number; className?: string }) {
-  const sole = 'M4 -70 C 34 -70 46 -40 44 -8 C 42 18 30 30 30 52 C 30 76 18 96 -2 96 C -24 96 -34 76 -32 54 C -30 30 -44 10 -44 -16 C -44 -48 -26 -70 4 -70 Z'
-  const toes = (
-    <>
-      <path d={sole} /><circle cx="30" cy="-96" r="14" /><circle cx="2" cy="-106" r="15" /><circle cx="-26" cy="-98" r="13" />
-    </>
-  )
+/** The Ashiato mark: a chain of blocks, the newest one in the crosshairs (same drawing as app/icon.svg) */
+export default function LogoMark({ size = 22, className, tile = false }: { size?: number; className?: string; tile?: boolean }) {
+  // On the page the mark stands on its own, cropped to the drawing; the dark tile is for icons
+  // Block faces: light on the dark tile, indigo shades on the page (readable in light and dark)
+  const face = tile ? ['#fff', '#D9D5FF', '#A99FFF'] : ['#9B92FF', '#6D61F0', '#4B3FCF']
   return (
-    <svg viewBox="0 0 512 512" width={size} height={size} className={className} aria-hidden="true">
-      <rect width="512" height="512" rx="116" fill="#5B4FE6" />
-      <g transform="translate(256 262) scale(1.14) translate(-256 -262)">
-        <path d="M176 420 Q 214 300 336 300" stroke="#fff" strokeOpacity=".4" strokeWidth="14" strokeLinecap="round" strokeDasharray="1 30" fill="none" />
-        <g fill="#fff">
-          <g transform="translate(168 312) rotate(-12) scale(-1 1)" fillOpacity=".5">{toes}</g>
-          <g transform="translate(340 200) rotate(14)">{toes}</g>
-        </g>
+    <svg viewBox={tile ? '0 0 512 512' : '80 40 400 400'} width={size} height={size} className={className} aria-hidden="true">
+      {tile && <rect width="512" height="512" rx="116" fill="#15151b" />}
+      <path d="M140 392 L246 272 L352 152" stroke="#7B70FF" strokeWidth="14" strokeLinecap="round"/>
+      <g transform="translate(140 392)" fillOpacity=".45"><path d="M0 -50 L43 -25 L0 0 L-43 -25 Z" fill={face[0]}/>
+      <path d="M-43 -25 L0 0 L0 50 L-43 25 Z" fill={face[1]}/>
+      <path d="M43 -25 L0 0 L0 50 L43 25 Z" fill={face[2]}/>
+      </g>
+      <g transform="translate(246 272)" fillOpacity=".75"><path d="M0 -50 L43 -25 L0 0 L-43 -25 Z" fill={face[0]}/>
+      <path d="M-43 -25 L0 0 L0 50 L-43 25 Z" fill={face[1]}/>
+      <path d="M43 -25 L0 0 L0 50 L43 25 Z" fill={face[2]}/>
+      </g>
+      <g transform="translate(352 152)" fillOpacity="1"><path d="M0 -54 L46 -27 L0 0 L-46 -27 Z" fill={face[0]}/>
+      <path d="M-46 -27 L0 0 L0 54 L-46 27 Z" fill={face[1]}/>
+      <path d="M46 -27 L0 0 L0 54 L46 27 Z" fill={face[2]}/>
+      </g>
+      <g stroke={tile ? "#fff" : "currentColor"} strokeWidth="12" strokeLinecap="round" fill="none"><circle cx="352" cy="152" r="84"/>
+      <path d="M352 52 v30 M352 222 v30 M252 152 h30 M422 152 h30"/>
       </g>
     </svg>
   )
