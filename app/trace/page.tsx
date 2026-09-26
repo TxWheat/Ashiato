@@ -35,7 +35,7 @@ import { usePublicClient, useSwitchChain, useWalletClient } from 'wagmi'
 import { attestLabel, revokeAttestation, voteOnLabel, walletChainId } from '@/lib/attest/write'
 import { ATTEST_CHAIN, SCHEMA_UID } from '@/lib/attest/config'
 import BridgeHops from '@/components/BridgeHops'
-import { BRIDGE_NAME, CrossChainHop, chainDisplay } from '@/lib/bridges/types'
+import { BRIDGE_NAME, CrossChainHop, chainDisplay, lookupService } from '@/lib/bridges/types'
 import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { NodeAction } from '@/components/NodeMenu'
 import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
@@ -1366,7 +1366,7 @@ function TracePageInner() {
             return (
               <>
               {swapNote}
-              <BridgeHops sender={sender} serviceName={(nameOf(bridge) ?? 'Bridgers').replace(/\s*[(:].*$/, '')} txids={txids} txTimes={txTimes} added={new Set(bridgeHops.map(h => h.orderId))}
+              <BridgeHops sender={sender} service={lookupService(nameOf(bridge) ?? '') ?? 'Bridgers'} txids={txids} txTimes={txTimes} added={new Set(bridgeHops.map(h => h.orderId))}
                 onAdd={(hop, matched) => {
                   snapshot()
                   // This link's own swaps leave from the service's node; the wallet's other swaps

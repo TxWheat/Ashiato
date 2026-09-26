@@ -46,7 +46,8 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Node quick actions (click a node: Transactions / Relationships / Details, label, copy, explorer, remove) and a Smart-expand transactions view: one-row header, table fills the panel
 - [x] Simpler interface: taint analysis removed; the case panel starts hidden and no longer carries client payments
 - [x] Scam address lists (MyEtherWallet darklist; ScamSniffer phishing/drainer list, fetched at runtime because it is GPL) and a "Cross-chain bridge" label for 30 major bridge contracts (Stargate, Wormhole, Arbitrum, Optimism, Base, Polygon, each checked against DefiLlama's bridge adapters); traces stop at bridges
-- [ ] More bridges (OmniBridge/SWFT, LI.FI, Across)
+- [x] More bridges: Across, Relay and deBridge transfers are looked up from each service's public API (destination chain, recipient, amounts, both txids), the same way as Bridgers
+- [ ] Still to add: Stargate (LayerZero Scan), Wormhole, Axelar/Squid, Orbiter
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams
 - [ ] (Stretch) MetaMask Snap that warns before sending to a flagged address
