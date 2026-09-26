@@ -17,6 +17,8 @@ import { LoadedPage } from '@/lib/export'
 import { ENTITY_STYLE, explorerAddressUrl, explorerTxUrl, fmtAmount, fmtBalance, fmtCompact, fmtDate, fmtFiatShort, fiatValue, MAJOR_ASSETS, topAssets, chainDot } from '@/lib/format'
 import { truncate, detectChain, normaliseAddress } from '@/lib/detect-chain'
 import { useSettings } from './Settings'
+import { valueAt } from '@/lib/prices'
+import { usePricing } from './Pricing'
 
 export type AddressTab = 'counterparties' | 'transactions' | 'details'
 
@@ -504,7 +506,7 @@ export default function AddressInspector(p: Props) {
                     {filter === 'in'
                       ? <div className="text-green-500" title="Received from them">↓ {amounts(c.received, p.prices)}</div>
                       : <div className="text-red-500" title="Sent to them">↑ {amounts(c.sent, p.prices)}</div>}
-                    {valueOf(c) > 0 && <div className="text-[10px] text-faint" title="Value at today's prices">≈ {fmtFiatShort(valueOf(c), currency)}</div>}
+                    {valueOf(c) > 0 && <div className="text-[10px] text-faint" title="Total at today's prices">≈ {fmtFiatShort(valueOf(c), currency)}</div>}
                   </div>
                   <button onClick={() => !on && p.onAdd([c.address])} disabled={on} title={on ? 'On the graph' : 'Add to graph'} aria-label={on ? 'On the graph' : 'Add to graph'}
                     className={clsx('grid place-items-center w-7 h-7 flex-shrink-0', on ? 'text-accent' : 'bg-raised hover:bg-accent hover:text-accent-fg text-fg')}>
@@ -541,6 +543,7 @@ export default function AddressInspector(p: Props) {
 
 function TxList(p: Props) {
   const { currency } = useSettings()
+  const pricing = usePricing()
   const txs = p.page?.rawTxs
   const me = p.node.address
   const [q, setQ] = useState('')
@@ -671,7 +674,7 @@ function TxList(p: Props) {
             : dir === 'in' ? 'bg-green-500/[0.12] border-l-2 border-l-green-500'
               : 'bg-red-500/[0.12] border-l-2 border-l-red-500',
         )
-        const value = fiatValue(amount, tx.asset, p.prices)
+        const value = valueAt(pricing, amount, tx.asset, tx.timestamp)
         const amountCell = (
           <span className={clsx('font-mono text-[12px] whitespace-nowrap', dir === 'in' ? 'text-green-500' : dir === 'out' ? 'text-fg' : 'text-muted')}>
             {dir === 'in' ? '+' : dir === 'out' ? '−' : ''}{fmtAmount(amount, tx.asset, 8)}

@@ -9,30 +9,42 @@ import { CURRENCIES, CurrencyCode, currencyForLocale, isCurrency } from '@/lib/c
 interface SettingsValue {
   currency: CurrencyCode
   setCurrency: (c: CurrencyCode) => void
+  /** Value transfers at the time they moved (default) or at today's price */
+  atTransfer: boolean
+  setAtTransfer: (v: boolean) => void
 }
 
-const SettingsContext = createContext<SettingsValue>({ currency: 'USD', setCurrency: () => {} })
+const SettingsContext = createContext<SettingsValue>({ currency: 'USD', setCurrency: () => {}, atTransfer: true, setAtTransfer: () => {} })
 export const useSettings = () => useContext(SettingsContext)
 
 const KEY = 'ashiato.currency'
+const VALUE_KEY = 'ashiato.valueAt'
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [currency, set] = useState<CurrencyCode>('USD')
+  const [atTransfer, setAt] = useState(true)
   useEffect(() => {
     let saved: string | null = null
-    try { saved = localStorage.getItem(KEY) } catch { /* storage blocked */ }
+    try {
+      saved = localStorage.getItem(KEY)
+      setAt(localStorage.getItem(VALUE_KEY) !== 'today')
+    } catch { /* storage blocked */ }
     set(isCurrency(saved) ? saved : currencyForLocale(navigator.language))
   }, [])
+  const setAtTransfer = (v: boolean) => {
+    setAt(v)
+    try { localStorage.setItem(VALUE_KEY, v ? 'transfer' : 'today') } catch { /* storage blocked */ }
+  }
   const setCurrency = (c: CurrencyCode) => {
     set(c)
     try { localStorage.setItem(KEY, c) } catch { /* storage blocked */ }
   }
-  return <SettingsContext.Provider value={{ currency, setCurrency }}>{children}</SettingsContext.Provider>
+  return <SettingsContext.Provider value={{ currency, setCurrency, atTransfer, setAtTransfer }}>{children}</SettingsContext.Provider>
 }
 
 /** Gear button with the settings popover (sits next to the theme toggle) */
 export function SettingsButton() {
-  const { currency, setCurrency } = useSettings()
+  const { currency, setCurrency, atTransfer, setAtTransfer } = useSettings()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -59,7 +71,16 @@ export function SettingsButton() {
               {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
             </select>
           </label>
-          <p className="text-[11px] text-faint leading-relaxed">Values use today&apos;s prices. Saved in this browser.</p>
+          <fieldset className="space-y-1.5">
+            <legend className="text-xs text-muted mb-1.5">Value transfers at</legend>
+            {([[true, 'The time they moved', 'Price on the day of each transaction'], [false, "Today's price", 'What the same amount is worth now']] as const).map(([v, label, hint]) => (
+              <label key={label} className="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="value-at" checked={atTransfer === v} onChange={() => setAtTransfer(v)} className="mt-0.5 accent-[rgb(var(--accent))]" />
+                <span className="text-sm text-fg leading-tight">{label}<span className="block text-[11px] text-faint">{hint}</span></span>
+              </label>
+            ))}
+          </fieldset>
+          <p className="text-[11px] text-faint leading-relaxed">Saved in this browser.</p>
         </div>
       )}
     </div>

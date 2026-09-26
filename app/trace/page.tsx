@@ -32,6 +32,8 @@ import ThemeToggle from '@/components/ThemeToggle'
 import { AccountButton } from '@/components/SignIn'
 import { useAuth } from '@/components/Providers'
 import { SettingsButton, useSettings } from '@/components/Settings'
+import { PricingContext } from '@/components/Pricing'
+import type { Pricing, PriceHistory } from '@/lib/prices'
 import type { Attester } from '@/components/CommunityLabels'
 import { usePublicClient, useSwitchChain, useWalletClient } from 'wagmi'
 import { attestLabel, revokeAttestation, voteOnLabel, walletChainId } from '@/lib/attest/write'
@@ -315,7 +317,7 @@ function TraceWorkspace() {
   const btcLabels = useRef(new Map<string, EntityLabel>())
 
   // Today's prices in the display currency (Settings)
-  const { currency } = useSettings()
+  const { currency, atTransfer } = useSettings()
   const [prices, setPrices] = useState<Record<string, number>>({})
   useEffect(() => {
     const c = currency.toLowerCase()
@@ -326,6 +328,18 @@ function TraceWorkspace() {
       .catch(() => {})
     return () => { stale = true }
   }, [currency])
+  // Daily price history, to value each transfer at the time it moved (Settings)
+  const [priceHistory, setPriceHistory] = useState<PriceHistory | null>(null)
+  useEffect(() => {
+    let stale = false
+    setPriceHistory(null)
+    fetch(`/api/prices/history?currency=${currency}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!stale && d?.prices) setPriceHistory(d.prices) })
+      .catch(() => {})
+    return () => { stale = true }
+  }, [currency])
+  const pricing = useMemo<Pricing>(() => ({ today: prices, history: priceHistory, atTransfer }), [prices, priceHistory, atTransfer])
 
   // One timer: an older toast's timeout must not cut a newer one short
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -1476,6 +1490,7 @@ function TraceWorkspace() {
   const originNode = originAddress ? known.get(originAddress) : undefined
 
   return (
+    <PricingContext.Provider value={pricing}>
     <div className="h-screen flex flex-col overflow-hidden bg-bg">
       {/* Header */}
       {/* Phones: the search drops to its own row and the buttons wrap instead of running off-screen */}
@@ -1715,6 +1730,7 @@ function TraceWorkspace() {
         )}
       </div>
     </div>
+    </PricingContext.Provider>
   )
 }
 

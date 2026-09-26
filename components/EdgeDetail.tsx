@@ -5,10 +5,12 @@ import { clsx } from 'clsx'
 import { X, EyeOff, ExternalLink, ArrowRight, ArrowLeft, ArrowRightFromLine, ArrowLeftToLine, Check } from 'lucide-react'
 import { Chain, EdgeData } from '@/lib/types'
 import { TracedFlow } from '@/lib/follow'
-import { explorerTxUrl, fiatValue, fmtAmount, fmtDate } from '@/lib/format'
+import { explorerTxUrl, fmtAmount, fmtDate } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 import { fmtMoney } from '@/lib/currency'
 import { useSettings } from './Settings'
+import { valueAt } from '@/lib/prices'
+import { usePricing } from './Pricing'
 
 type Tab = 'relationship' | 'transactions'
 
@@ -61,6 +63,7 @@ function totals(rows: EdgeData[]) {
 
 export default function EdgeDetail(p: Props) {
   const { currency } = useSettings()
+  const pricing = usePricing()
   const [tab, setTab] = useState<Tab>(p.initialTab ?? 'relationship')
   const [order, setOrder] = useState<'newest' | 'oldest' | 'largest'>('newest')
   const ab = p.rows.filter(r => r.source === p.a)
@@ -94,12 +97,16 @@ export default function EdgeDetail(p: Props) {
       {rows.length === 0 ? (
         <div className="text-[12px] text-faint">Nothing in loaded data</div>
       ) : (
-        totals(rows).map(([asset, amt]) => (
-          <div key={asset} className="text-sm font-mono text-fg">
-            {fmtAmount(amt, asset, 8)}
-            {fiatValue(amt, asset, p.prices) > 0 && <span className="text-[11px] text-faint"> · {fmtMoney(fiatValue(amt, asset, p.prices), currency, true)} today</span>}
-          </div>
-        ))
+        totals(rows).map(([asset, amt]) => {
+          // Each transaction at its own time (or today's price, per Settings)
+          const value = rows.filter(r => r.asset === asset).reduce((v, r) => v + valueAt(pricing, r.amount, asset, r.timestamp), 0)
+          return (
+            <div key={asset} className="text-sm font-mono text-fg">
+              {fmtAmount(amt, asset, 8)}
+              {value > 0 && <span className="text-[11px] text-faint"> · {fmtMoney(value, currency, true)}{pricing.atTransfer && pricing.history ? ' at the time' : ' today'}</span>}
+            </div>
+          )
+        })
       )}
     </div>
   )

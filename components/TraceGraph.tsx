@@ -21,7 +21,7 @@ import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
 import type { CollapsedChain } from '@/lib/collapse'
 import { TracedFlow } from '@/lib/follow'
-import { ENTITY_STYLE, fiatValue, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort, topAssets } from '@/lib/format'
+import { ENTITY_STYLE, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort, topAssets } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
 import { NodeAction, NodeMenuContext } from './NodeMenu'
 import LabelEdge from './OffsetEdge'
@@ -29,6 +29,8 @@ import { CurrencyCode } from '@/lib/currency'
 import { useSettings } from './Settings'
 import { Annotation, ANNOTATION_SIZE, NOTE_PREFIX } from '@/lib/annotations'
 import { AnnotationContext, AnnotationNode, AnnotationTools } from './Annotations'
+import { edgeValue, Pricing, valueAt } from '@/lib/prices'
+import { usePricing } from './Pricing'
 
 const nodeTypes = { addressNode: AddressNode, tx: TxNode, annotation: AnnotationNode }
 const edgeTypes = { label: LabelEdge }
@@ -203,15 +205,17 @@ function placeNodes(laid: Node[], edges: Edge[], placed: Map<string, XY>): Node[
 }
 
 /** "2.15K USDT ($2.9K NZD)" */
-function amountWithValue(amount: number, asset: string, prices: Record<string, number>, currency: CurrencyCode): string {
-  const fiat = fmtFiatShort(fiatValue(amount, asset, prices), currency)
+function amountWithValue(amount: number, asset: string, value: number, currency: CurrencyCode): string {
+  const fiat = fmtFiatShort(value, currency)
   return `${fmtCompact(amount, asset)}${fiat ? ` (${fiat})` : ''}`
 }
 
 /** "2.15K USDT ($2.9K NZD) + 1.2 ETH ($5.4K NZD) +3 tokens · 29 txs" */
-function relationshipLabel(es: EdgeData[], prices: Record<string, number>, txs: number, currency: CurrencyCode): string {
+function relationshipLabel(es: EdgeData[], prices: Record<string, number>, txs: number, currency: CurrencyCode, pricing: Pricing): string {
   const { shown, rest } = topAssets(es.map(x => [x.asset, x.amount] as [string, number]), prices)
-  const parts = shown.map(([asset, amt]) => amountWithValue(amt, asset, prices, currency)).join(' + ')
+  // Each transaction is valued at its own time (or today's price, per Settings)
+  const value = (asset: string) => es.filter(x => x.asset === asset).reduce((v, x) => v + edgeValue(pricing, x), 0)
+  const parts = shown.map(([asset, amt]) => amountWithValue(amt, asset, value(asset), currency)).join(' + ')
   return `${parts}${rest ? ` +${rest} token${rest === 1 ? '' : 's'}` : ''}${txs > 1 ? ` · ${txs} txs` : ''}`
 }
 
@@ -276,6 +280,7 @@ export function pairKey(a: string, b: string) {
 export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, annotations = [], onAnnotations }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const { currency } = useSettings()
+  const pricing = usePricing()
   const menu = useMemo(() => onNodeAction
     ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) } }
     : null, [menuFor, onNodeAction])
@@ -347,6 +352,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
     // Traced amounts per directed pair and asset
     const tracedBy = new Map<string, Map<string, number>>()
+    const tracedValue = new Map<string, Map<string, number>>()
     // Lowest pool share seen on each traced pair (pooling made visible on the line)
     const pooledBy = new Map<string, number>()
     // Traced funds swapped on this line (e.g. SHIB sold to a DEX for ETH): what came back
@@ -357,6 +363,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const m = tracedBy.get(k) ?? new Map<string, number>()
       m.set(f.asset, (m.get(f.asset) ?? 0) + f.amount)
       tracedBy.set(k, m)
+      const mv = tracedValue.get(k) ?? new Map<string, number>()
+      mv.set(f.asset, (mv.get(f.asset) ?? 0) + valueAt(pricing, f.amount, f.asset, f.time))
+      tracedValue.set(k, mv)
       if (f.share !== undefined) pooledBy.set(k, Math.min(pooledBy.get(k) ?? 1, f.share))
       if (f.swap) {
         const m = swappedBy.get(k) ?? new Map<string, number>()
@@ -396,8 +405,11 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       const first = Math.min(...es.map(x => x.firstTimestamp || x.timestamp).filter(Boolean))
       const last = Math.max(...es.map(x => x.timestamp))
       const line1 = tr
-        ? `${[...tr].map(([asset, amt]) => `${fmtCompact(amt, asset)} traced`).join(' | ')}${swappedBy.has(key) ? ` · swapped for ${[...swappedBy.get(key)!].map(([a, v]) => fmtCompact(v, a)).join(' + ')}` : ''}${pooledBy.has(key) ? ` · ${pooledBy.get(key)! > 0 && pooledBy.get(key)! < 0.01 ? '<1' : Math.round(pooledBy.get(key)! * 100)}% of pool` : ''}`
-        : `${relationshipLabel(es, prices, txs, currency)}${isChange ? ' · likely change' : ''}`
+        ? `${[...tr].map(([asset, amt]) => {
+          const fiat = fmtFiatShort(tracedValue.get(key)?.get(asset) ?? 0, currency)
+          return `${fmtCompact(amt, asset)} traced${fiat ? ` (${fiat})` : ''}`
+        }).join(' | ')}${swappedBy.has(key) ? ` · swapped for ${[...swappedBy.get(key)!].map(([a, v]) => fmtCompact(v, a)).join(' + ')}` : ''}${pooledBy.has(key) ? ` · ${pooledBy.get(key)! > 0 && pooledBy.get(key)! < 0.01 ? '<1' : Math.round(pooledBy.get(key)! * 100)}% of pool` : ''}`
+        : `${relationshipLabel(es, prices, txs, currency, pricing)}${isChange ? ' · likely change' : ''}`
       const line2 = !es.length ? '' : txs === 1 ? fmtDateTime(last) : isFinite(first) && fmtDay(first) !== fmtDay(last) ? `${fmtDay(first)} → ${fmtDay(last)}` : fmtDay(last)
       // The side panel shows both directions of a pair, so both lines highlight
       const isSel = selectedEdge === pairKey(source, target)
@@ -433,7 +445,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           type: 'label',
           data: {
             offset, parallel: true, line2: fmtDateTime(e.timestamp), color: 'rgb(var(--accent))',
-            line1: isTraced ? `${fmtCompact(e.amount, e.asset)} traced` : amountWithValue(e.amount, e.asset, prices, currency),
+            line1: `${amountWithValue(e.amount, e.asset, valueAt(pricing, e.amount, e.asset, e.timestamp), currency)}${isTraced ? ' traced' : ''}`,
             bold: isTraced, glow: isTraced,
           },
           zIndex: isTraced ? 2 : 1,
@@ -452,7 +464,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           source: from,
           target: to,
           type: 'label',
-          data: { line1: amountWithValue(amount, asset, prices, currency) },
+          data: { line1: amountWithValue(amount, asset, valueAt(pricing, amount, asset), currency) },
           markerEnd: arrowFor('muted'),
           style: { stroke: 'rgb(var(--muted))', strokeWidth: 1.5, strokeDasharray: '6 3' },
         })
@@ -503,7 +515,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
       })
     }
     return out
-  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, currency, selectedEdge, chains, bridges])
+  }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, currency, pricing, selectedEdge, chains, bridges])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
