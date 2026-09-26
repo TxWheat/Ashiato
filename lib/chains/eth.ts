@@ -4,6 +4,7 @@ import { fetchJson } from '../http'
 import { assemble } from '../trace'
 import { getLabel } from '../labels'
 import { etherscanLabel } from './eth-labels'
+import { warmScamLists } from '../scam-lists'
 
 // Etherscan API V2 (V1 was shut down on 2025-08-15). One key covers 60+ EVM
 // chains via `chainid`; we use Ethereum mainnet.
@@ -96,6 +97,7 @@ async function etherscan<T>(params: Record<string, string | number>, ttl = 120):
 }
 
 export async function traceEthAddress(address: string, cursor?: string): Promise<TraceResult> {
+  await warmScamLists()
   const addr = address.toLowerCase()
   const page = cursor ? Math.max(1, parseInt(cursor, 10) || 1) : 1
   const list = { module: 'account', address: addr, page, offset: PAGE_SIZE, sort: 'desc' }

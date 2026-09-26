@@ -103,6 +103,7 @@ export const ENTITY_STYLE: Record<EntityType, { hex: string; label: string; bord
   exchange:   { hex: '#22c55e', label: 'Exchange', border: 'border-green-500', badge: 'bg-green-500/15 text-green-500', dot: 'bg-green-500' },
   deposit:    { hex: '#10b981', label: 'Exchange deposit addr', border: 'border-emerald-500', badge: 'bg-emerald-500/15 text-emerald-500', dot: 'bg-emerald-500' },
   gambling:   { hex: '#eab308', label: 'Gambling', border: 'border-yellow-500', badge: 'bg-yellow-500/15 text-yellow-500', dot: 'bg-yellow-500' },
+  bridge:     { hex: '#f59e0b', label: 'Cross-chain bridge', border: 'border-amber-500', badge: 'bg-amber-500/15 text-amber-500', dot: 'bg-amber-500' },
   defi:       { hex: '#8b5cf6', label: 'DeFi protocol', border: 'border-violet-500', badge: 'bg-violet-500/15 text-violet-500', dot: 'bg-violet-500' },
   miner:      { hex: '#94a3b8', label: 'Miner', border: 'border-slate-400', badge: 'bg-slate-400/15 text-slate-400', dot: 'bg-slate-400' },
   service:    { hex: '#0ea5e9', label: 'Service', border: 'border-sky-500', badge: 'bg-sky-500/15 text-sky-500', dot: 'bg-sky-500' },

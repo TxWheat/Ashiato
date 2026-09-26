@@ -1,0 +1,31 @@
+# chain	address	name	type  (Ethereum contracts of cross-chain bridges; each address checked against DefiLlama bridges-server adapters)
+eth	0x8731d54e9d02c286767d56ac03e8037c07e01e98	Stargate: Router	bridge
+eth	0x77b2043768d28e9c9ab44e1abfc95944bce57931	Stargate: Native pool	bridge
+eth	0xc026395860db2d07ee33e05fe50ed7bd583189c7	Stargate: USDC pool	bridge
+eth	0x933597a323eb81cae705c5bc29985172fd5a3973	Stargate: USDT pool	bridge
+eth	0x3ee18b2214aff97000d974cf647e7c347e8fa585	Wormhole: Token Bridge	bridge
+eth	0x72ce9c846789fdb6fc1f34ac4ad25dd9ef7031ef	Arbitrum: L1 Gateway Router	bridge
+eth	0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f	Arbitrum: Delayed Inbox	bridge
+eth	0xa3a7b6f88361f48403514059f1f16c8e78d60eec	Arbitrum: ERC20 Gateway	bridge
+eth	0x99c9fc46f92e8a1c0dec1b1747d010903e884be1	Optimism: L1 Gateway	bridge
+eth	0x3154cf16ccdb4c6d922629664174b904d80f2c35	Base: L1 Standard Bridge	bridge
+eth	0x49048044d57e1c92a77f79988d21fa8faf74e97e	Base: Optimism Portal	bridge
+eth	0x40ec5b33f54e0e8a33a975908c5ba1c14e5bbbdf	Polygon: ERC20 Predicate	bridge
+eth	0x8484ef722627bf18ca5ae6bcf031c23e6e922b30	Polygon: Ether Predicate	bridge
+eth	0x2796317b0ff8538f253012862c06787adfb8ceb6	Synapse: Bridge	bridge
+eth	0x5427fefa711eff984124bfbb1ab6fbf5e3da1820	Celer: cBridge	bridge
+eth	0xef4fb24ad0916217251f553c0596f8edc630eb66	deBridge: DLN Source	bridge
+eth	0x80c67432656d59144ceff962e8faf8926599bcf8	Orbiter Finance: Maker	bridge
+eth	0xe4edb277e41dc89ab076a1f049f4a3efa700bce8	Orbiter Finance: Maker	bridge
+eth	0x41d3d33156ae7c62c094aae2995003ae63f587b3	Orbiter Finance: Maker	bridge
+eth	0x4f4495243837681061c4743b74b3eedf548d56a5	Axelar: Gateway	bridge
+eth	0xce16f69375520ab01377ce7b88f5ba8c48f8d666	Squid: Router	bridge
+eth	0x32400084c286cf3e17e7b677ea9583e60a000324	zkSync Era: Bridge (Diamond Proxy)	bridge
+eth	0xb8901acb165ed027e32754e0ffe830802919727f	Hop: ETH Bridge	bridge
+eth	0x3666f603cc164936c1b87e207f36beba4ac5f18a	Hop: USDC Bridge	bridge
+eth	0x3e4a3a4796d16c0cd582c382691998f7c06420b6	Hop: USDT Bridge	bridge
+eth	0x6b7a87899490ece95443e979ca9485cbe7e71522	Multichain: Router	bridge
+eth	0xbca3039a18c0d2f2f84ba8a028c67290bc045afa	Rhino.fi: Bridge	bridge
+eth	0xb8f275fbf7a959f4bce59999a2ef122a099e81a8	Symbiosis: Portal	bridge
+eth	0x25ab3efd52e6470681ce037cd546dc60726948d3	Meson: Bridge	bridge
+eth	0xbbbd1bbb4f9b936c3604906d7592a644071de884	Allbridge: Classic Bridge	bridge

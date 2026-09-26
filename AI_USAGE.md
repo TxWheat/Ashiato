@@ -38,6 +38,7 @@ Log (updated as work lands):
 | Bridgers cross-chain hops (owner researched the Bridgers API and chose it); email-wallet network fix; app icon | Claude Code (drafted) | Owner |
 | DEX swap detection and follow-through; graph layout/zoom fixes from the owner's testing | Claude Code (drafted) | Owner |
 | Cleaner auto-trace (spam/dust filter, main-trail only, busy-hub and bridge stops, both directions) from the owner's live cases | Claude Code (drafted), problems found by owner | Owner |
+| Scam lists and bridge labels (owner chose the sources; licences checked, GPL list kept out of the repo) | Claude Code (drafted) | Owner |
 | Accounts: wallet/email sign-in, sessions, Supabase case storage, My cases page, home page sign-in (owner's design and screenshots) | Claude Code (drafted) | Owner |
 
 ## Prompts and plans

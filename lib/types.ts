@@ -13,6 +13,7 @@ export type EntityType =
   | 'darknet'
   | 'gambling'
   | 'defi'
+  | 'bridge'      // cross-chain bridge: funds leave this chain here
   | 'miner'
   | 'service'
   | 'wallet'
