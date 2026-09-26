@@ -849,10 +849,15 @@ function TracePageInner() {
   const [pinned, setPinned] = useState<Set<string>>(new Set())
   const collapsed = useMemo(() => {
     if (!collapseOn) return { chains: [], hidden: new Set<string>() }
-    const keep = new Set<string>([originAddress, selectedAddress ?? '', ...pinned].filter(Boolean))
+    // Selection isn't part of this: clicking a node must never fold or unfold chains (that moves nodes)
+    const keep = new Set<string>([originAddress, ...pinned].filter(Boolean))
     for (const n of graphNodes) if (n.label || n.note || n.view.isTaintSeed) keep.add(n.address)
     return collapseChains({ nodes: graphNodes.map(n => n.address), edges: graphEdges, traced: graphTraced, keep, expanded: expandedChains })
-  }, [collapseOn, graphNodes, graphEdges, graphTraced, expandedChains, originAddress, selectedAddress, pinned])
+  }, [collapseOn, graphNodes, graphEdges, graphTraced, expandedChains, originAddress, pinned])
+  // Opening an address hidden inside a collapsed chain (from search or a list) keeps it out for good
+  useEffect(() => {
+    if (selectedAddress && collapsed.hidden.has(selectedAddress)) setPinned(prev => new Set(prev).add(selectedAddress))
+  }, [selectedAddress, collapsed])
   const drawn = useMemo(() => {
     const h = collapsed.hidden
     if (!h.size) return null
