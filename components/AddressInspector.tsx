@@ -660,7 +660,7 @@ function TxList(p: Props) {
       )}
 
       {filtered.slice(0, shown).map(({ tx, dir, amount, others, change }, i) => {
-        const isTraced = p.tracedTxids.has(tx.txid)
+        const isTraced = p.tracedTxids.has(tx.txid) || p.tracedTxids.has(tx.txid.toLowerCase())
         const tint = clsx(
           !isTraced ? 'border-l-2 border-l-transparent'
             : dir === 'in' ? 'bg-green-500/[0.12] border-l-2 border-l-green-500'
