@@ -20,8 +20,8 @@ export default function ExportMenu(p: Props) {
   useEffect(() => {
     if (!open) return
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
+    document.addEventListener('pointerdown', close, true)
+    return () => document.removeEventListener('pointerdown', close, true)
   }, [open])
 
   const items: [string, React.ReactNode, () => void][] = [

@@ -28,7 +28,6 @@ import CasePanel, { FollowSettings } from '@/components/CasePanel'
 import SaveChartButton from '@/components/SaveChartButton'
 import ExportMenu from '@/components/ExportMenu'
 import SearchForm from '@/components/SearchForm'
-import ThemeToggle from '@/components/ThemeToggle'
 import { AccountButton } from '@/components/SignIn'
 import { useAuth } from '@/components/Providers'
 import { SettingsButton, useSettings } from '@/components/Settings'
@@ -1529,7 +1528,7 @@ function TraceWorkspace() {
               {collapseOn ? `Chains collapsed${collapsed.chains.length ? ` (${collapsed.chains.length})` : ''}` : 'Collapse chains'}
             </button>
           )}
-          <span className="hidden lg:block whitespace-nowrap">{graphNodes.length} addresses</span>
+          <span className="hidden xl:block whitespace-nowrap">{graphNodes.length} addresses</span>
           <button onClick={undo} disabled={!history.length} className="flex items-center gap-1 hover:text-fg disabled:opacity-30 p-1" title="Undo" aria-label="Undo">
             <Undo2 size={14} />{history.length > 0 && <span className="text-[10px]">{history.length}</span>}
           </button>
@@ -1555,7 +1554,6 @@ function TraceWorkspace() {
           />
           <AccountButton compact />
           <SettingsButton />
-          <div className="hidden sm:block"><ThemeToggle /></div>
         </div>
       </header>
 
