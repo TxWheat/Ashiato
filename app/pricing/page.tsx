@@ -5,7 +5,7 @@ import { clsx } from 'clsx'
 import { Check, ExternalLink, ShieldAlert } from 'lucide-react'
 import { erc20Abi, parseUnits } from 'viem'
 import { useAccount, useConfig, useSwitchChain, useWriteContract } from 'wagmi'
-import { waitForTransactionReceipt } from 'wagmi/actions'
+import { getBalance, readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import SiteNav from '@/components/SiteNav'
 import { useAuth } from '@/components/Providers'
 import { PAY_CHAINS, PayChain, PRO_PLANS, TEST_USDC_FAUCET, USDC_DECIMALS } from '@/lib/billing/plans'
@@ -193,10 +193,19 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
     setStatus(null)
     try {
       if (chainId !== net.id) await switchChainAsync({ chainId: net.id })
+      // Say plainly what's missing, rather than the wallet's generic "unknown error"
+      const amount = parseUnits(String(price.usdc), USDC_DECIMALS)
+      const [usdcHeld, ethHeld] = await Promise.all([
+        readContract(config, { address: net.usdc, abi: erc20Abi, functionName: 'balanceOf', args: [wallet!], chainId: net.id }),
+        getBalance(config, { address: wallet!, chainId: net.id }).then(b => b.value),
+      ])
+      const test = net.test ? 'test ' : ''
+      if (usdcHeld < amount) throw new Error(`This wallet has ${Number(usdcHeld) / 10 ** USDC_DECIMALS} ${test}USDC on ${net.name}; ${price.usdc} is needed${net.test ? ' (free at faucet.circle.com)' : ''}`)
+      if (ethHeld === 0n) throw new Error(`This wallet needs a little ${net.name} ${test}ETH to pay the network fee`)
       setStatus({ text: 'Confirm the payment in your wallet…' })
       const tx = await writeContractAsync({
         address: net.usdc, abi: erc20Abi, functionName: 'transfer',
-        args: [payTo as `0x${string}`, parseUnits(String(price.usdc), USDC_DECIMALS)], chainId: net.id,
+        args: [payTo as `0x${string}`, amount], chainId: net.id,
       })
       setHash(tx)
       setStatus({ text: 'Sent. Waiting for the network…' })
