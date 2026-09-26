@@ -289,6 +289,15 @@ describe('adaptive trail: noise and hubs', () => {
     expect(r.flows.map(f => f.to).sort()).toEqual(['0xbinance', '0xmain'])
   })
 
+  it('counts many small deposits towards pooling even though they are not followed', async () => {
+    const seed = ethTx('0xvictim', '0xw', 10, 100)
+    const small = Array.from({ length: 300 }, (_, i) => ethTx(`0xd${i}`, '0xw', 0.09, 110 + i))  // 27 ETH, each under 1%
+    const txs = [seed, ...small, ethTx('0xw', '0xnext', 10, 1000)]
+    const r = await followFunds(seedsFromTx(seed, '0xvictim').lots, { ...opts, minShare: 0.35 }, ethDeps(txs))
+    expect(r.flows.map(f => f.to)).not.toContain('0xnext')
+    expect(r.ends.find(e => e.reason === 'diluted')?.share).toBeCloseTo(10 / 37, 2)
+  })
+
   it('walks back without dust, spam or small top-ups', async () => {
     const out = ethTx('0xw', '0xscam', 5, 500)
     const txs = [

@@ -19,7 +19,8 @@ export async function GET(
     try {
       return NextResponse.json(await fetchEthTx(txid))
     } catch (e) {
-      return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load transaction' }, { status: 502 })
+      const notFound = e instanceof Error && /not found/i.test(e.message)
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load transaction' }, { status: notFound ? 404 : 502 })
     }
   }
   if (chain === 'tron') {

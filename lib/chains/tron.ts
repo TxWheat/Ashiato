@@ -108,6 +108,18 @@ function transfer(txid: string, from: string, to: string, amount: number, asset:
   }
 }
 
+/**
+ * A token transfer's id within its transaction, from what it is (token, from, to, raw amount)
+ * so the same transfer gets the same id whichever address, page or lookup loaded it.
+ * Identical transfers in one transaction are numbered in order.
+ */
+function eventId(txid: string, token: string, from: string, to: string, raw: string, seen: Map<string, number>): string {
+  const key = `${token}:${from}:${to}:${raw}`
+  const n = seen.get(`${txid}|${key}`) ?? 0
+  seen.set(`${txid}|${key}`, n + 1)
+  return n ? `${key}:${n}` : key
+}
+
 /** Cursor: TRX fingerprint and TRC-20 fingerprint ("-" = that list is finished) */
 const encodeCursor = (trx?: string, trc?: string) => (trx || trc ? `${trx || '-'}~${trc || '-'}` : undefined)
 
@@ -117,7 +129,8 @@ export async function traceTronAddress(address: string, cursor?: string): Promis
   const warnings: string[] = []
 
   const [account, trx, trc] = await Promise.all([
-    cursor ? Promise.resolve(null) : get<Page<Account>>(`/v1/accounts/${address}`, 60),
+    // Every page reports the balance, or loading more would show the address as empty
+    get<Page<Account>>(`/v1/accounts/${address}`, 60),
     fpTrx === '-' ? Promise.resolve({ data: [] } as Page<TrxTx>) : get<Page<TrxTx>>(`/v1/accounts/${address}/transactions?${q(fpTrx)}&search_internal=false`, 60),
     fpTrc === '-' ? Promise.resolve({ data: [] } as Page<Trc20Tx>) : get<Page<Trc20Tx>>(`/v1/accounts/${address}/transactions/trc20?${q(fpTrc)}`, 60),
   ])
@@ -133,7 +146,7 @@ export async function traceTronAddress(address: string, cursor?: string): Promis
   }
   let spam = 0
   let fake = 0
-  const seenInTx = new Map<string, number>()
+  const seen = new Map<string, number>()
   for (const t of trc.data ?? []) {
     if (t.type && t.type !== 'Transfer') continue
     const amount = units(t.value, t.token_info.decimals || 0)
@@ -143,9 +156,8 @@ export async function traceTronAddress(address: string, cursor?: string): Promis
     }
     const asset = assetFor(t.token_info.symbol, t.token_info.address)
     if (asset.endsWith('*')) fake++
-    const n = seenInTx.get(t.transaction_id) ?? 0
-    seenInTx.set(t.transaction_id, n + 1)
-    rawTxs.push(transfer(t.transaction_id, t.from, t.to, amount, asset, t.block_timestamp, 'token', String(n)))
+    const id = eventId(t.transaction_id, t.token_info.address, t.from, t.to, String(t.value), seen)
+    rawTxs.push(transfer(t.transaction_id, t.from, t.to, amount, asset, t.block_timestamp, 'token', id))
   }
   if (spam) warnings.push(`${spam} zero-value token transfer(s) hidden (typical address-poisoning spam)`)
   if (fake) warnings.push(`${fake} transfer(s) of fake tokens posing as real ones (e.g. a fake USDT contract). These are usually address-poisoning spam; no real funds moved`)
@@ -230,14 +242,16 @@ export async function fetchTronTx(txid: string): Promise<TxLookup> {
     const v = c.parameter.value
     transfers.push(transfer(id, v.owner_address!, v.to_address!, v.amount! / 1e6, 'TRX', ms, 'normal'))
   }
-  let k = 0
+  const seen = new Map<string, number>()
   for (const log of info.log ?? []) {
     if (log.topics?.[0] !== TRANSFER_TOPIC || log.topics.length < 3) continue
     const contract = hexToBase58(log.address)
     const meta = await tokenMeta(contract)
     const amount = units(BigInt(`0x${log.data || '0'}`).toString(), meta.decimals)
     if (amount <= 0) continue
-    transfers.push(transfer(id, hexToBase58(log.topics[1].slice(-40)), hexToBase58(log.topics[2].slice(-40)), amount, assetFor(meta.symbol, contract), ms, 'token', String(k++)))
+    const from = hexToBase58(log.topics[1].slice(-40)), to = hexToBase58(log.topics[2].slice(-40))
+    const raw = BigInt(`0x${log.data || '0'}`).toString()
+    transfers.push(transfer(id, from, to, amount, assetFor(meta.symbol, contract), ms, 'token', eventId(id, contract, from, to, raw, seen)))
   }
   const labels: Record<string, EntityLabel> = {}
   const unknown = new Set<string>()

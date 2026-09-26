@@ -20,7 +20,11 @@ function secret(): string {
 }
 
 const sign = (data: string) => crypto.createHmac('sha256', secret()).update(data).digest('base64url')
-const equal = (a: string, b: string) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
+// Compare bytes, not characters: a tampered cookie with multi-byte characters must fail, not throw
+const equal = (a: string, b: string) => {
+  const x = Buffer.from(a), y = Buffer.from(b)
+  return x.length === y.length && crypto.timingSafeEqual(x, y)
+}
 
 const nonceSig = (t: string) => sign(`nonce:${t}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 24)
 

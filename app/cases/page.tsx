@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ExternalLink, Plus, Search, Trash2, Upload, Wallet } from 'lucide-react'
 import SiteNav from '@/components/SiteNav'
@@ -26,14 +26,19 @@ export default function CasesPage() {
   const [creating, setCreating] = useState(false)
   const [moving, setMoving] = useState<string | null>(null)
 
+  /** Latest load: a slower reply from before a sign-in or sign-out is dropped */
+  const loadSeq = useRef(0)
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current
     setError(null)
     try {
       const [mine, browser] = await Promise.all([listCases(), listBrowserCases().catch(() => [])])
+      if (seq !== loadSeq.current) return
       setCases(mine)
       // Signed in: browser-only cases are offered for moving into the account
       setLocal(address ? browser.filter(b => !mine.some(m => m.id === b.id)) : [])
     } catch (e) {
+      if (seq !== loadSeq.current) return
       setError(e instanceof Error ? e.message : 'Could not load your cases')
       setCases([])
     }

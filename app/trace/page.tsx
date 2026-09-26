@@ -89,10 +89,16 @@ function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
+class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+  }
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+  if (!res.ok) throw new HttpError(body.error ?? `HTTP ${res.status}`, res.status)
   return body as T
 }
 
@@ -268,9 +274,12 @@ function TracePageInner() {
       .catch(() => {})
   }, [])
 
+  // One timer: an older toast's timeout must not cut a newer one short
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const flash = useCallback((msg: string) => {
     setToast(msg)
-    setTimeout(() => setToast(''), 5000)
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(''), 5000)
   }, [])
 
   const setKnownNow = (next: Map<string, NodeData>) => {
@@ -290,7 +299,8 @@ function TracePageInner() {
         next.set(n.address, {
           ...(ex ?? n),
           balance: n.balance,
-          txCount: n.txCount,
+          // A later page only counts its own transactions
+          txCount: append && ex ? Math.max(ex.txCount, n.txCount) : n.txCount,
           risk: n.risk,
           findings: n.findings,
           ens: n.ens ?? ex?.ens,
@@ -338,7 +348,25 @@ function TracePageInner() {
     setHubs(prev => new Map(prev).set(l.txid, l))
   }, [])
 
+  /**
+   * Bumped whenever the case is replaced wholesale (new search, start over, opened case):
+   * async work started for the previous case drops its results, and the graph starts fresh.
+   */
+  const caseGen = useRef(0)
+  const [caseRev, setCaseRev] = useState(0)
+  const newCase = () => {
+    caseGen.current++
+    setCaseRev(caseGen.current)
+    traceCancel.current = true
+    bulkCancel.current = true
+    autoLoaded.current.clear()
+    setTraceStatus(null)
+    setPinned(new Set())
+    setExpandedChains(new Set())
+  }
+
   const resetState = () => {
+    newCase()
     positionsRef.current.clear()
     savedOrigin.current = null
     setSaved(null)
@@ -352,7 +380,6 @@ function TracePageInner() {
     setFollowedPairs(new Set())
     setItemizedIds(new Set())
     setHiddenLinks(new Set())
-    setPinned(new Set())
     setPayments([])
     setBridgeHops([])
     setTraced([])
@@ -378,6 +405,7 @@ function TracePageInner() {
     setInitialLoading(true)
     setError('')
     resetState()
+    const gen = caseGen.current
     try {
       if (originTx) {
         // A bare 64-hex hash is Bitcoin or Tron; try Tron when Bitcoin has no such tx
@@ -387,24 +415,28 @@ function TracePageInner() {
         } catch (e) {
           if (originChain !== 'btc') throw e
           l = await fetchTxLookup(originTx, 'tron').catch(() => { throw e })
+          if (caseGen.current !== gen) return
           restoring.current = urlKey(`/trace?tx=${originTx}&chain=tron`)
           router.replace(`/trace?tx=${originTx}&chain=tron`)
         }
+        // Another search (or Start over) began while this one loaded
+        if (caseGen.current !== gen) return
         absorbTx(l)
         const { inputs, outputs } = txParticipants(l)
         setVisible(new Set([...inputs.slice(0, TX_PARTICIPANTS), ...outputs.slice(0, TX_PARTICIPANTS)]))
         setSelection({ kind: 'tx', id: l.txid })
       } else {
         const r = await fetchTrace(originAddress, originChain)
+        if (caseGen.current !== gen) return
         // Start with just the address; the user adds counterparties from the panel
         absorb(r, [r.address])
         setSelection({ kind: 'address', id: r.address })
         setTab('transactions')
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load')
+      if (caseGen.current === gen) setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
-      setInitialLoading(false)
+      if (caseGen.current === gen) setInitialLoading(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originAddress, originTx, originChain, absorb, absorbTx])
@@ -548,11 +580,14 @@ function TracePageInner() {
     bulkCancel.current = false
     const chain = knownRef.current.get(addr)?.chain ?? originChain ?? 'btc'
     const total = chain === 'btc' ? knownRef.current.get(addr)?.txCount : undefined
+    const gen = caseGen.current
     try {
       let page = pagesRef.current.get(addr)
       setBulk({ addr, loaded: page?.rawTxs.length ?? 0, total })
       while (page?.nextCursor && !bulkCancel.current) {
-        absorb(await fetchTrace(addr, chain, page.nextCursor), [], true)
+        const next = await fetchTrace(addr, chain, page.nextCursor)
+        if (caseGen.current !== gen) break
+        absorb(next, [], true)
         page = pagesRef.current.get(addr)
         setBulk({ addr, loaded: page?.rawTxs.length ?? 0, total })
       }
@@ -708,13 +743,20 @@ function TracePageInner() {
           // A bare 64-hex hash is Bitcoin (Tron hashes look the same; tried next)
           const chains: Chain[] = c.chain ? [c.chain] : ['btc', 'tron']
           let found: PaymentMatch[] | null = null
+          // Not found (404) or not that chain's format (400) means try the next chain;
+          // anything else (node down, rate limit) means we couldn't check, not "not found"
+          let failure: Error | null = null
           for (const ch of chains) {
             try {
               found = transfersOf((await fetchTxLookup(c.txid, ch)).transfers)
               break
-            } catch { /* try the next chain */ }
+            } catch (e) {
+              if (!(e instanceof HttpError && (e.status === 404 || e.status === 400))) failure = e instanceof Error ? e : new Error('Could not check')
+            }
           }
-          result = found ? judgePayment(c, found, id) : { id, claim: c, status: 'not-found', notes: ['Transaction not found'] }
+          result = found ? judgePayment(c, found, id)
+            : failure ? { id, claim: c, status: 'error', notes: [failure.message] }
+              : { id, claim: c, status: 'not-found', notes: ['Transaction not found'] }
         } else {
           const chain = detectChain(c.address!)!
           // With a date, page back far enough to cover it; without one, the latest history
@@ -749,8 +791,11 @@ function TracePageInner() {
     }
     snapshot()
     traceCancel.current = false
+    const gen = caseGen.current
     const before = traced
     const show = (flows: TracedFlow[]) => {
+      // A different case was opened mid-trace: never write this trail into it
+      if (caseGen.current !== gen) return
       const real = flows.filter(f => f.from && f.to)
       setTraced(uniqueFlows([...before, ...real]))
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
@@ -769,11 +814,13 @@ function TracePageInner() {
         // Your own labels count too: a wallet you marked as an exchange ends the trail there
         { addressTxs, btcTx, labelOf: a => mine(a) ?? knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
         (msg, partial) => {
+          if (caseGen.current !== gen) return
           setTraceStatus(msg)
           show([...seed.flows, ...partial.flows])
         },
         () => traceCancel.current
       )
+      if (caseGen.current !== gen) return
       const flows = [...seed.flows, ...res.flows].filter(f => f.from && f.to)
       show(flows)
       // Addresses the trail stopped at belong on the graph; peeled-off payments and minor
@@ -783,11 +830,13 @@ function TracePageInner() {
       const cashOut = res.ends.filter(e => e.reason === 'entity').length
       flash(`Traced ${flows.length} hop${flows.length === 1 ? '' : 's'}${cashOut ? ` · reached ${cashOut} exchange/mixer/sanctioned endpoint${cashOut === 1 ? '' : 's'}` : ''}`)
     } catch (e) {
-      flash(e instanceof Error ? e.message : 'Trace failed')
+      if (caseGen.current === gen) flash(e instanceof Error ? e.message : 'Trace failed')
     } finally {
-      setTraceStatus(null)
-      // Lay the finished trail out afresh, hop by hop
-      freshTrail()
+      if (caseGen.current === gen) {
+        setTraceStatus(null)
+        // Lay the finished trail out afresh, hop by hop
+        freshTrail()
+      }
     }
   }
 
@@ -904,7 +953,6 @@ function TracePageInner() {
   // everything where it is (collapsed chains pull their end in), and the zoom where the user left it
   /** Bumped when a view toggle (collapse / expand) adds or hides nodes, so the zoom stays put */
   const [quietRev, setQuietRev] = useState(0)
-  const layoutKey = 'fixed'
   /** One traced transaction goes, with whatever was traced onward from it and from nothing else */
   const removeTraced = (flow: TracedFlow) => {
     snapshot()
@@ -1079,6 +1127,7 @@ function TracePageInner() {
   const savedOrigin = useRef<string | null>(null)
 
   const applyCase = (c: CaseFile, from?: { id: string; name: string }) => {
+    newCase()
     skipChange.current = true
     savedOrigin.current = from ? c.origin.address : null
     setSaved(from ?? null)
@@ -1203,6 +1252,8 @@ function TracePageInner() {
       const a = selectedNode.address
       return (
         <AddressInspector
+          // Filters, searches, paging and the label editor belong to one address
+          key={a}
           attester={attester}
           node={selectedNode}
           prices={prices}
@@ -1344,7 +1395,7 @@ function TracePageInner() {
             const sender = bridge === selection.to ? selection.from : selection.to
             const into = edgeRows.filter(r => r.source === sender && r.target === bridge)
             const txids = into.flatMap(r => r.txids ?? [r.txid])
-            if (!txids.length) return undefined
+            if (!txids.length) return swapNote || undefined
             const txTimes = Object.fromEntries(into.flatMap(r => (r.txids ?? [r.txid]).map(t => [t, r.timestamp])))
             return (
               <>
@@ -1525,14 +1576,13 @@ function TracePageInner() {
 
           {!initialLoading && !error && (graphNodes.length > 0 || graphHubs.length > 0) && (
             <TraceGraph
-              key={inTrail ? `trail-${trailRev}` : 'case'}
+              key={inTrail ? `trail-${trailRev}` : `case-${caseRev}`}
               nodes={inTrail ? trail.nodes : drawn?.nodes ?? graphNodes}
               edges={inTrail ? trail.edges : drawn?.edges ?? graphEdges}
               followedPairs={followedPairs}
               traced={inTrail ? trail.traced : drawn?.traced ?? graphTraced}
               chains={inTrail ? trail.chains : collapsed.chains}
               onChainClick={id => { setQuietRev(v => v + 1); setExpandedChains(prev => new Set(prev).add(id)) }}
-              layoutKey={layoutKey}
               quietKey={quietRev}
               hubs={inTrail ? [] : graphHubs}
               bridges={inTrail ? trail.bridges : graphBridges}
@@ -1555,7 +1605,7 @@ function TracePageInner() {
               prices={prices}
               taintByEdge={taintResult?.byEdge}
               selected={selectedAddress}
-              selectedEdge={selection?.kind === 'flow' ? `${selection.from}->${selection.to}` : null}
+              selectedEdge={selection?.kind === 'flow' ? pairKey(selection.from, selection.to) : null}
               selectedHub={selection?.kind === 'tx' ? selection.id : null}
               // A click shows the node's quick actions; the side panel follows along only if it's already on an address
               onNodeClick={a => { if (selection?.kind === 'address') openAddress(a) }}

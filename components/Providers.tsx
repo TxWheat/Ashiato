@@ -46,7 +46,7 @@ interface Auth {
   busy: boolean
   error: string | null
   enabled: boolean
-  /** Opens the sign-in modal; after signing, goes to `then` (e.g. /cases) */
+  /** Opens the sign-in modal; after signing, goes to `then` (e.g. /cases), or stays on the page */
   signIn: (then?: string) => void
   signOut: () => Promise<void>
 }
@@ -120,7 +120,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     siwe(wallet, then)
   }, [isConnected, wallet, siwe])
 
-  const signIn = useCallback((then = '/cases') => {
+  const signIn = useCallback((then = '') => {
     setError(null)
     if (!modal) {
       setError('Sign-in is not set up on this server (NEXT_PUBLIC_REOWN_PROJECT_ID)')

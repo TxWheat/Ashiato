@@ -30,18 +30,22 @@ export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, a
   const [showOthers, setShowOthers] = useState(false)
 
   useEffect(() => {
+    let stale = false
     setHops(null)
     setError(null)
     fetch(`/api/bridges/${encodeURIComponent(sender)}`)
       .then(async r => {
         const b = await r.json()
+        if (stale) return
         if (!r.ok) setError(b.error ?? 'Lookup failed')
         setHops(b.hops ?? [])
       })
       .catch(() => {
+        if (stale) return
         setError('Lookup failed')
         setHops([])
       })
+    return () => { stale = true }
   }, [sender])
 
   const ours = new Set(txids.map(norm))

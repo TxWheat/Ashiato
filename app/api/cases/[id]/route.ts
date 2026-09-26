@@ -12,12 +12,8 @@ const validId = (id: string) => /^[\w-]{3,64}$/.test(id)
 const fail = (e: unknown) =>
   NextResponse.json({ error: e instanceof Error ? e.message : 'Case storage error' }, { status: e instanceof StoreNotConfigured ? 503 : 502 })
 
-async function owner() {
-  return currentUser()
-}
-
 export async function GET(_req: NextRequest, { params }: Ctx) {
-  const me = await owner()
+  const me = await currentUser()
   if (!me) return NextResponse.json({ error: 'Sign in to open your cases' }, { status: 401 })
   const { id } = await params
   if (!validId(id)) return NextResponse.json({ error: 'Invalid case id' }, { status: 400 })
@@ -30,7 +26,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 }
 
 export async function PUT(req: NextRequest, { params }: Ctx) {
-  const me = await owner()
+  const me = await currentUser()
   if (!me) return NextResponse.json({ error: 'Sign in to save to your account' }, { status: 401 })
   const { id } = await params
   if (!validId(id)) return NextResponse.json({ error: 'Invalid case id' }, { status: 400 })
@@ -57,7 +53,7 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
 }
 
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
-  const me = await owner()
+  const me = await currentUser()
   if (!me) return NextResponse.json({ error: 'Sign in first' }, { status: 401 })
   const { id } = await params
   if (!validId(id)) return NextResponse.json({ error: 'Invalid case id' }, { status: 400 })

@@ -129,14 +129,13 @@ export async function followFunds(
   const flows: TracedFlow[] = []
   const ends: TraceEnd[] = []
   const rootTotal = seeds.reduce((s, l) => s + l.amount, 0)
-  const adaptiveOn = opts.adaptive !== false
-  const minAmount = rootTotal * (opts.minFraction ?? (adaptiveOn ? 0.02 : 0.002))
+  const adaptive = opts.adaptive !== false
+  const minAmount = rootTotal * (opts.minFraction ?? (adaptive ? 0.02 : 0.002))
   // The dust threshold is in the traced asset; after a swap it converts at the swap's rate
   const minFor = new Map<string, number>(seeds.map(l => [l.asset, minAmount]))
   const minOf = (asset: string) => minFor.get(asset) ?? minAmount
   const seen = new Set<string>()
   let frontier = seeds
-  const adaptive = opts.adaptive !== false
 
   const stopFor = (l: Lot): boolean => {
     const label = deps.labelOf(l.address)
@@ -378,12 +377,15 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
     return []
   }
   // Dust and spam (poisoning 0.000000001 ETH, fake tokens) never count, in or out
-  const floor = Math.max(dustFloor(lot.asset), lot.amount * 0.01)
-  const txs = all.filter(t => !t.asset.endsWith('*') && !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < floor))
+  const real = all.filter(t => !t.asset.endsWith('*') && !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < dustFloor(lot.asset)))
+  // Payments under 1% of the traced amount aren't followed
+  const floor = lot.amount * 0.01
+  const txs = real.filter(t => !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < floor))
   // Pooling: other funds of the same asset that arrived after the traced funds and
   // before a given outflow share that outflow (a balance already sitting there isn't
-  // visible from loaded history, so this can only overstate the traced share)
-  const otherIn = txs.filter(t => t.asset === lot.asset && t.outputs[0]?.address === lot.address && t.inputs[0]?.address !== lot.address && t.txid !== lot.via && t.timestamp >= lot.time)
+  // visible from loaded history, so this can only overstate the traced share). Many
+  // small deposits still add up, so they count here even though they aren't followed.
+  const otherIn = real.filter(t => t.asset === lot.asset && t.outputs[0]?.address === lot.address && t.inputs[0]?.address !== lot.address && t.txid !== lot.via && t.timestamp >= lot.time)
   const shareAt = (time: number) => {
     const other = otherIn.filter(t => t.timestamp <= time).reduce((s, t) => s + (t.outputs[0]?.amount ?? 0), 0)
     return lot.amount / (lot.amount + other)
@@ -558,7 +560,10 @@ export function seedsFromTx(tx: RawTransaction, from: string, to?: string, adapt
   const ends: TraceEnd[] = []
   // Tracing the whole transaction: apply the same shape rules as later hops
   const plan = adaptive && !to && tx.chain === 'btc' ? planBtcSpend(tx) : null
-  const skip = new Set(plan?.side.map(i => tx.outputs[i].address) ?? [])
+  // A "peel" whose remainder is the sender's own change is an ordinary payment: the small
+  // output is the payment itself, so it is followed rather than set aside
+  const payment = plan?.shape === 'peel' && plan.follow.every(i => tx.outputs[i].address === from || tx.outputs[i].isChange)
+  const skip = new Set(payment ? [] : plan?.side.map(i => tx.outputs[i].address) ?? [])
   const totalIn = tx.inputs.reduce((s, i) => s + i.amount, 0)
   const mine = tx.inputs.filter(i => i.address === from).reduce((s, i) => s + i.amount, 0)
   const share = tx.chain === 'btc' && totalIn > 0 && mine > 0 ? mine / totalIn : 1
@@ -572,7 +577,7 @@ export function seedsFromTx(tx: RawTransaction, from: string, to?: string, adapt
     }
     const amount = o.amount * share
     lots.push({ chain: tx.chain, address: o.address, asset: tx.asset, amount, time: tx.timestamp, via: tx.txid, vout: o.index, hop: 1 })
-    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: `Starting transaction${plan ? ` (${plan.note})` : ''}${o.isChange ? ' (likely change, same owner)' : ''}` })
+    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: `Starting transaction${payment ? ' (payment; the rest was the sender\'s change)' : plan ? ` (${plan.note})` : ''}${o.isChange ? ' (likely change, same owner)' : ''}` })
   }
   return { lots, flows, ends }
 }
