@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick, EyeOff, ChevronsLeft, ChevronsRight, Repeat } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Undo2, X, MousePointerClick, EyeOff, ChevronsLeft, ChevronsRight, Repeat, Wallet, Mail } from 'lucide-react'
 import { Chain, EdgeData, EntityLabel, EntityType, NodeData, RawTransaction, TraceResult, TxIO, TxLookup, transferKey } from '@/lib/types'
 import { normaliseAddress, detectChain, truncate } from '@/lib/detect-chain'
 import { aggregateEdges, txEdges } from '@/lib/graph'
@@ -30,6 +30,7 @@ import ExportMenu from '@/components/ExportMenu'
 import SearchForm from '@/components/SearchForm'
 import ThemeToggle from '@/components/ThemeToggle'
 import { AccountButton } from '@/components/SignIn'
+import { useAuth } from '@/components/Providers'
 import type { Attester } from '@/components/CommunityLabels'
 import { usePublicClient, useSwitchChain, useWalletClient } from 'wagmi'
 import { attestLabel, revokeAttestation, voteOnLabel, walletChainId } from '@/lib/attest/write'
@@ -134,7 +135,50 @@ function toHub(l: TxLookup): TxHubData {
   return { txid: l.txid, chain: l.chain, label: `${l.txid.replace(/^0x/, '').slice(0, 6)}…${l.txid.slice(-4)}`, inputs, outputs }
 }
 
+/** Tracing needs an account, so cases are always saved. Signing in continues to this same trace. */
 function TracePageInner() {
+  const { address, enabled, busy, error, signIn } = useAuth()
+  const params = useSearchParams()
+  // Sign-in not configured on this server (e.g. local development): open as before
+  if (!enabled) return <TraceWorkspace />
+  if (address === undefined) {
+    return <div className="h-screen grid place-items-center bg-bg"><div className="w-7 h-7 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
+  }
+  if (address) return <TraceWorkspace />
+  const what = params.get('tx') ?? params.get('address')
+  const name = params.get('name')
+  return (
+    <div className="min-h-screen grid place-items-center bg-bg px-4">
+      <div className="w-full max-w-md border border-line bg-panel p-6 space-y-5">
+        <Link href="/" className="block text-[13px] font-medium tracking-[0.24em] text-fg">ASHIATO</Link>
+        <div className="space-y-2">
+          <h1 className="text-xl font-medium text-fg">Sign in to trace</h1>
+          <p className="text-sm text-muted leading-relaxed">
+            Every trace is saved to your account, so nothing is lost. Signing in is free and never sends a transaction.
+          </p>
+          {what && (
+            <p className="text-xs text-faint">
+              Then we&apos;ll open {name ? <>“<span className="text-fg">{name}</span>” for </> : ''}<span className="font-mono text-muted">{truncate(what, 8)}</span>.
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => signIn()} disabled={busy}
+            className="inline-flex items-center gap-2 h-11 px-5 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-50">
+            <Wallet size={15} /> {busy ? 'Check your wallet…' : 'Connect wallet'}
+          </button>
+          <button onClick={() => signIn()} disabled={busy}
+            className="inline-flex items-center gap-2 h-11 px-5 text-sm font-medium border border-line hover:border-accent text-fg disabled:opacity-50">
+            <Mail size={15} /> Sign in with email
+          </button>
+        </div>
+        {error && <p className="text-xs text-red-500">{error}</p>}
+      </div>
+    </div>
+  )
+}
+
+function TraceWorkspace() {
   const params = useSearchParams()
   const router = useRouter()
 
@@ -1178,6 +1222,15 @@ function TracePageInner() {
   }
   const saveRef = useRef(saveChart)
   saveRef.current = saveChart
+
+  // A case started from search arrives with its name (?name=): save it under that name once loaded
+  const nameParam = params.get('name')
+  const named = useRef(false)
+  useEffect(() => {
+    if (!nameParam || named.current || initialLoading || error || saved) return
+    named.current = true
+    saveRef.current(nameParam.slice(0, 80), { asNew: true })
+  }, [nameParam, initialLoading, error, saved])
 
   // Anything that changes the case marks it unsaved; auto-save writes it 1.5 s after the last change
   const [layoutRev, setLayoutRev] = useState(0)

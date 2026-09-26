@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowUpRight, AlertCircle, Search } from 'lucide-react'
 import { clsx } from 'clsx'
-import { detectInput, searchUrl } from '@/lib/detect-chain'
+import { detectInput, searchUrl, SearchTarget, truncate } from '@/lib/detect-chain'
 
 /**
  * Address or transaction search. `compact` is the version used in the trace page header;
@@ -14,8 +14,18 @@ import { detectInput, searchUrl } from '@/lib/detect-chain'
 export default function SearchForm({ compact = false, onAddAddress }: { compact?: boolean; onAddAddress?: (address: string) => void }) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
+  /** A new case waiting for its name (it's saved under that name as soon as it opens) */
+  const [naming, setNaming] = useState<SearchTarget | null>(null)
+  const [caseName, setCaseName] = useState('')
   const router = useRouter()
   const target = detectInput(value)
+
+  const suggestName = (t: SearchTarget) => `${truncate(t.value, 6)} · ${new Date().toLocaleDateString('en-NZ')}`
+  const startCase = (t: SearchTarget, name: string) => {
+    setNaming(null)
+    setValue('')
+    router.push(`${searchUrl(t)}&name=${encodeURIComponent(name.trim() || suggestName(t))}`)
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -23,14 +33,22 @@ export default function SearchForm({ compact = false, onAddAddress }: { compact?
       setError('Enter a Bitcoin, Ethereum or Tron address, or a transaction hash')
       return
     }
-    setValue('')
-    if (onAddAddress && target.kind === 'address') onAddAddress(target.value)
-    else router.push(searchUrl(target))
+    if (onAddAddress && target.kind === 'address') {
+      setValue('')
+      onAddAddress(target.value)
+    } else if (compact) {
+      openNew()
+    } else {
+      // A new case gets a name first, so it's saved from the start
+      setCaseName(suggestName(target))
+      setNaming(target)
+    }
   }
   const openNew = () => {
     if (!target) return
-    setValue('')
-    router.push(searchUrl(target))
+    const name = window.prompt('Name the new case', suggestName(target))
+    if (name === null) return
+    startCase(target, name)
   }
   const adds = !!onAddAddress && target?.kind === 'address'
 
@@ -74,6 +92,24 @@ export default function SearchForm({ compact = false, onAddAddress }: { compact?
             <AlertCircle size={12} className="flex-shrink-0" />{error}
           </div>
         )}
+      </form>
+    )
+  }
+
+  if (naming) {
+    return (
+      <form onSubmit={e => { e.preventDefault(); startCase(naming, caseName) }} className="w-full max-w-xl space-y-3">
+        <label htmlFor="case-name" className="block text-[10px] font-medium uppercase tracking-wider text-faint">
+          Name this case <span className="normal-case tracking-normal">· {naming.chain} {naming.kind === 'tx' ? 'transaction' : 'address'} <span className="font-mono">{truncate(naming.value, 8)}</span></span>
+        </label>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input id="case-name" value={caseName} onChange={e => setCaseName(e.target.value)} autoFocus maxLength={80}
+            placeholder="e.g. Jane Doe · USDT investment scam"
+            className="flex-1 h-12 bg-panel border border-line focus:border-accent px-4 text-sm text-fg placeholder:text-faint outline-none" />
+          <button type="submit" className="h-12 px-5 bg-accent hover:bg-accent-hover text-accent-fg font-medium">Start case</button>
+          <button type="button" onClick={() => setNaming(null)} className="h-12 px-4 border border-line text-muted hover:text-fg">Back</button>
+        </div>
+        <p className="text-xs text-faint">The case is saved to your account under this name as soon as it opens. You can rename it later.</p>
       </form>
     )
   }

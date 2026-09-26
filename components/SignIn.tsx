@@ -26,7 +26,7 @@ export function SignInPanel() {
 
   return (
     <div className="space-y-3">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-faint">Sign in to keep your cases</div>
+      <div className="text-[10px] font-medium uppercase tracking-wider text-faint">Sign in to start tracing</div>
       <div className="flex flex-wrap gap-2">
         <button onClick={() => signIn('/cases')} disabled={busy}
           className="inline-flex items-center gap-2 h-11 px-5 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-50">
