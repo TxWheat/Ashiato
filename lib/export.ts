@@ -2,6 +2,7 @@ import { Chain, EdgeData, NodeData, RawTransaction, TxLookup } from './types'
 import type { CheckedPayment } from './client-payments'
 import type { TracedFlow, TraceEnd } from './follow'
 import type { CrossChainHop } from './bridges/types'
+import { Annotation } from './annotations'
 
 // Case files and exports: JSON (save/load an investigation), CSV of flows,
 // GraphML (Gephi / yEd / Cytoscape, as in s0md3v/Orbit).
@@ -41,6 +42,8 @@ export interface CaseFile {
   clientPayments?: CheckedPayment[]
   /** Cross-chain swaps added to the graph; `via` is the service's node it leaves from */
   bridgeHops?: (CrossChainHop & { via: string; sender?: string; bridge?: string })[]
+  /** Shapes and text drawn on the graph */
+  annotations?: Annotation[]
 }
 
 /**
