@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { ArrowRight, ExternalLink, Plus, Shuffle, X } from 'lucide-react'
-import { CrossChainHop, chainDisplay, hopTxUrl, statusOk, statusText } from '@/lib/bridges/types'
+import { BridgeService, CrossChainHop, chainDisplay, hopTxUrl, statusOk, statusText } from '@/lib/bridges/types'
 import { fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
 interface Props {
   /** The wallet that sent into the swap service */
   sender: string
-  serviceName: string
+  service: BridgeService
   /** Transactions from the sender into the service (to find its orders), with their on-chain times */
   txids: string[]
   txTimes?: Record<string, number>
@@ -24,16 +24,19 @@ const norm = (h: string) => h.toLowerCase().replace(/^0x/, '')
 const when = (t?: number) => (t ? new Date(t * 1000).toLocaleString('en-NZ', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '')
 
 /** Where money sent into a cross-chain swap service came out, from the service's own order records */
-export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, added, onAdd, onRemove }: Props) {
+export default function BridgeHops({ sender, service, txids, txTimes = {}, added, onAdd, onRemove }: Props) {
   const [hops, setHops] = useState<CrossChainHop[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showOthers, setShowOthers] = useState(false)
+  const txKey = txids.join(',')
 
   useEffect(() => {
     let stale = false
     setHops(null)
     setError(null)
-    fetch(`/api/bridges/${encodeURIComponent(sender)}`)
+    // deBridge is looked up by transaction; the others by wallet
+    const q = new URLSearchParams({ service, ...(service === 'deBridge' ? { txids: txKey } : {}) })
+    fetch(`/api/bridges/${encodeURIComponent(sender)}?${q}`)
       .then(async r => {
         const b = await r.json()
         if (stale) return
@@ -46,7 +49,7 @@ export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, a
         setHops([])
       })
     return () => { stale = true }
-  }, [sender])
+  }, [sender, service, txKey])
 
   const ours = new Set(txids.map(norm))
   const times = Object.fromEntries(Object.entries(txTimes).map(([k, v]) => [norm(k), v]))
@@ -61,13 +64,13 @@ export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, a
   return (
     <div className="border border-orange-500/50 bg-orange-500/5 p-3 space-y-2 text-[11px]">
       <div className="flex items-center gap-1.5 font-medium text-fg">
-        <Shuffle size={12} className="text-orange-500" /> Cross-chain swap via {serviceName}
+        <Shuffle size={12} className="text-orange-500" /> Cross-chain swap via {service}
       </div>
-      {hops === null && <p className="text-faint">Asking Bridgers where it went…</p>}
+      {hops === null && <p className="text-faint">Asking {service} where it went…</p>}
       {error && <p className="text-red-500">{error}</p>}
       {hops && !error && !matched.length && (
         <p className="text-faint">
-          No Bridgers order matches these transactions{others.length ? '' : ', and this wallet has no other Bridgers swaps'}. It may have used a different service behind the same contract.
+          No {service} record matches these transactions{others.length ? '' : `, and this wallet has no other ${service} transfers`}. It may have used a different service behind the same contract.
         </p>
       )}
       {matched.map(h => <Hop key={h.orderId} h={h} added={added} onRemove={onRemove} onAdd={x => onAdd(x, true)} />)}
@@ -84,7 +87,7 @@ export default function BridgeHops({ sender, serviceName, txids, txTimes = {}, a
       {unrelated.length > 0 && (
         <div>
           <button onClick={() => setShowOthers(v => !v)} className="text-faint hover:text-fg underline underline-offset-2">
-            {showOthers ? 'Hide' : 'Show'} {unrelated.length} other Bridgers swap{unrelated.length === 1 ? '' : 's'} from this wallet
+            {showOthers ? 'Hide' : 'Show'} {unrelated.length} other {service} transfer{unrelated.length === 1 ? '' : 's'} from this wallet
           </button>
           {showOthers && <div className="mt-2 space-y-2">{unrelated.map(h => <Hop key={h.orderId} h={h} added={added} onRemove={onRemove} onAdd={x => onAdd(x, false)} />)}</div>}
         </div>
@@ -108,7 +111,7 @@ function Hop({ h, added: addedIds, onAdd, onRemove }: { h: CrossChainHop; added:
       </div>
       <div className="text-faint">
         To <span className="font-mono text-fg" title={h.toAddress}>{truncate(h.toAddress, 8)}</span>
-        {h.time ? ` · ${when(h.time)}` : h.createdText ? ` · ${h.createdText} (Bridgers time)` : ''} · <span className={statusOk(h.status) ? 'text-green-500' : 'text-amber-500'}>{statusText(h.status)}</span>
+        {h.time ? ` · ${when(h.time)}` : h.createdText ? ` · ${h.createdText}${h.service === 'Bridgers' ? ' (Bridgers time)' : ''}` : ''} · <span className={statusOk(h.status) ? 'text-green-500' : 'text-amber-500'}>{statusText(h.status)}</span>
         {h.refundHash && <> · refunded {h.refundUrl ? <a href={h.refundUrl} target="_blank" rel="noopener noreferrer" className="underline">{truncate(h.refundHash, 5)}</a> : truncate(h.refundHash, 5)}</>}
       </div>
       <div className="flex items-center gap-3 text-faint">

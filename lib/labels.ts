@@ -36,7 +36,7 @@ function load() {
 // Small lists kept as plain TSV (chain, address, name, type). They take precedence over a
 // generic dataset tag ("service", "wallet"), never over an exchange or sanctions label.
 const EXTRAS: { file: string; source: string; sourceUrl: string }[] = [
-  { file: 'bridges.tsv', source: 'Bridge contracts (checked against DefiLlama bridges-server)', sourceUrl: 'https://github.com/DefiLlama/bridges-server' },
+  { file: 'bridges.tsv', source: 'Bridge contracts (checked against DefiLlama bridges-server / Etherscan name tags)', sourceUrl: 'https://github.com/DefiLlama/bridges-server' },
   { file: 'scam-mew.tsv', source: 'MyEtherWallet darklist (MIT)', sourceUrl: 'https://github.com/MyEtherWallet/ethereum-lists' },
 ]
 const WEAK: EntityType[] = ['service', 'defi', 'wallet', 'unknown']

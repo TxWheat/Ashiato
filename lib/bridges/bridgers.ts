@@ -1,6 +1,7 @@
 import 'server-only'
 import { fetchJson } from '../http'
 import { CrossChainHop, toOurChain } from './types'
+import { num, Raw, str } from './util'
 
 // Bridgers (bridgers.xyz, by SWFT) order records: every cross-chain swap has a source
 // hash (money in) and a toHash (money out on the other chain).
@@ -10,14 +11,7 @@ import { CrossChainHop, toOurChain } from './types'
 const BASE = (process.env.BRIDGERS_API_URL || 'https://api.bridgers.xyz').replace(/\/$/, '')
 const SOURCE_FLAG = process.env.BRIDGERS_SOURCE_FLAG || 'bridgers'
 
-type Raw = Record<string, unknown>
 interface Response { resCode?: number | string; resMsg?: string; data?: unknown }
-
-const str = (v: unknown) => (typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '')
-const num = (v: unknown) => {
-  const n = typeof v === 'number' ? v : parseFloat(str(v))
-  return Number.isFinite(n) ? n : 0
-}
 
 /** "USDT(TRON)" → "USDT"; plain codes pass through */
 const assetOf = (code: string) => code.replace(/\(.*\)$/, '').trim().toUpperCase() || '?'

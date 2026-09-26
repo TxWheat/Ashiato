@@ -1,4 +1,4 @@
-# chain	address	name	type  (Ethereum contracts of cross-chain bridges; each address checked against DefiLlama bridges-server adapters)
+# chain	address	name	type  (Ethereum contracts of cross-chain bridges; checked against DefiLlama bridges-server adapters or Etherscan public name tags)
 eth	0x8731d54e9d02c286767d56ac03e8037c07e01e98	Stargate: Router	bridge
 eth	0x77b2043768d28e9c9ab44e1abfc95944bce57931	Stargate: Native pool	bridge
 eth	0xc026395860db2d07ee33e05fe50ed7bd583189c7	Stargate: USDC pool	bridge
@@ -29,3 +29,8 @@ eth	0xbca3039a18c0d2f2f84ba8a028c67290bc045afa	Rhino.fi: Bridge	bridge
 eth	0xb8f275fbf7a959f4bce59999a2ef122a099e81a8	Symbiosis: Portal	bridge
 eth	0x25ab3efd52e6470681ce037cd546dc60726948d3	Meson: Bridge	bridge
 eth	0xbbbd1bbb4f9b936c3604906d7592a644071de884	Allbridge: Classic Bridge	bridge
+eth	0x5c7bcd6e7de5423a257d81b442095a1a6ced35c5	Across Protocol: Spoke Pool	bridge
+eth	0xf5042e6ffac5a625d4e7848e0b01373d8eb9e222	Relay: Router	bridge
+eth	0x43de2d77bf8027e25dbd179b491e8d64f38398aa	deBridge: Gate	bridge
+eth	0xe7351fd770a37282b91d153ee690b63579d6dd7f	deBridge: DLN Destination	bridge
+eth	0x663dc15d3c1ac63ff12e45ab68fea3f0a883c251	deBridge: Crosschain Forwarder	bridge
