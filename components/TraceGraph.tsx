@@ -256,6 +256,8 @@ interface Props {
   quietKey?: number
   /** Quick actions shown around a clicked node; without this, clicks go straight to onNodeClick */
   onNodeAction?: (address: string, action: NodeAction) => void
+  /** Addresses with watch alerts on (shown in the node menu) */
+  watched?: Set<string>
   /** Shapes and text drawn on the graph (saved with the case) */
   annotations?: Annotation[]
   onAnnotations?: (next: Annotation[]) => void
@@ -276,13 +278,13 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, annotations = [], onAnnotations }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, watched, annotations = [], onAnnotations }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const { currency } = useSettings()
   const pricing = usePricing()
   const menu = useMemo(() => onNodeAction
-    ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) } }
-    : null, [menuFor, onNodeAction])
+    ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) }, watched }
+    : null, [menuFor, onNodeAction, watched])
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)

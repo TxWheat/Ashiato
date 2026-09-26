@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { clsx } from 'clsx'
 import { Github } from 'lucide-react'
 import { AccountButton } from './SignIn'
+import AlertsBell from './AlertsBell'
 import { SettingsButton } from './Settings'
 
 const PAGES = [
@@ -37,6 +38,7 @@ export default function SiteNav() {
           <span className="hidden sm:inline">Source</span>
         </a>
         <AccountButton />
+        <AlertsBell />
         <SettingsButton />
       </div>
     </nav>

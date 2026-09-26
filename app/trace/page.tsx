@@ -31,6 +31,7 @@ import SaveChartButton from '@/components/SaveChartButton'
 import ExportMenu from '@/components/ExportMenu'
 import SearchForm from '@/components/SearchForm'
 import { AccountButton } from '@/components/SignIn'
+import AlertsBell from '@/components/AlertsBell'
 import { useAuth } from '@/components/Providers'
 import { SettingsButton, useSettings } from '@/components/Settings'
 import { PricingContext } from '@/components/Pricing'
@@ -185,6 +186,7 @@ function TracePageInner() {
 function TraceWorkspace() {
   const params = useSearchParams()
   const router = useRouter()
+  const { address: authAddress } = useAuth()
 
   // The connected wallet signs community labels and votes (free: a signature, no transaction)
   const { data: walletClient } = useWalletClient()
@@ -614,7 +616,35 @@ function TraceWorkspace() {
         if (addr === originAddress) flash("The case's starting address can't be removed")
         else removeNode(addr)
         break
+      case 'watch':
+        toggleWatch(addr); break
     }
+  }
+
+  // Watch alerts (Pro): addresses this account watches, address → watch id
+  const [watches, setWatches] = useState<Map<string, string>>(new Map())
+  const watched = useMemo(() => new Set(watches.keys()), [watches])
+  useEffect(() => {
+    if (!authAddress) return
+    fetch('/api/watches').then(r => (r.ok ? r.json() : null)).then(b => {
+      if (b?.watches) setWatches(new Map(b.watches.map((w: { address: string; id: string }) => [w.address, w.id])))
+    }).catch(() => {})
+  }, [authAddress])
+  const toggleWatch = async (addr: string) => {
+    const id = watches.get(addr)
+    if (id) {
+      setWatches(m => { const n = new Map(m); n.delete(addr); return n })
+      await fetch(`/api/watches?id=${id}`, { method: 'DELETE' }).catch(() => {})
+      flash('Stopped watching this address')
+      return
+    }
+    flash('Watching… checking the address')
+    const res = await fetch('/api/watches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chain: chainOf(addr), address: addr, label: nameOf(addr) }) }).catch(() => null)
+    const body = await res?.json().catch(() => ({})) ?? {}
+    if (res?.ok) {
+      setWatches(m => new Map(m).set(addr, body.watch.id))
+      flash('Watching: you will get an alert (the bell, top right) when funds move')
+    } else flash(res?.status === 402 ? 'Watch alerts are part of Pro (see Pricing)' : body.error ?? 'Could not watch this address')
   }
 
   const addToGraph = (addrs: string[]) => {
@@ -1552,6 +1582,7 @@ function TraceWorkspace() {
             onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
           />
           <AccountButton compact />
+          <AlertsBell />
           <SettingsButton />
         </div>
       </header>
@@ -1636,6 +1667,7 @@ function TraceWorkspace() {
               // A click shows the node's quick actions; the side panel follows along only if it's already on an address
               onNodeClick={a => { if (selection?.kind === 'address') openAddress(a) }}
               onNodeAction={nodeAction}
+              watched={watched}
               annotations={annotations}
               onAnnotations={setAnnotations}
               onEdgeClick={selectFlow}
