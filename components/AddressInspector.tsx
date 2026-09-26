@@ -548,7 +548,8 @@ function TxList(p: Props) {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
-  const rows = useMemo(() => (txs ?? []).map(tx => {
+  // Newest first (pending on top), whatever order the pages were loaded in
+  const rows = useMemo(() => [...(txs ?? [])].sort((a, b) => (b.timestamp || Infinity) - (a.timestamp || Infinity)).map(tx => {
     const sent = tx.inputs.some(x => x.address === me)
     const got = tx.outputs.some(x => x.address === me)
     const dir: 'in' | 'out' | 'self' = sent && got && !tx.outputs.some(o => o.address !== me) ? 'self' : sent ? 'out' : 'in'
