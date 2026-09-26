@@ -3,14 +3,14 @@ import { normaliseAddress } from '../detect-chain'
 import { CommunityCategory } from './config'
 import { decodeLabel, decodeVote, VoteInput } from './encode'
 
-// Turns raw EAS attestations into community labels with a trust score.
+// Turns signed labels and votes into community labels with a trust score.
 // Rules (docs/HACKATHON_PLAN.md):
 //   - one live label per attester per address and category: their latest wins
 //   - one live vote per wallet per label: their latest wins; you can't vote on your own label
 //   - trust = weighted share of support; the label's creator counts as a +2 vote
 //   - voter weight = 1, +1 with a verified ENS name
 
-/** An attestation as the EAS indexer returns it */
+/** A stored label or vote; data is the ABI encoding of its fields */
 export interface RawAttestation {
   id: `0x${string}`
   attester: string

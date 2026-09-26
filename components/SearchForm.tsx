@@ -1,7 +1,7 @@
 'use client'
 
 import { chainDot } from '@/lib/format'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowUpRight, AlertCircle, Search } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -11,12 +11,31 @@ import { detectInput, searchUrl, SearchTarget, truncate } from '@/lib/detect-cha
  * Address or transaction search. `compact` is the version used in the trace page header;
  * there, with `onAddAddress`, an address is added to the open case instead of starting a new one.
  */
+const PLACEHOLDER = 'Address or transaction hash'
+
+/** Types the text out once, a letter at a time (all at once for reduced motion) */
+function useTypewriter(text: string, enabled: boolean, perChar = 70, startAfter = 400): string {
+  const [shown, setShown] = useState(enabled ? '' : text)
+  useEffect(() => {
+    if (!enabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return setShown(text)
+    let i = 0
+    let timer = setTimeout(function tick() {
+      setShown(text.slice(0, ++i))
+      if (i < text.length) timer = setTimeout(tick, perChar)
+    }, startAfter)
+    return () => clearTimeout(timer)
+  }, [text, enabled, perChar, startAfter])
+  return shown
+}
+
 export default function SearchForm({ compact = false, onAddAddress }: { compact?: boolean; onAddAddress?: (address: string) => void }) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
   /** A new case waiting for its name (it's saved under that name as soon as it opens) */
   const [naming, setNaming] = useState<SearchTarget | null>(null)
   const [caseName, setCaseName] = useState('')
+  const typed = useTypewriter(PLACEHOLDER, !compact)
+  const typedPlaceholder = typed.length < PLACEHOLDER.length ? `${typed}▏` : typed
   const router = useRouter()
   const target = detectInput(value)
 
@@ -122,7 +141,7 @@ export default function SearchForm({ compact = false, onAddAddress }: { compact?
             type="text"
             value={value}
             onChange={e => { setValue(e.target.value); setError('') }}
-            placeholder="Address or transaction hash"
+            placeholder={typedPlaceholder}
             aria-label="Address or transaction to trace"
             className="w-full h-12 bg-panel border border-line focus:border-accent px-4 pr-36 font-mono text-sm text-fg placeholder:text-faint outline-none transition-colors"
             spellCheck={false}
