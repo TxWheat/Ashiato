@@ -87,6 +87,8 @@ interface Props {
   onLoadMore: () => void
   onNote: (note: string) => void
   onShowCluster: () => void
+  /** txids on the traced trail: only these rows are coloured */
+  tracedTxids: Set<string>
 }
 
 /** Short amount list: the two biggest assets, then "+N tokens" */
@@ -637,11 +639,11 @@ function TxList(p: Props) {
       )}
 
       {filtered.slice(0, shown).map(({ tx, dir, amount, others, change }, i) => {
-        const onChart = others.some(a => p.onGraph.has(a))
+        const isTraced = p.tracedTxids.has(tx.txid)
         const tint = clsx(
-          dir === 'in' ? (onChart ? 'bg-green-500/[0.12] border-l-2 border-l-green-500' : 'bg-green-500/[0.04] border-l-2 border-l-transparent')
-            : dir === 'out' ? (onChart ? 'bg-red-500/[0.12] border-l-2 border-l-red-500' : 'bg-red-500/[0.04] border-l-2 border-l-transparent')
-              : 'border-l-2 border-l-transparent',
+          !isTraced ? 'border-l-2 border-l-transparent'
+            : dir === 'in' ? 'bg-green-500/[0.12] border-l-2 border-l-green-500'
+              : 'bg-red-500/[0.12] border-l-2 border-l-red-500',
         )
         const value = fiatValue(amount, tx.asset, p.prices)
         const amountCell = (
