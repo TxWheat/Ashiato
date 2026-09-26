@@ -21,7 +21,7 @@ import ClientPaymentsDialog from '@/components/ClientPayments'
 import { useMyLabels, myLabelKey, toEntityLabel } from '@/lib/my-labels'
 import { CASE_VERSION, CaseFile, LoadedPage, download, downloadDataUrl, flowsToCsv, parseCase, toGraphml } from '@/lib/export'
 import { buildReport } from '@/lib/report'
-import { ENTITY_STYLE, nativeAsset, chainDot, fmtCompact, fmtDay } from '@/lib/format'
+import { ENTITY_STYLE, nativeAsset, chainDot, fmtCompact, fmtDay, explorerAddressUrl } from '@/lib/format'
 import AddressInspector, { AddressTab } from '@/components/AddressInspector'
 import TxInspector from '@/components/TxInspector'
 import EdgeDetail from '@/components/EdgeDetail'
@@ -38,6 +38,7 @@ import { ATTEST_CHAIN, SCHEMA_UID } from '@/lib/attest/config'
 import BridgeHops from '@/components/BridgeHops'
 import { BRIDGE_NAME, CrossChainHop, chainDisplay } from '@/lib/bridges/types'
 import type { GraphApi, XY } from '@/components/TraceGraph'
+import type { NodeAction } from '@/components/NodeMenu'
 import type { AddressNodeData, TxHubData } from '@/components/AddressNode'
 
 const TraceGraph = dynamic(() => import('@/components/TraceGraph'), { ssr: false })
@@ -493,6 +494,30 @@ function TracePageInner() {
     }
     setSelection({ kind: 'address', id: addr })
     ensurePage(addr)
+  }
+
+  /** Quick actions from the menu around a clicked node */
+  const [labelFor, setLabelFor] = useState<string | null>(null)
+  const nodeAction = (addr: string, action: NodeAction) => {
+    switch (action) {
+      case 'transactions': // Smart expand: the wide table view
+        openAddress(addr); setTab('transactions'); setPanelExpanded(true); break
+      case 'relationships':
+        openAddress(addr); setTab('counterparties'); setPanelExpanded(false); break
+      case 'details':
+        openAddress(addr); setTab('details'); setPanelExpanded(false); break
+      case 'label':
+        openAddress(addr); setPanelExpanded(false); setLabelFor(addr); break
+      case 'copy':
+        navigator.clipboard?.writeText(addr).then(() => flash('Address copied'), () => flash('Could not copy'))
+        break
+      case 'explorer':
+        window.open(explorerAddressUrl(addr, chainOf(addr)), '_blank', 'noopener,noreferrer'); break
+      case 'remove':
+        if (addr === originAddress) flash("The case's starting address can't be removed")
+        else removeNode(addr)
+        break
+    }
   }
 
   const addToGraph = (addrs: string[]) => {
@@ -1203,6 +1228,8 @@ function TracePageInner() {
             ensurePage(a)
           }}
           onRemove={() => removeNode(a)}
+          editLabel={labelFor === a}
+          onEditLabelShown={() => setLabelFor(null)}
           onLoadMore={loadMore}
           wide={panelWide}
           bulk={bulk?.addr === a ? bulk : null}
@@ -1505,7 +1532,9 @@ function TracePageInner() {
               selected={selectedAddress}
               selectedEdge={selection?.kind === 'flow' ? `${selection.from}->${selection.to}` : null}
               selectedHub={selection?.kind === 'tx' ? selection.id : null}
-              onNodeClick={openAddress}
+              // A click shows the node's quick actions; the side panel follows along only if it's already on an address
+              onNodeClick={a => { if (selection?.kind === 'address') openAddress(a) }}
+              onNodeAction={nodeAction}
               onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}

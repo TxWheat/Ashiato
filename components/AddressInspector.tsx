@@ -89,6 +89,9 @@ interface Props {
   onShowCluster: () => void
   /** txids on the traced trail: only these rows are coloured */
   tracedTxids: Set<string>
+  /** Open the label editor (asked for from the node's quick actions) */
+  editLabel?: boolean
+  onEditLabelShown?: () => void
 }
 
 /** Short amount list: the two biggest assets, then "+N tokens" */
@@ -174,7 +177,7 @@ function LabelEditor({ mine, base, onSave, onCancel }: {
 }
 
 /** Breadcrumbs-style node visualizer: totals in and out, per asset, with transaction counts */
-function FlowBoxes({ summary }: { summary: FlowSummary }) {
+function FlowBoxes({ summary, wide }: { summary: FlowSummary; wide?: boolean }) {
   const box = (title: string, rec: FlowSummary['incoming'], tone: string) => {
     const rows = Object.entries(rec)
     const major = rows.filter(([a]) => MAJOR.has(a)).sort((x, y) => y[1].count - x[1].count)
@@ -193,6 +196,16 @@ function FlowBoxes({ summary }: { summary: FlowSummary }) {
             + {other.length} other token{other.length === 1 ? '' : 's'}
           </div>
         )}
+      </div>
+    )
+  }
+  // Wide (smart expand): in → address → out in one row beside the identity
+  if (wide) {
+    return (
+      <div className="flex items-center gap-2 w-[48%] flex-shrink-0">
+        <div className="flex-1 min-w-0">{box('Incoming txs', summary.incoming, 'text-green-500')}</div>
+        <span className="flex items-center text-faint" aria-hidden>→<span className="mx-1 w-3 h-3 rounded-full border-2 border-fg" />→</span>
+        <div className="flex-1 min-w-0">{box('Outgoing txs', summary.outgoing, 'text-fg')}</div>
       </div>
     )
   }
@@ -216,6 +229,12 @@ export default function AddressInspector(p: Props) {
   const [lookup, setLookup] = useState<{ address: string; state: 'loading' | 'done' | 'failed' } | null>(null)
   const [showSpam, setShowSpam] = useState(false)
   const [editing, setEditing] = useState(false)
+  const { editLabel, onEditLabelShown } = p
+  useEffect(() => {
+    if (!editLabel) return
+    setEditing(true)
+    onEditLabelShown?.()
+  }, [editLabel, onEditLabelShown])
   const type = node.label?.type ?? 'unknown'
   const style = ENTITY_STYLE[type]
   const title = node.label?.name ?? node.ens
@@ -320,7 +339,8 @@ export default function AddressInspector(p: Props) {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Identity */}
-      <div className="px-4 py-3 border-b border-line space-y-2 flex-shrink-0">
+      <div className={clsx('px-4 py-3 border-b border-line flex-shrink-0', p.wide ? 'flex items-start gap-5' : 'space-y-2')}>
+        <div className={clsx('space-y-2 min-w-0', p.wide && 'flex-1')}>
         <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider">
           <span className={clsx('w-1.5 h-1.5 rounded-full', chainDot(node.chain))} />
           <span className="text-faint">{node.chain} address</span>
@@ -367,7 +387,8 @@ export default function AddressInspector(p: Props) {
             <span>Cross-chain swap service. Click the <b className="font-medium">line</b> from a wallet into it to see where that wallet&apos;s swap came out, on which chain and address.</span>
           </p>
         )}
-        <FlowBoxes summary={p.summary} />
+        </div>
+        <FlowBoxes summary={p.summary} wide={p.wide} />
       </div>
 
       {/* Tabs */}
@@ -597,9 +618,9 @@ function TxList(p: Props) {
           {p.page.warnings.map((w, i) => <div key={i} className="flex gap-1.5"><AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{w}</div>)}
         </div>
       )}
-      <div className="px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10 space-y-2">
+      <div className={clsx('px-4 py-2.5 border-b border-line sticky top-0 bg-bg z-10', p.wide ? 'flex flex-wrap items-center gap-x-4 gap-y-2' : 'space-y-2')}>
         <input value={q} onChange={e => { setQ(e.target.value); setShown(150) }} placeholder="Find an address, name or tx hash…" aria-label="Find a transaction"
-          className="w-full h-7 px-2 text-[11px] bg-panel border border-line text-fg placeholder:text-faint outline-none focus:border-accent" />
+          className={clsx(p.wide ? 'flex-1 min-w-[220px]' : 'w-full', 'h-7 px-2 text-[11px] bg-panel border border-line text-fg placeholder:text-faint outline-none focus:border-accent')} />
         <div className="flex items-center gap-2 text-[11px]">
           <div className="flex border border-line">
             {(['all', 'in', 'out'] as const).map(d => (
@@ -625,7 +646,7 @@ function TxList(p: Props) {
           {(from || to) && <button onClick={() => { setFrom(''); setTo('') }} className="underline underline-offset-2 hover:text-fg">Clear</button>}
         </div>
         {from && oldest > 0 && fromTs < oldest && p.page?.nextCursor && (
-          <p className="text-[10px] text-yellow-600">
+          <p className="basis-full text-[10px] text-yellow-600">
             Loaded history only reaches back to {fmtDate(oldest).split(' ').slice(0, 3).join(' ')}. Load more (or Load all) to cover the start of this range.
           </p>
         )}

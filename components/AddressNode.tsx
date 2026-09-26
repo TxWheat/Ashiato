@@ -1,6 +1,7 @@
 'use client'
 
 import { Handle, Position } from 'reactflow'
+import NodeMenu from './NodeMenu'
 import { clsx } from 'clsx'
 import { Chain, NodeData } from '@/lib/types'
 import { truncate } from '@/lib/detect-chain'
@@ -32,7 +33,7 @@ const RISK_TEXT: Record<string, string> = {
 /** 0.0003 → "<1%" (never a misleading "0%") */
 const sharePct = (s: number) => (s > 0 && s < 0.01 ? '<1%' : `${Math.round(s * 100)}%`)
 
-export default function AddressNode({ data, selected }: { data: AddressNodeData; selected?: boolean }) {
+export default function AddressNode({ id, data, selected }: { id: string; data: AddressNodeData; selected?: boolean }) {
   const type = data.label?.type ?? 'unknown'
   const style = ENTITY_STYLE[type]
   const labelled = !!data.label
@@ -104,6 +105,7 @@ export default function AddressNode({ data, selected }: { data: AddressNodeData;
       {data.note && <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-yellow-500" title={data.note} />}
 
       <Handle type="source" position={Position.Right} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />
+      <NodeMenu id={id} />
     </div>
   )
 }
