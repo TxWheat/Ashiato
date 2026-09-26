@@ -287,7 +287,7 @@ export default function AddressInspector(p: Props) {
       .filter(c => !asset || !min || amt(c) >= min)
       .sort((x, y) => score[sort](y) - score[sort](x))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.counterparties, filter, sort, asset, minAmount, showSpam, p.prices, query])
+  }, [p.counterparties, filter, sort, asset, minAmount, showSpam, p.prices, query, p.labelOf, p.nameOf])
   // How far back the loaded history reaches: relationships only cover what's loaded
   const loadedTimes = (p.page?.rawTxs ?? []).map(t => t.timestamp).filter(Boolean)
   const oldestLoaded = loadedTimes.length ? Math.min(...loadedTimes) : 0
@@ -575,8 +575,10 @@ function TxList(p: Props) {
     (!onChartOnly || r.others.some(a => p.onGraph.has(a))) &&
     (!needle || r.tx.txid.toLowerCase().includes(needle) || r.others.some(a => a.toLowerCase().includes(needle) || (p.nameOf(a) ?? '').toLowerCase().includes(needle))))
 
-  const Addr = ({ a, change }: { a: string; change?: boolean }) => (
-    <button onClick={() => p.onOpen(a)} title={change ? `${a}\nLikely change (a heuristic guess that this output returns to the same owner)` : a}
+  // Render helpers, not components: a component defined in here is a new type every render,
+  // so every row of a long list would be torn down and rebuilt on each update
+  const addr = (a: string, change?: boolean) => (
+    <button key={a} onClick={() => p.onOpen(a)} title={change ? `${a}\nLikely change (a heuristic guess that this output returns to the same owner)` : a}
       className={clsx('truncate hover:text-accent', !p.nameOf(a) && 'font-mono', p.onGraph.has(a) ? 'text-fg font-medium' : 'text-fg')}>
       {p.nameOf(a) ?? truncate(a, 6)}
       {change && <span className="ml-1 text-[9px] px-1 bg-yellow-500/15 text-yellow-600 font-sans">change?</span>}
@@ -584,7 +586,7 @@ function TxList(p: Props) {
     </button>
   )
 
-  const Actions = ({ tx, dir }: { tx: RawTransaction; dir: string }) => (
+  const actions = (tx: RawTransaction, dir: string) => (
     <div className="flex items-center gap-1 flex-shrink-0">
       <a href={explorerTxUrl(tx.txid, tx.chain)} target="_blank" rel="noopener noreferrer" title={tx.txid} className="flex items-center gap-1 h-6 px-1.5 font-mono text-[10px] text-faint hover:text-fg">
         {tx.txid.replace(/^0x/, '').slice(0, 8)}… <ExternalLink size={9} />
@@ -608,7 +610,7 @@ function TxList(p: Props) {
     </div>
   )
 
-  const DirTag = ({ dir }: { dir: string }) => (
+  const dirTag = (dir: string) => (
     <span className={clsx('text-[9px] font-semibold uppercase px-1.5 py-0.5 text-center', dir === 'in' ? 'bg-green-500/20 text-green-500' : dir === 'out' ? 'bg-red-500/20 text-red-500' : 'bg-raised text-muted')}>{dir}</span>
   )
 
@@ -683,9 +685,9 @@ function TxList(p: Props) {
           return (
             <div key={`${transferKey(tx)}:${i}`} className={clsx('grid grid-cols-[150px_52px_minmax(0,1fr)_170px_auto] gap-x-3 items-center px-4 py-2 border-b border-line/60 hover:bg-panel', tint)}>
               <span className="text-[11px] text-faint">{tx.timestamp ? fmtDate(tx.timestamp) : 'pending'}</span>
-              <DirTag dir={dir} />
+              {dirTag(dir)}
               <div className="flex items-center gap-2 min-w-0 text-[11px]">
-                {others.length ? others.slice(0, 3).map(a => <Addr key={a} a={a} change={change.has(a)} />) : <span className="text-faint">itself</span>}
+                {others.length ? others.slice(0, 3).map(a => addr(a, change.has(a))) : <span className="text-faint">itself</span>}
                 {others.length > 3 && <span className="text-faint whitespace-nowrap">+{others.length - 3} more</span>}
                 {badges}
               </div>
@@ -693,23 +695,23 @@ function TxList(p: Props) {
                 {amountCell}
                 {value > 0 && <div className="text-[10px] text-faint">≈ {fmtFiatShort(value)} NZD</div>}
               </div>
-              <Actions tx={tx} dir={dir} />
+              {actions(tx, dir)}
             </div>
           )
         }
         return (
           <div key={`${transferKey(tx)}:${i}`} className={clsx('px-4 py-3 border-b border-line/60 hover:bg-panel', tint)}>
             <div className="flex items-center gap-2">
-              <DirTag dir={dir} />
+              {dirTag(dir)}
               <span className="text-[11px] text-faint">{tx.timestamp ? fmtDate(tx.timestamp) : 'pending'}</span>
               {badges}
               <span className="ml-auto">{amountCell}</span>
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-[11px] min-w-0">
               <span className="text-faint">{dir === 'in' ? 'from' : 'to'}</span>
-              {others[0] ? <Addr a={others[0]} change={change.has(others[0])} /> : <span className="text-faint">itself</span>}
+              {others[0] ? addr(others[0], change.has(others[0])) : <span className="text-faint">itself</span>}
               {others.length > 1 && <span className="text-faint whitespace-nowrap">+{others.length - 1} more</span>}
-              <div className="ml-auto"><Actions tx={tx} dir={dir} /></div>
+              <div className="ml-auto">{actions(tx, dir)}</div>
             </div>
           </div>
         )

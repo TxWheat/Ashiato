@@ -229,6 +229,7 @@ interface Props {
   prices: Record<string, number>
   taintByEdge?: Map<string, number>
   selected?: string | null
+  /** The selected link, as `pairKey(a, b)` (either direction) */
   selectedEdge?: string | null
   selectedHub?: string | null
   onNodeClick: (address: string) => void
@@ -397,7 +398,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           ? `${fmtCompact(taint!, es[0]?.asset ?? '')} tainted`
           : `${relationshipLabel(es, prices, txs)}${isChange ? ' · likely change' : ''}`
       const line2 = !es.length ? '' : txs === 1 ? fmtDateTime(last) : isFinite(first) && fmtDay(first) !== fmtDay(last) ? `${fmtDay(first)} → ${fmtDay(last)}` : fmtDay(last)
-      const isSel = selectedEdge === key
+      // The side panel shows both directions of a pair, so both lines highlight
+      const isSel = selectedEdge === pairKey(source, target)
       return {
         id: key,
         source,
@@ -509,7 +511,9 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     if (rawNodes.length === 0) return
     compactChains(chainsRef.current, rawEdges, pinned.current, prevChains.current, chainShift.current)
     prevChains.current = new Map(chainsRef.current.map(c => [c.id, c]))
-    const laid = placeNodes(layoutGraph(rawNodes, rawEdges), rawEdges, pinned.current)
+    // Only new nodes need the automatic layout; a selection or highlight change skips dagre
+    const needsLayout = rawNodes.some(n => !pinned.current.has(n.id))
+    const laid = placeNodes(needsLayout ? layoutGraph(rawNodes, rawEdges) : rawNodes, rawEdges, pinned.current)
     setNodes(laid)
     setEdges(rawEdges)
     // Refit on first draw. Otherwise keep the user's zoom: removing nodes never moves the
