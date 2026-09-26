@@ -40,8 +40,8 @@ export default function SaveChartButton(p: Props) {
         setForm(null)
       }
     }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
+    document.addEventListener('pointerdown', close, true)
+    return () => document.removeEventListener('pointerdown', close, true)
   }, [menu, form])
 
   const openForm = (mode: 'new' | 'as') => {
@@ -61,6 +61,8 @@ export default function SaveChartButton(p: Props) {
     setForm(null)
   }
 
+  // Saved and auto-saving: nothing to do, so the button steps back; it's highlighted when something needs saving
+  const quiet = p.status === 'saved' && p.autosave
   const statusText =
     p.status === 'saving' ? 'Saving…'
       : p.status === 'dirty' ? (p.autosave ? 'Saving soon…' : 'Unsaved changes')
@@ -84,7 +86,7 @@ export default function SaveChartButton(p: Props) {
         <button
           onClick={primary}
           disabled={p.status === 'saving'}
-          className="flex items-center gap-1.5 h-8 pl-3 pr-2.5 text-xs font-medium bg-accent hover:bg-accent-hover text-accent-fg disabled:opacity-60"
+          className={clsx('flex items-center gap-1.5 h-8 pl-3 pr-2.5 text-xs font-medium disabled:opacity-60', quiet ? 'border border-line text-muted hover:text-fg' : 'bg-accent hover:bg-accent-hover text-accent-fg')}
           title={p.savedName ? `Save changes to “${p.savedName}”` : 'Save this chart as a case'}
         >
           <Save size={13} /> {p.savedName ? 'Save' : 'Save case'}
@@ -92,7 +94,7 @@ export default function SaveChartButton(p: Props) {
         <button
           onClick={() => { setForm(null); setMenu(m => !m) }}
           aria-label="More save options"
-          className="grid place-items-center h-8 w-7 bg-accent hover:bg-accent-hover text-accent-fg border-l border-accent-fg/20"
+          className={clsx('grid place-items-center h-8 w-7', quiet ? 'border border-l-0 border-line text-muted hover:text-fg' : 'bg-accent hover:bg-accent-hover text-accent-fg border-l border-accent-fg/20')}
         >
           <ChevronDown size={13} />
         </button>

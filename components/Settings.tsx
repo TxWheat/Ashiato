@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { CURRENCIES, CurrencyCode, currencyForLocale, isCurrency } from '@/lib/currency'
+import ThemeToggle from './ThemeToggle'
 
 // Per-browser display settings (remembered in localStorage)
 
@@ -51,9 +52,9 @@ export function SettingsButton() {
     if (!open) return
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    window.addEventListener('mousedown', close)
+    window.addEventListener('pointerdown', close, true)
     window.addEventListener('keydown', esc)
-    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', esc) }
+    return () => { window.removeEventListener('pointerdown', close, true); window.removeEventListener('keydown', esc) }
   }, [open])
   return (
     <div ref={ref} className="relative">
@@ -64,6 +65,10 @@ export function SettingsButton() {
       {open && (
         <div className="absolute right-0 top-full mt-2 z-50 w-64 bg-panel border border-line shadow-xl p-4 space-y-3">
           <div className="text-[10px] font-medium uppercase tracking-wider text-faint">Settings</div>
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted">Appearance</span>
+            <ThemeToggle />
+          </div>
           <label className="block space-y-1.5">
             <span className="text-xs text-muted">Show values in</span>
             <select value={currency} onChange={e => setCurrency(e.target.value as CurrencyCode)}

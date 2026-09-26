@@ -522,7 +522,10 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
   useEffect(() => {
     if (rawNodes.length === 0) return
-    compactChains(chainsRef.current, rawEdges, pinned.current, prevChains.current, chainShift.current)
+    // A reopened case keeps its saved layout exactly: its chains are already as the user left
+    // them, so only chains collapsed from here on pull their end in
+    const reopened = nodeCount.current === 0 && pinned.current.size > 0
+    if (!reopened) compactChains(chainsRef.current, rawEdges, pinned.current, prevChains.current, chainShift.current)
     prevChains.current = new Map(chainsRef.current.map(c => [c.id, c]))
     // Only new nodes need the automatic layout; a selection or highlight change skips dagre
     const needsLayout = rawNodes.some(n => !pinned.current.has(n.id))
