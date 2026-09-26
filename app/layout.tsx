@@ -2,9 +2,16 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Providers from '@/components/Providers'
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://ashiato-six.vercel.app'
+const description = 'Free, open-source blockchain forensics for scam victims and investigators. Trace BTC, ETH and Tron, follow funds across swaps and bridges, and find exchange deposit addresses.'
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: 'Ashiato · follow the footprints',
-  description: 'Free, open-source blockchain forensics for scam victims and investigators. Trace BTC, ETH and Tron, follow funds across swaps and bridges, and find exchange deposit addresses.',
+  // Link previews (the image is app/opengraph-image.png)
+  openGraph: { type: 'website', siteName: 'Ashiato', title: 'Ashiato · follow the footprints', description, url: '/' },
+  twitter: { card: 'summary_large_image', title: 'Ashiato · follow the footprints', description },
+  description,
 }
 
 // Applies the saved theme before first paint to avoid a flash

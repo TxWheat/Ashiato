@@ -1708,8 +1708,9 @@ function TraceWorkspace() {
           )}
 
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
-              Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>. To follow money, open a transaction and press <b className="text-fg font-medium">Trace</b>. Click empty space to hide the panel.
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 flex items-start gap-2 max-w-[min(640px,calc(100%-2rem))] bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
+              <MousePointerClick size={14} className="text-accent flex-shrink-0 mt-0.5" />
+              <span>Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>, or add a single payment from <b className="text-fg font-medium">Transactions</b> with <b className="text-fg font-medium">+ Graph</b>. Click empty space to hide the panel.</span>
             </div>
           )}
 

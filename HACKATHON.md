@@ -42,7 +42,6 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] DEX swaps: a transaction that sells one asset and pays a different one back (Uniswap, UniswapX, 1inch…) is shown as a swap, and follow-the-funds continues with what came back
 - [x] Graph keeps its layout and zoom (collapse/expand, delete); addresses can be added to an open case from search
 - [x] Select tool (bottom left): drag a box around addresses and move them together
-- [ ] Automatic tracing parked for the demo (hidden behind `lib/features.ts`; the `auto-trace` branch keeps it on)
 - [x] Cleaner auto-trace: ignores poisoning spam and dust, follows the main trail (side payments are noted, not branched), stops at busy service wallets and bridges, forward and back
 - [x] Node quick actions (click a node: Transactions / Relationships / Details, label, copy, explorer, remove) and a Smart-expand transactions view: one-row header, table fills the panel
 - [x] Simpler interface: taint analysis removed; the case panel starts hidden and no longer carries client payments
@@ -52,10 +51,21 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] API routes need a signed-in account (sign-in and public community-label reads excepted)
 - [x] Docs page (`/docs`): a guide to every feature plus the methodology (replaces `/methodology`, which redirects)
 - [x] Pro: watch alerts when funds move (flagged when they reach an exchange), a plain-English trace summary written by Claude for police and exchanges, and five more networks (Base, Arbitrum, Optimism, BNB Chain, Polygon) through the same Etherscan V2 code; bridge hops to them now continue on the graph
-- [ ] Still to add: Stargate (LayerZero Scan), Wormhole, Axelar/Squid, Orbiter
-- [ ] Verifiable reports: report hash attested on-chain, `/verify` page
-- [ ] Freeze-request letter for exchange compliance teams
-- [ ] (Stretch) MetaMask Snap that warns before sending to a flagged address
+- [x] New logo (a chain of blocks, the newest in the crosshairs), favicon and link-preview image; a hint on a new case says where to start
+
+## Parked for the demo
+
+Automatic tracing (following a payment hop by hop on its own) works but could still lay out a
+messy graph on busy wallets, so the demo build hides it behind `AUTO_TRACE` in
+`lib/features.ts`. The engine and its tests stay in the code; the
+[`auto-trace`](https://github.com/TxWheat/Ashiato/tree/auto-trace) branch keeps it switched on.
+
+## Next
+
+- More bridges: Stargate (LayerZero Scan), Wormhole, Axelar/Squid, Orbiter
+- Verifiable reports: the report's hash signed by the investigator, checked on a `/verify` page
+- Freeze-request letter for exchange compliance teams
+- MetaMask Snap that warns before sending to a flagged address
 
 ## How to check
 
