@@ -1186,6 +1186,7 @@ function TracePageInner() {
             setItemizedIds(prev => new Set([...prev, ...legs.map(e => e.id)]))
           }}
           onGraph={visible}
+          tracedTxids={new Set(traced.map(f => f.txid))}
           tab={tab}
           canRemove={a !== originAddress}
           tracing={!!traceStatus}
