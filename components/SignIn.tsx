@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, FolderOpen, LogOut, Mail, Wallet } from 'lucide-react'
+import { clsx } from 'clsx'
+import { ChevronDown, FolderOpen, LogOut, Mail, Sparkles, Wallet } from 'lucide-react'
 import { truncate } from '@/lib/detect-chain'
+import { REMIND_DAYS } from '@/lib/billing/plans'
 import { useAuth } from './Providers'
 
 /** Home page: sign in with a wallet or an email; signed in, a way to your cases */
@@ -66,6 +68,9 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
 function AccountMenu({ address, onSignOut }: { address: string; onSignOut: () => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const pro = useProStatus(address)
+  const daysLeft = pro ? Math.ceil((new Date(pro).getTime() - Date.now()) / 86400_000) : null
+  const renewSoon = daysLeft !== null && daysLeft <= REMIND_DAYS
   useEffect(() => {
     if (!open) return
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
@@ -76,10 +81,16 @@ function AccountMenu({ address, onSignOut }: { address: string; onSignOut: () =>
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(v => !v)} aria-expanded={open} title={address}
         className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium bg-raised hover:bg-line text-fg whitespace-nowrap">
-        <Wallet size={13} /> <span className="font-mono">{truncate(address, 4)}</span> <ChevronDown size={12} className="text-faint" />
+        <Wallet size={13} /> <span className="font-mono">{truncate(address, 4)}</span>
+        {pro && <span className={clsx('px-1 text-[9px] font-semibold uppercase tracking-wider', renewSoon ? 'bg-amber-500 text-black' : 'bg-accent text-accent-fg')}>Pro</span>}
+        <ChevronDown size={12} className="text-faint" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-44 bg-panel border border-line shadow-xl py-1 text-xs">
+        <div className="absolute right-0 top-full mt-1 z-50 w-52 bg-panel border border-line shadow-xl py-1 text-xs">
+          <Link href="/pricing" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 h-8 text-fg hover:bg-raised">
+            <Sparkles size={13} />
+            {pro ? <span>Pro · {renewSoon ? <span className="text-amber-500">renew, {daysLeft} day{daysLeft === 1 ? '' : 's'} left</span> : `until ${new Date(pro).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}`}</span> : 'Upgrade to Pro'}
+          </Link>
           <Link href="/cases" onClick={() => setOpen(false)} className="flex items-center gap-2 px-3 h-8 text-fg hover:bg-raised">
             <FolderOpen size={13} /> My cases
           </Link>
@@ -90,4 +101,15 @@ function AccountMenu({ address, onSignOut }: { address: string; onSignOut: () =>
       )}
     </div>
   )
+}
+
+/** When the signed-in wallet's Pro ends (ISO), or null on the free plan */
+function useProStatus(address: string): string | null {
+  const [until, setUntil] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    fetch('/api/billing').then(r => (r.ok ? r.json() : null)).then(b => { if (live) setUntil(b?.pro ? b.expiresAt : null) }).catch(() => {})
+    return () => { live = false }
+  }, [address])
+  return until
 }

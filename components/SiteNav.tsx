@@ -13,6 +13,9 @@ export default function SiteNav() {
         <Link href="/methodology" className="hidden sm:block text-muted hover:text-fg transition-colors">
           Methodology
         </Link>
+        <Link href="/pricing" className="hidden sm:block text-muted hover:text-fg transition-colors">
+          Pricing
+        </Link>
         <a
           href="https://github.com/TxWheat/Ashiato"
           target="_blank"
