@@ -446,10 +446,11 @@ function TracePageInner() {
   /** Loads an address's first page if we don't have it yet */
   const ensurePage = useCallback(async (addr: string): Promise<LoadedPage | null> => {
     const have = pagesRef.current.get(addr)
-    if (have) return have
+    if (have && !have.trimmed) return have
     setBusy(addr, true)
     try {
-      absorb(await fetchTrace(addr, knownRef.current.get(addr)?.chain ?? originChain ?? 'btc'), [])
+      // A page saved without its full history: fetch it again, keeping what the graph used
+      absorb(await fetchTrace(addr, knownRef.current.get(addr)?.chain ?? originChain ?? 'btc'), [], !!have)
       return pagesRef.current.get(addr) ?? null
     } catch (e) {
       flash(`${truncate(addr, 6)}: ${e instanceof Error ? e.message : 'failed to load'}`)
@@ -620,7 +621,8 @@ function TracePageInner() {
 
   // ── Follow the funds ─────────────────────────────────────────────────────
   const addressTxs = useCallback(async (addr: string, since: number): Promise<RawTransaction[]> => {
-    let page = pagesRef.current.get(addr) ?? (await ensurePage(addr))
+    // A trimmed page (from a slimmed saved case) is reloaded before tracing through it
+    let page = (pagesRef.current.get(addr)?.trimmed ? null : pagesRef.current.get(addr)) ?? (await ensurePage(addr))
     if (!page) throw new Error(`Could not load ${truncate(addr, 6)}`)
     const chain = knownRef.current.get(addr)?.chain ?? originChain ?? 'eth'
     for (let i = 0; i < MAX_EXTRA_PAGES && page.nextCursor; i++) {

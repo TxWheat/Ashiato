@@ -1,6 +1,6 @@
 'use client'
 
-import { CaseFile } from './export'
+import { CaseFile, slimCase } from './export'
 
 /**
  * Saved cases. Signed in: in your account (server → Supabase, keyed by your wallet
@@ -121,10 +121,18 @@ const toMeta = (r: CloudRow): SavedCaseMeta => ({
   originKind: (r.origin_kind ?? undefined) as CaseFile['originKind'],
 })
 
+/** Matches the server's limit (Vercel rejects request bodies over ~4.5 MB) */
+const MAX_CLOUD_DATA = 3_900_000
+
 async function saveCaseCloud(id: string, name: string, data: CaseFile) {
+  // Big cases (long auto-traces load a lot of history) are saved without the full
+  // histories; what the graph shows is kept, and the rest reloads when opened
+  let packed = await gzip(JSON.stringify(data))
+  if (packed.length > MAX_CLOUD_DATA) packed = await gzip(JSON.stringify(slimCase(data)))
+  if (packed.length > MAX_CLOUD_DATA) throw new Error('This case is too large to save to your account, even without full address histories. Hide some addresses or export it as a file')
   await api(`/api/cases/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify({ name, origin: data.origin, originKind: data.originKind, addresses: data.visible.length, data: await gzip(JSON.stringify(data)) }),
+    body: JSON.stringify({ name, origin: data.origin, originKind: data.originKind, addresses: data.visible.length, data: packed }),
   })
 }
 
