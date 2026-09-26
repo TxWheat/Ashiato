@@ -194,6 +194,11 @@ function TracePageInner() {
   const restoring = useRef<string | null>(null)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
+  /** Trail view: only the traced path, laid out fresh by hop (its positions are never saved) */
+  const [trailView, setTrailView] = useState(false)
+  const trailPositions = useRef(new Map<string, XY>())
+  const [trailRev, setTrailRev] = useState(0)
+  const freshTrail = () => { trailPositions.current = new Map(); setTrailRev(v => v + 1) }
   // Right panel width: drag to resize, or expand for a wide table view (remembered)
   const [panelW, setPanelW] = useState(400)
   const [panelExpanded, setPanelExpanded] = useState(false)
@@ -718,6 +723,8 @@ function TracePageInner() {
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
     }
     show(seed.flows)
+    setTrailView(true)
+    freshTrail()
     setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
     try {
       const res = await followFunds(
@@ -747,6 +754,8 @@ function TracePageInner() {
       flash(e instanceof Error ? e.message : 'Trace failed')
     } finally {
       setTraceStatus(null)
+      // Lay the finished trail out afresh, hop by hop
+      freshTrail()
     }
   }
 
@@ -888,6 +897,25 @@ function TracePageInner() {
   }, [bridgeHops])
   const graphHubs = useMemo(() => [...hubs.values()].map(toHub), [hubs])
 
+  // Trail view: the traced lines and the addresses on them, nothing else
+  const trail = useMemo(() => {
+    const base = drawn ?? { nodes: graphNodes, edges: graphEdges, traced: graphTraced }
+    const pairs = new Set(base.traced.map(f => pairKey(f.from, f.to)))
+    const on = new Set(base.traced.flatMap(f => [f.from, f.to]))
+    for (const c of collapsed.chains) if (on.has(c.from) || on.has(c.to)) { on.add(c.from); on.add(c.to) }
+    const bridges = graphBridges.filter(b => on.has(b.from))
+    for (const b of bridges) on.add(b.to)
+    return {
+      nodes: base.nodes.filter(n => on.has(n.address)),
+      edges: base.edges.filter(e => pairs.has(pairKey(e.source, e.target))),
+      traced: base.traced,
+      chains: collapsed.chains.filter(c => on.has(c.from) && on.has(c.to)),
+      bridges,
+    }
+  }, [drawn, graphNodes, graphEdges, graphTraced, collapsed, graphBridges])
+  const inTrail = trailView && traced.length > 0
+  const trailIds = useMemo(() => new Set(trail.nodes.map(n => n.address)), [trail])
+
   const legendTypes = useMemo(() => {
     const present = new Set(graphNodes.map(n => n.label?.type).filter(Boolean) as EntityType[])
     return (Object.keys(ENTITY_STYLE) as EntityType[]).filter(t => present.has(t) || ['exchange', 'deposit', 'mixer', 'sanctioned', 'scam', 'unknown'].includes(t))
@@ -1002,6 +1030,7 @@ function TracePageInner() {
     setPayments(c.clientPayments ?? [])
     setBridgeHops(c.bridgeHops ?? [])
     setTraced(uniqueFlows(c.traced ?? []))
+    setTrailView(false)
     setTraceEnds(mergeEnds(c.traceEnds ?? []))
     setTaint(c.taint ?? null)
     setHistory([])
@@ -1320,6 +1349,15 @@ function TracePageInner() {
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
           )}
+          {traced.length > 0 && (
+            <button
+              onClick={() => { if (!trailView) freshTrail(); setTrailView(v => !v) }}
+              title={trailView ? 'Show every address in the case' : 'Show only the traced trail, laid out hop by hop'}
+              className={`h-7 px-2.5 border border-line text-[11px] font-medium ${trailView ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
+            >
+              {trailView ? 'Trail only' : 'Show trail only'}
+            </button>
+          )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
             <button
               onClick={() => { setQuietRev(v => v + 1); setCollapseOn(v => !v); setExpandedChains(new Set()); setPinned(new Set()) }}
@@ -1370,7 +1408,7 @@ function TracePageInner() {
             onFollow={setFollow}
             traced={traced}
             traceEnds={displayEnds}
-            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]) }}
+            onClearTrace={() => { snapshot(); setTraced([]); setTraceEnds([]); setTrailView(false) }}
             taint={taint}
             taintResult={taintResult}
             taintAssets={taintAssets}
@@ -1410,16 +1448,17 @@ function TracePageInner() {
 
           {!initialLoading && !error && (graphNodes.length > 0 || graphHubs.length > 0) && (
             <TraceGraph
-              nodes={drawn?.nodes ?? graphNodes}
-              edges={drawn?.edges ?? graphEdges}
+              key={inTrail ? `trail-${trailRev}` : 'case'}
+              nodes={inTrail ? trail.nodes : drawn?.nodes ?? graphNodes}
+              edges={inTrail ? trail.edges : drawn?.edges ?? graphEdges}
               followedPairs={followedPairs}
-              traced={drawn?.traced ?? graphTraced}
-              chains={collapsed.chains}
+              traced={inTrail ? trail.traced : drawn?.traced ?? graphTraced}
+              chains={inTrail ? trail.chains : collapsed.chains}
               onChainClick={id => { setQuietRev(v => v + 1); setExpandedChains(prev => new Set(prev).add(id)) }}
               layoutKey={layoutKey}
               quietKey={quietRev}
-              hubs={graphHubs}
-              bridges={graphBridges}
+              hubs={inTrail ? [] : graphHubs}
+              bridges={inTrail ? trail.bridges : graphBridges}
               onBridgeClick={id => {
                 // Reopen the link the swap was found on, where it can be removed
                 const ids = id.split('+')
@@ -1435,7 +1474,7 @@ function TracePageInner() {
                   setBridgeHops(prev => prev.filter(x => !ids.includes(x.orderId)))
                 }
               }}
-              itemized={itemizedEdges}
+              itemized={inTrail ? itemizedEdges.filter(e => trailIds.has(e.source) && trailIds.has(e.target)) : itemizedEdges}
               prices={prices}
               taintByEdge={taintResult?.byEdge}
               selected={selectedAddress}
@@ -1445,8 +1484,8 @@ function TracePageInner() {
               onEdgeClick={selectFlow}
               onHubClick={txid => setSelection({ kind: 'tx', id: txid })}
               onPaneClick={() => setSelection(null)}
-              positions={positionsRef.current}
-              onLayoutChange={() => setLayoutRev(v => v + 1)}
+              positions={inTrail ? trailPositions.current : positionsRef.current}
+              onLayoutChange={inTrail ? undefined : () => setLayoutRev(v => v + 1)}
               onReady={api => (graphApi.current = api)}
             />
           )}
