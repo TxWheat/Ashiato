@@ -72,7 +72,7 @@ function apiKey(): string {
   const key = process.env.ETHERSCAN_API_KEY
   if (!key || key === 'your_etherscan_api_key_here') {
     throw new MissingApiKeyError(
-      'ETH tracing needs a free Etherscan API key. Copy .env.local.example to .env.local, set ETHERSCAN_API_KEY, then restart the dev server.'
+      'ETH tracing needs a free Etherscan API key. Add ETHERSCAN_API_KEY to .env.local (or the hosting environment variables), then restart.'
     )
   }
   return key
