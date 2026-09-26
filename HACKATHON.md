@@ -46,7 +46,7 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Simpler interface: taint analysis removed; the case panel starts hidden and no longer carries client payments
 - [x] Scam address lists (MyEtherWallet darklist; ScamSniffer phishing/drainer list, fetched at runtime because it is GPL) and a "Cross-chain bridge" label for 30 major bridge contracts (Stargate, Wormhole, Arbitrum, Optimism, Base, Polygon, each checked against DefiLlama's bridge adapters); traces stop at bridges
 - [x] More bridges: Across, Relay and deBridge transfers are looked up from each service's public API (destination chain, recipient, amounts, both txids), the same way as Bridgers
-- [x] Ashiato Pro: prepaid months in USDC on Base or Ethereum, checked on-chain by the server (payer, recipient, amount, confirmations; each transaction credited once); time stacks when renewing early; pricing page, Pro badge and renewal reminder in the account menu. Everything a victim needs stays free
+- [x] Ashiato Pro: prepaid months in USDC on Base or Ethereum, checked on-chain by the server (payer, recipient, amount, confirmations; each transaction credited once); time stacks when renewing early; pricing page, Pro badge and renewal reminder in the account menu. Everything a victim needs stays free. Test mode (PAYMENTS_TESTNET=1) runs the same flow with free test USDC on Base Sepolia for the demo
 - [x] API routes need a signed-in account (sign-in and public community-label reads excepted)
 - [ ] Still to add: Stargate (LayerZero Scan), Wormhole, Axelar/Squid, Orbiter
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page

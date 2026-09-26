@@ -8,10 +8,12 @@ import { useAccount, useConfig, useSwitchChain, useWriteContract } from 'wagmi'
 import { waitForTransactionReceipt } from 'wagmi/actions'
 import SiteNav from '@/components/SiteNav'
 import { useAuth } from '@/components/Providers'
-import { PAY_CHAINS, PayChain, PRO_PLANS, USDC_DECIMALS } from '@/lib/billing/plans'
+import { PAY_CHAINS, PayChain, PRO_PLANS, TEST_USDC_FAUCET, USDC_DECIMALS } from '@/lib/billing/plans'
 
 interface Billing {
   payTo: string | null
+  testMode: boolean
+  networks: PayChain[]
   pro: boolean
   expiresAt: string | null
   payments: { id: string; method: string; amount: number; currency: string; months: number; paidAt: string }[]
@@ -86,7 +88,16 @@ export default function PricingPage() {
                   ? <>You have <span className="text-fg font-medium">Pro until {day(billing.expiresAt)}</span>. Paying again adds time on top.</>
                   : <>You&apos;re on the <span className="text-fg font-medium">Free</span> plan.</>}
               </p>
-              {billing.payTo ? <PayWithUsdc payTo={billing.payTo} account={address} onPaid={load} /> : <p className="text-xs text-faint">Payments open soon.</p>}
+              {billing.testMode && (
+                <p className="text-xs border border-amber-500/50 bg-amber-500/10 text-fg px-3 py-2">
+                  Test mode: pay with free test USDC on a test network, no real money. Get test USDC at{' '}
+                  <a href={TEST_USDC_FAUCET} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">faucet.circle.com</a>
+                  {' '}(pick Base Sepolia), plus a little Base Sepolia test ETH for the fee.
+                </p>
+              )}
+              {billing.payTo && billing.networks.length > 0
+                ? <PayWithUsdc payTo={billing.payTo} account={address} networks={billing.networks} onPaid={load} />
+                : <p className="text-xs text-faint">Payments open soon.</p>}
               {billing.payments.length > 0 && (
                 <div className="space-y-1">
                   <h3 className="text-[10px] font-medium uppercase tracking-wider text-faint">Your payments</h3>
@@ -145,9 +156,9 @@ function Plan({ title, price, note, items, highlight, children }: {
 }
 
 /** Pays with the connected wallet, then asks the server to credit it */
-function PayWithUsdc({ payTo, account, onPaid }: { payTo: string; account: string; onPaid: () => void }) {
+function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; account: string; networks: PayChain[]; onPaid: () => void }) {
   const [plan, setPlan] = useState(0)
-  const [chain, setChain] = useState<PayChain>('base')
+  const [chain, setChain] = useState<PayChain>(networks[0])
   const [status, setStatus] = useState<{ text: string; error?: boolean } | null>(null)
   const [working, setWorking] = useState(false)
   const [hash, setHash] = useState('')
@@ -222,9 +233,9 @@ function PayWithUsdc({ payTo, account, onPaid }: { payTo: string; account: strin
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Network">
-        {(Object.keys(PAY_CHAINS) as PayChain[]).map(k => (
+        {networks.map(k => (
           <button key={k} role="radio" aria-checked={chain === k} onClick={() => setChain(k)} className={pill(chain === k)}>
-            {PAY_CHAINS[k].name}{k === 'base' && <span className="text-faint"> · fee under 1¢</span>}
+            {PAY_CHAINS[k].name}{k.startsWith('base') && <span className="text-faint"> · fee under 1¢</span>}
           </button>
         ))}
       </div>
@@ -238,7 +249,7 @@ function PayWithUsdc({ payTo, account, onPaid }: { payTo: string; account: strin
         </button>
       )}
       <p className="text-[11px] text-faint">
-        Sent straight to Ashiato&apos;s wallet <span className="font-mono">{payTo}</span>. You also need a little {net.name} ETH for the network fee.
+        Sent straight to Ashiato&apos;s wallet <span className="font-mono">{payTo}</span>. You also need a little {net.name} {net.test ? 'test ' : ''}ETH for the network fee.
       </p>
       {status && <p className={clsx('text-xs', status.error ? 'text-red-500' : 'text-muted')}>{status.text}</p>}
       <details className="text-xs text-muted">

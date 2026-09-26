@@ -1,15 +1,20 @@
 import 'server-only'
 import { createPublicClient, http } from 'viem'
-import { base, mainnet } from 'viem/chains'
+import { base, baseSepolia, mainnet, sepolia } from 'viem/chains'
 import { PAY_CHAINS, PayChain, usdcPaid } from './plans'
 
 const clients = {
   base: createPublicClient({ chain: base, transport: http(process.env.BASE_RPC_URL || 'https://base-rpc.publicnode.com') }),
   eth: createPublicClient({ chain: mainnet, transport: http(process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com') }),
+  'base-sepolia': createPublicClient({ chain: baseSepolia, transport: http(process.env.BASE_SEPOLIA_RPC_URL || 'https://base-sepolia-rpc.publicnode.com') }),
+  sepolia: createPublicClient({ chain: sepolia, transport: http(process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com') }),
 }
 
+/** Test mode: Pro is paid with free test USDC on test networks (for demos; no real money) */
+export const paymentsTestMode = () => process.env.PAYMENTS_TESTNET === '1'
+
 /** Ethereum blocks to wait before crediting (Base has no practical reorgs) */
-const CONFIRMATIONS: Record<PayChain, bigint> = { base: 1n, eth: 3n }
+const CONFIRMATIONS: Record<PayChain, bigint> = { base: 1n, eth: 3n, 'base-sepolia': 1n, sepolia: 1n }
 
 export type UsdcCheck = { ok: true; usdc: number; paidAt: string } | { ok: false; error: string; retry?: boolean }
 

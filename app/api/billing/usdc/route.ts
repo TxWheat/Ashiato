@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { currentUser } from '@/lib/auth/session'
 import { StoreNotConfigured } from '@/lib/supabase'
-import { checkUsdcPayment } from '@/lib/billing/verify'
+import { checkUsdcPayment, paymentsTestMode } from '@/lib/billing/verify'
 import { addPayment, paymentById, proUntil } from '@/lib/billing/store'
-import { monthsFor, PAY_CHAINS, PayChain, PRO_PLANS } from '@/lib/billing/plans'
+import { monthsFor, PAY_CHAINS, payChains, PayChain, PRO_PLANS } from '@/lib/billing/plans'
 
 // Credits a USDC payment: checks on-chain that the signed-in wallet sent it to Ashiato,
 // then adds the months it covers. Safe to call again with the same transaction.
@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as { chain?: string; txHash?: string } | null
   const chain = body?.chain as PayChain
   const hash = body?.txHash?.trim().toLowerCase()
-  if (!(chain in PAY_CHAINS) || !hash || !/^0x[0-9a-f]{64}$/.test(hash)) return fail('Pick the network and paste the transaction hash', 400)
+  const networks = payChains(paymentsTestMode())
+  if (!networks.includes(chain)) return fail(`Payments are taken on ${networks.map(n => PAY_CHAINS[n].name).join(' or ')}`, 400)
+  if (!hash || !/^0x[0-9a-f]{64}$/.test(hash)) return fail('Paste the transaction hash (0x…)', 400)
 
   const id = `${chain}:${hash}`
   try {

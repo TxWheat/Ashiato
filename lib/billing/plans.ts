@@ -10,10 +10,18 @@ export const PRO_PLANS = [
 ] as const
 
 export const PAY_CHAINS = {
-  base: { id: 8453, name: 'Base', usdc: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', tx: 'https://basescan.org/tx/' },
-  eth: { id: 1, name: 'Ethereum', usdc: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', tx: 'https://etherscan.io/tx/' },
+  base: { id: 8453, name: 'Base', usdc: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', tx: 'https://basescan.org/tx/', test: false },
+  eth: { id: 1, name: 'Ethereum', usdc: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', tx: 'https://etherscan.io/tx/', test: false },
+  // Test mode (PAYMENTS_TESTNET=1): Circle's test USDC, free from faucet.circle.com
+  'base-sepolia': { id: 84532, name: 'Base Sepolia', usdc: '0x036cbd53842c5426634e7929541ec2318f3dcf7e', tx: 'https://sepolia.basescan.org/tx/', test: true },
+  sepolia: { id: 11155111, name: 'Sepolia', usdc: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238', tx: 'https://sepolia.etherscan.io/tx/', test: true },
 } as const
 export type PayChain = keyof typeof PAY_CHAINS
+
+export const TEST_USDC_FAUCET = 'https://faucet.circle.com'
+
+/** The networks payments are taken on: test networks in test mode, real ones otherwise */
+export const payChains = (testMode: boolean) => (Object.keys(PAY_CHAINS) as PayChain[]).filter(k => PAY_CHAINS[k].test === testMode)
 
 export const USDC_DECIMALS = 6
 /** Days before expiry to start reminding */
