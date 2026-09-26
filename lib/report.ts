@@ -88,6 +88,6 @@ ${section('All traced flows', `<table><tr><th>From</th><th>To</th><th>Amount</th
 ${edges.map(e => `<tr><td>${addr(e.source)}<br><span class="muted">${esc(nodes.get(e.source)?.label?.name ?? '')}</span></td><td>${addr(e.target)}<br><span class="muted">${esc(nodes.get(e.target)?.label?.name ?? '')}</span></td>
 <td>${esc(fmtAmount(e.amount, e.asset, 8))}${e.isChange ? ' <span class="pill">likely change</span>' : ''}</td><td>${esc(date(e.timestamp))}</td><td>${txs(e)}</td></tr>`).join('')}</table>`)}
 
-${section('Method and limitations', `<p>Blockchain data from public APIs (Esplora for Bitcoin, Etherscan for Ethereum). Entity labels from GraphSense TagPacks, the US Treasury OFAC SDN list and curated entries; inferred labels (deposit addresses, clusters, change outputs, CoinJoins) are heuristic and carry a confidence score. Heuristics can be wrong: treat them as leads to verify, not proof. Full methodology: /methodology in this tool.</p>`)}
+${section('Method and limitations', `<p>Blockchain data from public APIs (Esplora for Bitcoin, Etherscan for Ethereum). Entity labels from GraphSense TagPacks, the US Treasury OFAC SDN list and curated entries; inferred labels (deposit addresses, clusters, change outputs, CoinJoins) are heuristic and carry a confidence score. Heuristics can be wrong: treat them as leads to verify, not proof. Full methodology: /docs in this tool.</p>`)}
 </body></html>`
 }

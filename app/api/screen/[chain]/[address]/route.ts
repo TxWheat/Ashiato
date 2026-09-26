@@ -22,6 +22,6 @@ export async function GET(
     txsAnalysed: result.rawTxs.length,
     txCount: result.txCount,
     partial: !!result.nextCursor,
-    methodology: '/methodology',
+    methodology: '/docs#methodology',
   })
 }
