@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { currentUser } from '@/lib/auth/session'
 import { storeConfigured } from '@/lib/supabase'
 import { paymentsOf } from '@/lib/billing/store'
-import { proExpiry } from '@/lib/billing/plans'
+import { payChains, proExpiry } from '@/lib/billing/plans'
+import { paymentsTestMode } from '@/lib/billing/verify'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,7 +11,8 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const user = await currentUser()
   const payTo = process.env.PAYMENT_ADDRESS?.toLowerCase()
-  const base = { payTo: payTo && /^0x[0-9a-f]{40}$/.test(payTo) ? payTo : null }
+  const testMode = paymentsTestMode()
+  const base = { payTo: payTo && /^0x[0-9a-f]{40}$/.test(payTo) ? payTo : null, testMode, networks: payChains(testMode) }
   if (!user || !storeConfigured()) return NextResponse.json({ ...base, pro: false, expiresAt: null, payments: [] })
   try {
     const payments = await paymentsOf(user)
