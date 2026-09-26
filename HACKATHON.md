@@ -45,6 +45,7 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Cleaner auto-trace: ignores poisoning spam and dust, follows the main trail (side payments are noted, not branched), stops at busy service wallets and bridges, forward and back
 - [x] Trail view: after an auto-trace the graph shows only the traced path, laid out hop by hop; one click back to the whole case
 - [x] Node quick actions (click a node: Transactions / Relationships / Details, label, copy, explorer, remove) and a Smart-expand transactions view: one-row header, table fills the panel
+- [x] Simpler interface: taint analysis removed; the case panel starts hidden and no longer carries client payments
 - [ ] More bridges (OmniBridge/SWFT, LI.FI, Across)
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams

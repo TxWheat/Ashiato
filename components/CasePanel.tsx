@@ -5,10 +5,7 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { EntityLabel, EntityType } from '@/lib/types'
 import { Cluster } from '@/lib/heuristics/cluster'
 import { TornadoLink } from '@/lib/heuristics/eth/tornado'
-import { TaintMethod, TaintResult } from '@/lib/taint'
 import { TracedFlow, TraceEnd, EndReason } from '@/lib/follow'
-import { CheckedPayment } from '@/lib/client-payments'
-import { PaymentStatusBadge } from './ClientPayments'
 import { ENTITY_STYLE, fmtAmount } from '@/lib/format'
 import { truncate } from '@/lib/detect-chain'
 
@@ -45,12 +42,6 @@ function Section({ title, children, right }: { title: string; children: React.Re
 }
 
 
-const METHODS: { id: TaintMethod; name: string; hint: string }[] = [
-  { id: 'haircut', name: 'Haircut', hint: 'Proportional share (industry default)' },
-  { id: 'fifo', name: 'FIFO', hint: 'First in, first out' },
-  { id: 'poison', name: 'Poison', hint: 'Any contact taints all (upper bound)' },
-]
-
 export interface CasePanelProps {
   collapsed: boolean
   onToggle: () => void
@@ -60,19 +51,11 @@ export interface CasePanelProps {
   traced: TracedFlow[]
   traceEnds: TraceEnd[]
   onClearTrace: () => void
-  taint: { seed: string; method: TaintMethod; asset: string } | null
-  taintResult: TaintResult | null
-  taintAssets: string[]
-  onTaintMethod: (m: TaintMethod) => void
-  onTaintAsset: (a: string) => void
-  onTaintClear: () => void
   clusters: Cluster[]
   tornadoLinks: TornadoLink[]
   labelOf: (a: string) => EntityLabel | undefined
   nameOf: (a: string) => string | undefined
   onSelect: (address: string) => void
-  payments: CheckedPayment[]
-  onOpenPayments: () => void
 }
 
 export default function CasePanel(p: CasePanelProps) {
@@ -81,7 +64,7 @@ export default function CasePanel(p: CasePanelProps) {
   return (
     p.collapsed ? (
       <aside className="w-10 flex-shrink-0 border-r border-line bg-bg flex flex-col items-center pt-3">
-        <button onClick={p.onToggle} title="Show case panel: trace settings, where the money ended up, client payments, taint, legend" aria-label="Show case panel" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
+        <button onClick={p.onToggle} title="Show case panel: trace settings, where the money ended up, legend" aria-label="Show case panel" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
         {p.traced.length > 0 && <span className="mt-2 w-2 h-2 rounded-full bg-accent" title="Trace results" />}
       </aside>
     ) : (
@@ -93,27 +76,6 @@ export default function CasePanel(p: CasePanelProps) {
         <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-faint">Case</span>
         <button onClick={p.onToggle} title="Hide case panel" aria-label="Hide case panel" className="text-faint hover:text-fg p-1"><PanelLeftClose size={14} /></button>
       </div>
-      <Section
-        title="Client payments"
-        right={<button onClick={p.onOpenPayments} className="text-[10px] text-accent hover:text-fg">{p.payments.length ? 'Open' : 'Add'}</button>}
-      >
-        {p.payments.length === 0 ? (
-          <p className="text-[11px] text-muted leading-relaxed">
-            Got tx hashes, wallet addresses, amounts and dates from the client? <button onClick={p.onOpenPayments} className="text-fg underline underline-offset-2 hover:text-accent">Check them on-chain</button> and trace them all at once.
-          </p>
-        ) : (
-          <div className="space-y-1.5">
-            {p.payments.slice(0, 6).map((x, i) => (
-              <button key={x.id} onClick={p.onOpenPayments} className="w-full flex items-center gap-2 text-[11px] hover:bg-panel -mx-1 px-1 h-6">
-                <span className="text-faint w-4">{i + 1}</span>
-                <span className="font-mono text-fg truncate">{x.match ? fmtAmount(x.match.amount, x.match.asset) : x.claim.amount !== undefined ? `${x.claim.amount} ${x.claim.asset ?? ''}` : '—'}</span>
-                <span className="ml-auto"><PaymentStatusBadge status={x.status} /></span>
-              </button>
-            ))}
-            {p.payments.length > 6 && <div className="text-[10px] text-faint">+{p.payments.length - 6} more</div>}
-          </div>
-        )}
-      </Section>
       <Section
         title="Follow the funds"
         right={p.traced.length > 0 && <button onClick={p.onClearTrace} className="text-[10px] text-faint hover:text-fg">Clear</button>}
@@ -175,54 +137,6 @@ export default function CasePanel(p: CasePanelProps) {
         </label>
       </Section>
 
-      <Section
-        title="Taint analysis"
-        right={p.taint && <button onClick={p.onTaintClear} className="text-[10px] text-faint hover:text-fg">Clear</button>}
-      >
-        {!p.taint ? (
-          <p className="text-[11px] text-muted leading-relaxed">
-            Select the address that holds stolen funds and click <b className="text-fg font-medium">Taint from here</b> to see how much reached each address.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            <div className="text-[11px] text-muted">Source: <span className="font-mono text-red-500">{name(p.taint.seed)}</span></div>
-            <div className="grid grid-cols-3 border border-line">
-              {METHODS.map((m, i) => (
-                <button key={m.id} title={m.hint} onClick={() => p.onTaintMethod(m.id)}
-                  className={clsx('h-7 text-[11px] font-medium', i > 0 && 'border-l border-line', p.taint!.method === m.id ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg')}>
-                  {m.name}
-                </button>
-              ))}
-            </div>
-            {p.taintAssets.length > 1 && (
-              <select value={p.taint.asset} onChange={e => p.onTaintAsset(e.target.value)}
-                className="w-full h-8 px-2 bg-panel border border-line text-[11px] text-fg outline-none">
-                {p.taintAssets.map(a => <option key={a}>{a}</option>)}
-              </select>
-            )}
-            {p.taintResult && (
-              p.taintResult.reached.length === 0 ? (
-                <p className="text-[11px] text-faint">No tainted outflows in the loaded transactions yet. Load or follow more of the trail.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {p.taintResult.reached.slice(0, 8).map(r => {
-                    const l = p.labelOf(r.address)
-                    return (
-                      <button key={r.address} onClick={() => p.onSelect(r.address)} className="w-full flex items-center gap-2 text-[11px] hover:bg-panel -mx-1 px-1 h-6">
-                        <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', l ? ENTITY_STYLE[l.type].dot : 'bg-faint')} />
-                        <span className="truncate text-fg">{name(r.address)}</span>
-                        <span className="ml-auto font-mono text-red-500 whitespace-nowrap">{fmtAmount(r.received, p.taintResult!.asset)}</span>
-                      </button>
-                    )
-                  })}
-                  <p className="text-[10px] text-faint pt-1">{p.taintResult.txsUsed} tainted transactions in loaded data. Unloaded activity is not counted.</p>
-                </div>
-              )
-            )}
-          </div>
-        )}
-      </Section>
-
       {p.clusters.length > 0 && (
         <Section title={`Clusters (${p.clusters.length})`}>
           <div className="space-y-2">
@@ -263,7 +177,6 @@ export default function CasePanel(p: CasePanelProps) {
           ))}
           <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-dashed border-faint" />Likely change</div>
           <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-accent" />Traced / followed funds</div>
-          <div className="flex items-center gap-2 text-[11px] text-muted"><span className="w-3 border-t-2 border-red-500" />Tainted flow</div>
           <p className="text-[10px] text-faint pt-1">Thicker lines carry more value. Click any line to see its transactions. Dashed borders are inferred labels. With an address selected, <span className="text-green-500">green</span> boxes paid it and <span className="text-red-500">red</span> boxes were paid by it.</p>
         </div>
       </Section>

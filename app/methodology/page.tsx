@@ -3,7 +3,7 @@ import SiteNav from '@/components/SiteNav'
 
 export const metadata: Metadata = {
   title: 'Methodology · Ashiato',
-  description: 'How Ashiato labels addresses, detects change, CoinJoins and exchange deposit addresses, scores risk and runs taint analysis, and where each method can be wrong.',
+  description: 'How Ashiato labels addresses, detects change, CoinJoins and exchange deposit addresses, and scores risk, and where each method can be wrong.',
 }
 
 const SECTIONS: { id: string; title: string; body: string[]; limits: string; credit?: string }[] = [
@@ -66,16 +66,6 @@ const SECTIONS: { id: string; title: string; body: string[]; limits: string; cre
     ],
     limits: 'Tutela ran these over the full pool history. Here they run over loaded transactions only, so they find links between addresses you are already investigating.',
     credit: 'pareto-xyz/tutela-app',
-  },
-  {
-    id: 'taint',
-    title: 'Taint analysis',
-    body: [
-      'Poison: any tainted input taints all outputs in full (upper bound). Haircut: each output carries taint in proportion to the tainted share of the inputs (the usual industry default). FIFO: tainted value fills outputs in order (Clayton\'s case).',
-      'Bitcoin taint follows exact UTXOs. Ethereum is account-based, so each address keeps a running balance (Haircut) or a queue of received lots (FIFO).',
-    ],
-    limits: 'Only loaded transactions are used, so amounts are a lower bound. The three methods can give very different answers; report which one you used.',
-    credit: 'TrailBit-Labs/TaintTrail; tintiron/taintedtx',
   },
   {
     id: 'risk',

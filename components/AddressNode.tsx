@@ -5,13 +5,11 @@ import NodeMenu from './NodeMenu'
 import { clsx } from 'clsx'
 import { Chain, NodeData } from '@/lib/types'
 import { truncate } from '@/lib/detect-chain'
-import { ENTITY_STYLE, fmtAmount, chainDot } from '@/lib/format'
+import { ENTITY_STYLE, chainDot } from '@/lib/format'
 
 export interface AddressNodeData extends NodeData {
   view: {
     clusterSize?: number
-    taintAsset?: string
-    isTaintSeed?: boolean
     loading?: boolean
     /** Relative to the selected address: sent it funds (in), received from it (out), or both */
     relation?: 'in' | 'out' | 'both'
@@ -97,11 +95,6 @@ export default function AddressNode({ id, data, selected }: { id: string; data: 
         </div>
       )}
 
-      {(data.view.isTaintSeed || (data.taint ?? 0) > 0) && (
-        <div className="mt-1.5 pt-1.5 border-t border-line text-[10px] font-mono text-red-500">
-          {data.view.isTaintSeed ? 'taint source' : `${fmtAmount(data.taint!, data.view.taintAsset ?? '', 4)} tainted`}
-        </div>
-      )}
       {data.note && <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-yellow-500" title={data.note} />}
 
       <Handle type="source" position={Position.Right} className="!bg-line !border-0 !w-1.5 !h-3 !rounded-none" />

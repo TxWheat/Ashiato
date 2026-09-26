@@ -4,7 +4,7 @@ import Providers from '@/components/Providers'
 
 export const metadata: Metadata = {
   title: 'Ashiato · follow the footprints',
-  description: 'Free, open-source blockchain forensics for scam victims and investigators. Trace BTC, ETH and Tron, find exchange deposit addresses, run taint analysis.',
+  description: 'Free, open-source blockchain forensics for scam victims and investigators. Trace BTC, ETH and Tron, follow funds across swaps and bridges, and find exchange deposit addresses.',
 }
 
 // Applies the saved theme before first paint to avoid a flash

@@ -13,7 +13,6 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | **Bitcoin + Ethereum** | BTC via Esplora (Blockstream / mempool.space), ETH + ERC-20 tokens + internal transfers via Etherscan API V2 |
 | **185k+ entity labels** | GraphSense TagPacks (exchanges, scams, ransomware, hacks, darknet, CoinJoin), Etherscan public name tags via [eth-labels](https://github.com/dawsbot/eth-labels) (exchange hot wallets and deposit addresses, phishing, exploits) and the OFAC sanctions list, each with a source link. You can also add or edit your own |
 | **Exchange deposit addresses** | Detects the customer deposit address funds were swept from (tutela / FC'20 heuristic): the detail an exchange needs to identify the account holder |
-| **Taint analysis** | Poison, Haircut and FIFO: how much of the stolen amount reached each address (UTXO-exact on Bitcoin) |
 | **Clustering** | Common-input ownership (union-find) and deposit-address reuse; labels propagate across a cluster |
 | **CoinJoin & mixers** | Whirlpool, Wasabi 1/2 and JoinMarket fingerprints; Tornado Cash address-match, gas-price and multi-denomination reveals |
 | **Change detection** | Address reuse, round amounts, script type, unnecessary input, each with a confidence score |
@@ -49,7 +48,7 @@ Open http://localhost:3000. Bitcoin works without any key.
 2. **Address:** the graph starts with just that address. The right-hand panel shows Incoming/Outgoing totals and its **Relationships** (who it paid and was paid by, filterable by asset, amount and count; spam like address poisoning and airdrops hidden by default). Press **+** to add one to the graph, or click the row to open the relationship.
 3. **Transaction:** it appears as its own node with its inputs and outputs. Every input has **← Source**, every output **Trace →**.
 4. Click any address to inspect it (Relationships · Transactions · Details); click empty canvas to collapse the panel. Lines are labelled along the curve with amount, NZD value and date. On a transaction, **Trace →** follows that payment onward and **← Source** walks it back. Click any **line** to see the payments behind it; **Hide link** (or the Delete key) removes a line you don't need, and **hidden links · Show all** on the graph brings them back. The Relationships tab has a search box and shows how far back the loaded history reaches. The **Transactions** tab has search, In/Out and date-range filters; expand the side panel (grip on its left edge, or drag to resize) for a wide table view. Bitcoin addresses with up to 500 transactions load their full history automatically; bigger ones have **Load all** with progress. With an address selected, boxes that paid it glow green and boxes it paid glow red; newly added boxes pulse. After a trace, long pass-through runs (peel chains, relays) are drawn as one line such as “39 hops · 15 → 6.29 BTC”; click it to expand, or use **Chains collapsed** in the top bar. Every hop is still in the report and exports.
-5. After a trace, the traced money trail is highlighted on the graph. The left **Case** panel shows where the funds ended up, taint analysis and clusters.
+5. After a trace, the traced money trail is highlighted on the graph. The left **Case** panel shows where the funds ended up and clusters.
 6. **Save case** (top bar) turns the chart into a named case, like Breadcrumbs. From then on it auto-saves after each change (toggle in the Save menu), **Save as new case…** makes a copy, and the case stays in the URL so a refresh carries on where you were. Reopen cases from **Your cases** on the home page. **Label** on an address sets your own name and category for it.
 7. **Export** (top bar): printable report, case file save/open, PNG, CSV, GraphML.
 
@@ -62,7 +61,7 @@ The free Etherscan tier allows about 3 calls per second. The app spaces its call
 ## Development
 
 ```bash
-npm test            # vitest: heuristics, taint, labels, chain clients (mocked upstream)
+npm test            # vitest: heuristics, follow-the-funds, labels, chain clients (mocked upstream)
 npm run lint
 npm run typecheck
 npm run build
@@ -83,7 +82,6 @@ Hand-maintained labels live in `data/labels/curated.tsv`.
 ```
 lib/chains/        Esplora + Etherscan V2 clients (paginated, cached, rate-limited)
 lib/heuristics/    change, coinjoin, cluster, deposit-address, tornado
-lib/taint.ts       poison / haircut / FIFO
 lib/risk.ts        0–100 risk score
 lib/labels.ts      label lookup (server only)
 app/api/[chain]/[address]          trace one page of an address
@@ -95,6 +93,6 @@ lib/ens.ts         verified ENS names (ETH_RPC_URL)
 
 ## Credits
 
-Ideas and data from open-source projects: [pareto-xyz/tutela-app](https://github.com/pareto-xyz/tutela-app) (deposit reuse, Tornado reveals), [peterzen/heuristic](https://github.com/peterzen/heuristic) (CoinJoin fingerprints, risk model, source-of-funds walk), [s0md3v/Orbit](https://github.com/s0md3v/Orbit) (auto-trace, edge weighting, GraphML), [TrailBit-Labs/TaintTrail](https://github.com/TrailBit-Labs/TaintTrail) and [tintiron/taintedtx](https://github.com/tintiron/taintedtx) (taint models), [GraphSense TagPacks](https://github.com/graphsense/graphsense-tagpacks) (labels, MIT), [dawsbot/eth-labels](https://github.com/dawsbot/eth-labels) (Etherscan name tags, MIT), [0xB10C OFAC list](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses). Code is reimplemented, not copied; no tutela code or data is included (it has no licence).
+Ideas and data from open-source projects: [pareto-xyz/tutela-app](https://github.com/pareto-xyz/tutela-app) (deposit reuse, Tornado reveals), [peterzen/heuristic](https://github.com/peterzen/heuristic) (CoinJoin fingerprints, risk model, source-of-funds walk), [s0md3v/Orbit](https://github.com/s0md3v/Orbit) (auto-trace, edge weighting, GraphML), [GraphSense TagPacks](https://github.com/graphsense/graphsense-tagpacks) (labels, MIT), [dawsbot/eth-labels](https://github.com/dawsbot/eth-labels) (Etherscan name tags, MIT), [0xB10C OFAC list](https://github.com/0xB10C/ofac-sanctioned-digital-currency-addresses). Code is reimplemented, not copied; no tutela code or data is included (it has no licence).
 
 Heuristics are leads, not proof. Verify findings on a block explorer before acting on them.

@@ -1,6 +1,5 @@
 import type { CheckedPayment } from './client-payments'
 import { Chain, EdgeData, NodeData } from './types'
-import { TaintResult } from './taint'
 import type { TracedFlow, TraceEnd } from './follow'
 import { explorerAddressUrl, explorerTxUrl, fmtAmount } from './format'
 
@@ -22,13 +21,12 @@ export function buildReport(opts: {
   chain: Chain
   nodes: Map<string, NodeData>
   edges: EdgeData[]
-  taint?: TaintResult | null
   traced?: TracedFlow[]
   traceEnds?: TraceEnd[]
   nameOf?: (a: string) => string | undefined
   payments?: CheckedPayment[]
 }): string {
-  const { origin, chain, nodes, edges, taint } = opts
+  const { origin, chain, nodes, edges } = opts
   const traced = opts.traced ?? []
   const ends = opts.traceEnds ?? []
   const nm = (a: string) => opts.nameOf?.(a) ?? nodes.get(a)?.label?.name ?? ''
@@ -82,11 +80,6 @@ ${[...traced].sort((a, b) => a.hop - b.hop || a.time - b.time).map(f => `<tr><td
 </table>
 ${ends.length ? `<h3 style="font-size:13px;margin:16px 0 6px">Where the traced funds ended up</h3><table><tr><th>Address</th><th>Amount</th><th>Status</th></tr>
 ${ends.map(e => `<tr><td>${addr(e.address)}<br><span class="muted">${esc(nm(e.address))}</span></td><td>${esc(fmtAmount(e.amount, e.asset, 8))}</td><td>${esc(e.detail)}</td></tr>`).join('')}</table>` : ''}`) : ''}
-
-${taint ? section(`Taint analysis (${taint.method}, ${taint.asset})`, `<p>Source: ${taint.seeds.map(addr).join(', ')}. Based on ${taint.txsUsed} loaded transactions; unloaded activity is not counted, so figures are a lower bound.</p>
-<table><tr><th>Address</th><th>Entity</th><th>Tainted received</th><th>Still held (est.)</th></tr>
-${taint.reached.slice(0, 50).map(r => `<tr><td>${addr(r.address)}</td><td>${esc(nodes.get(r.address)?.label?.name ?? '')}</td><td>${esc(fmtAmount(r.received, taint.asset, 8))}</td><td>${esc(fmtAmount(r.remaining, taint.asset, 8))}</td></tr>`).join('')}
-</table>`) : ''}
 
 ${risky.length ? section('High-risk addresses in the graph', `<table><tr><th>Address</th><th>Label</th><th>Risk</th><th>Reasons</th></tr>
 ${risky.map(n => `<tr><td>${addr(n.address)}</td><td>${esc(n.label?.name ?? '')}</td><td>${n.risk?.score ?? '–'}</td><td>${(n.risk?.reasons ?? []).map(esc).join('<br>')}</td></tr>`).join('')}</table>`) : ''}
