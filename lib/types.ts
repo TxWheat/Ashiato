@@ -119,6 +119,8 @@ export interface EdgeData {
   txCount?: number
   /** Aggregated edges: earliest transaction time (timestamp is the latest) */
   firstTimestamp?: number
+  /** Aggregated edges: each transaction's amount and time, to value them at the time they moved */
+  parts?: { amount: number; timestamp: number }[]
   /** ETH: how the value moved (internal = sent by a contract inside the transaction) */
   kind?: RawTransaction['kind']
 }
