@@ -23,6 +23,7 @@ import type { CollapsedChain } from '@/lib/collapse'
 import { TracedFlow } from '@/lib/follow'
 import { ENTITY_STYLE, fiatValue, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort, topAssets } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
+import { NodeAction, NodeMenuContext } from './NodeMenu'
 import LabelEdge from './OffsetEdge'
 
 const nodeTypes = { addressNode: AddressNode, tx: TxNode }
@@ -253,6 +254,8 @@ interface Props {
   onBridgeClick?: (id: string) => void
   /** Changes when nodes appear or vanish because of a view toggle (collapsing chains): keep the zoom */
   quietKey?: number
+  /** Quick actions shown around a clicked node; without this, clicks go straight to onNodeClick */
+  onNodeAction?: (address: string, action: NodeAction) => void
 }
 
 export interface BridgeLine { id: string; from: string; to: string; line1: string; line2: string }
@@ -270,7 +273,11 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [], onBridgeClick, quietKey }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction }: Props) {
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const menu = useMemo(() => onNodeAction
+    ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) } }
+    : null, [menuFor, onNodeAction])
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)
@@ -578,6 +585,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   }, [])
 
   return (
+    <NodeMenuContext.Provider value={menu}>
     <div className="w-full h-full">
       <ArrowDefs />
       <ReactFlow
@@ -591,9 +599,15 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           for (const n of dragged?.length ? dragged : [node]) pinned.current.set(n.id, n.position)
           onLayoutChange?.()
         }}
-        onNodeClick={(_, n) => (n.type === 'tx' ? onHubClick((n.data as TxHubData).txid) : onNodeClick(n.id))}
-        onPaneClick={onPaneClick}
+        onNodeClick={(_, n) => {
+          if (n.type === 'tx') return onHubClick((n.data as TxHubData).txid)
+          if (onNodeAction) setMenuFor(v => (v === n.id ? null : n.id))
+          onNodeClick(n.id)
+        }}
+        onNodeDragStart={() => setMenuFor(null)}
+        onPaneClick={() => { setMenuFor(null); onPaneClick?.() }}
         onEdgeClick={(_, e) => {
+          setMenuFor(null)
           if (e.id.startsWith('chain:')) onChainClick?.(e.id.slice(6))
           else if (e.id.startsWith('bridge:')) onBridgeClick?.(e.id.slice(7))
           else if (!e.id.startsWith('tx:')) onEdgeClick(e.source, e.target)
@@ -621,5 +635,6 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         />
       </ReactFlow>
     </div>
+    </NodeMenuContext.Provider>
   )
 }

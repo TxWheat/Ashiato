@@ -44,6 +44,7 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Graph keeps its layout and zoom (collapse/expand, delete); addresses can be added to an open case from search
 - [x] Cleaner auto-trace: ignores poisoning spam and dust, follows the main trail (side payments are noted, not branched), stops at busy service wallets and bridges, forward and back
 - [x] Trail view: after an auto-trace the graph shows only the traced path, laid out hop by hop; one click back to the whole case
+- [x] Node quick actions (click a node: Transactions / Relationships / Details, label, copy, explorer, remove) and a Smart-expand transactions view: one-row header, table fills the panel
 - [ ] More bridges (OmniBridge/SWFT, LI.FI, Across)
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams
