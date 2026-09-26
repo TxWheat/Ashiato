@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Download, Upload, FileText, Image as ImageIcon, Share2, Table } from 'lucide-react'
+import { ChevronDown, Download, Upload, FileText, Image as ImageIcon, Share2, Sparkles, Table } from 'lucide-react'
 
 interface Props {
   onSaveCase: () => void
   onLoadCase: (file: File) => void
   onReport: () => void
+  onSummary: () => void
   onPng: () => void
   onCsv: () => void
   onGraphml: () => void
@@ -26,6 +27,7 @@ export default function ExportMenu(p: Props) {
 
   const items: [string, React.ReactNode, () => void][] = [
     ['Printable report', <FileText key="r" size={13} />, p.onReport],
+    ['Plain-English summary (Pro)', <Sparkles key="a" size={13} />, p.onSummary],
     ['Save case file', <Download key="s" size={13} />, p.onSaveCase],
     ['Open case file…', <Upload key="o" size={13} />, () => fileRef.current?.click()],
     ['Graph image (PNG)', <ImageIcon key="p" size={13} />, p.onPng],
@@ -39,7 +41,7 @@ export default function ExportMenu(p: Props) {
         Export <ChevronDown size={12} />
       </button>
       {open && (
-        <div className="absolute right-0 top-9 z-40 w-52 bg-panel border border-line shadow-2xl py-1">
+        <div className="absolute right-0 top-9 z-40 w-60 bg-panel border border-line shadow-2xl py-1">
           {items.map(([label, icon, fn]) => (
             <button key={label} onClick={() => { setOpen(false); fn() }} className="w-full flex items-center gap-2.5 h-8 px-3 text-[12px] text-fg hover:bg-raised">
               <span className="text-faint">{icon}</span>{label}

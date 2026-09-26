@@ -25,6 +25,8 @@ export function buildReport(opts: {
   traceEnds?: TraceEnd[]
   nameOf?: (a: string) => string | undefined
   payments?: CheckedPayment[]
+  /** Plain-English summary written for this case */
+  summary?: string
 }): string {
   const { origin, chain, nodes, edges } = opts
   const traced = opts.traced ?? []
@@ -51,6 +53,7 @@ th{background:#f3f4f6}code{font-size:11px;word-break:break-all}a{color:#0645ad;t
 <h1>Cryptocurrency trace report</h1>
 <div class="muted">Generated ${esc(new Date().toISOString())} · ${chain.toUpperCase()} · Ashiato (open source)</div>
 
+${opts.summary ? section('Summary', opts.summary.split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('') + '<p class="muted">Written with AI from the traced facts below; check it against them.</p>') : ''}
 ${section('Subject address', `<p>${addr(origin)}<br>
 Label: ${esc(originNode?.label?.name ?? 'none')} · Risk: <b>${originNode?.risk?.score ?? '–'}/100 (${esc(originNode?.risk?.level ?? 'n/a')})</b></p>
 <ul>${(originNode?.risk?.reasons ?? []).map(r => `<li>${esc(r)}</li>`).join('')}</ul>`)}
