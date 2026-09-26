@@ -184,7 +184,7 @@ function TracePageInner() {
   const [loadingMore, setLoadingMore] = useState(false)
 
   const [selection, setSelection] = useState<Selection>(null)
-  const [tab, setTab] = useState<AddressTab>('counterparties')
+  const [tab, setTab] = useState<AddressTab>('transactions')
   const [caseCollapsed, setCaseCollapsed] = useState(false)
 
   const [taint, setTaint] = useState<TaintCfg | null>(null)
@@ -392,7 +392,7 @@ function TracePageInner() {
         // Start with just the address; the user adds counterparties from the panel
         absorb(r, [r.address])
         setSelection({ kind: 'address', id: r.address })
-        setTab('counterparties')
+        setTab('transactions')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
@@ -446,10 +446,11 @@ function TracePageInner() {
   /** Loads an address's first page if we don't have it yet */
   const ensurePage = useCallback(async (addr: string): Promise<LoadedPage | null> => {
     const have = pagesRef.current.get(addr)
-    if (have) return have
+    if (have && !have.trimmed) return have
     setBusy(addr, true)
     try {
-      absorb(await fetchTrace(addr, knownRef.current.get(addr)?.chain ?? originChain ?? 'btc'), [])
+      // A page saved without its full history: fetch it again, keeping what the graph used
+      absorb(await fetchTrace(addr, knownRef.current.get(addr)?.chain ?? originChain ?? 'btc'), [], !!have)
       return pagesRef.current.get(addr) ?? null
     } catch (e) {
       flash(`${truncate(addr, 6)}: ${e instanceof Error ? e.message : 'failed to load'}`)
@@ -620,7 +621,8 @@ function TracePageInner() {
 
   // ── Follow the funds ─────────────────────────────────────────────────────
   const addressTxs = useCallback(async (addr: string, since: number): Promise<RawTransaction[]> => {
-    let page = pagesRef.current.get(addr) ?? (await ensurePage(addr))
+    // A trimmed page (from a slimmed saved case) is reloaded before tracing through it
+    let page = (pagesRef.current.get(addr)?.trimmed ? null : pagesRef.current.get(addr)) ?? (await ensurePage(addr))
     if (!page) throw new Error(`Could not load ${truncate(addr, 6)}`)
     const chain = knownRef.current.get(addr)?.chain ?? originChain ?? 'eth'
     for (let i = 0; i < MAX_EXTRA_PAGES && page.nextCursor; i++) {
@@ -723,7 +725,6 @@ function TracePageInner() {
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
     }
     show(seed.flows)
-    setTrailView(true)
     freshTrail()
     setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
     try {
@@ -873,6 +874,23 @@ function TracePageInner() {
   /** Bumped when a view toggle (collapse / expand) adds or hides nodes, so the zoom stays put */
   const [quietRev, setQuietRev] = useState(0)
   const layoutKey = 'fixed'
+  /** One traced transaction goes, with whatever was traced onward from it and from nothing else */
+  const removeTraced = (flow: TracedFlow) => {
+    snapshot()
+    const same = (f: TracedFlow) => f.txid === flow.txid && f.from === flow.from && f.to === flow.to
+    let left = traced.filter(f => !same(f))
+    const queue = [flow]
+    while (queue.length) {
+      const cut = queue.shift()!
+      // Other traced money still reaches this address: its onward trail stays
+      if (left.some(f => f.to === cut.to && f.from !== cut.to)) continue
+      const onward = left.filter(f => f.from === cut.to && f.hop > cut.hop && f.time >= cut.time)
+      left = left.filter(f => !onward.includes(f))
+      queue.push(...onward)
+    }
+    setTraced(left)
+    flash(`Removed ${traced.length - left.length} traced transaction${traced.length - left.length === 1 ? '' : 's'}`)
+  }
   const hideLink = (a: string, b: string) => {
     setHiddenLinks(prev => new Set(prev).add(pairKey(a, b)))
     setSelection(null)
@@ -1248,6 +1266,7 @@ function TracePageInner() {
           }}
           onClose={() => setSelection(null)}
           onHide={() => hideLink(selection.from, selection.to)}
+          onRemoveTraced={removeTraced}
           extra={(() => {
             // Swaps: a transaction on this link paid the sender a different asset back (DEX, UniswapX, 1inch…)
             const swaps = edgeRows.flatMap(r => {
@@ -1360,7 +1379,7 @@ function TracePageInner() {
               title={trailView ? 'Show every address in the case' : 'Show only the traced trail, laid out hop by hop'}
               className={`h-7 px-2.5 border border-line text-[11px] font-medium ${trailView ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
             >
-              {trailView ? 'Trail only' : 'Show trail only'}
+              {trailView ? 'Show whole case' : 'Show trail only'}
             </button>
           )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
@@ -1498,6 +1517,13 @@ function TracePageInner() {
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
               Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>. To follow money, open a transaction and press <b className="text-fg font-medium">Trace</b>. Click empty space to hide the panel.
+            </div>
+          )}
+
+          {inTrail && !initialLoading && !error && (
+            <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-3 bg-panel border border-accent px-3 h-8 text-[11px] text-muted">
+              Trail view: {trail.nodes.length} of {graphNodes.length} addresses shown. Nothing is removed from your case.
+              <button onClick={() => setTrailView(false)} className="font-medium text-fg underline underline-offset-2 hover:text-accent">Show whole case</button>
             </div>
           )}
 

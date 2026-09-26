@@ -178,8 +178,8 @@ function FlowBoxes({ summary }: { summary: FlowSummary }) {
     const major = rows.filter(([a]) => MAJOR.has(a)).sort((x, y) => y[1].count - x[1].count)
     const other = rows.filter(([a]) => !MAJOR.has(a))
     return (
-      <div className="border border-line p-2.5 min-w-0">
-        <div className="text-[10px] uppercase tracking-wider text-faint mb-1.5">{title}</div>
+      <div className="border border-line px-2.5 py-1.5 min-w-0">
+        <div className="text-[10px] uppercase tracking-wider text-faint mb-0.5">{title}</div>
         {rows.length === 0 && <div className="text-[11px] text-faint">None loaded</div>}
         {major.map(([asset, v]) => (
           <div key={asset} className={clsx('text-[12px] font-mono truncate', tone)}>
@@ -318,7 +318,7 @@ export default function AddressInspector(p: Props) {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Identity */}
-      <div className="p-4 border-b border-line space-y-3 flex-shrink-0">
+      <div className="px-4 py-3 border-b border-line space-y-2 flex-shrink-0">
         <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider">
           <span className={clsx('w-1.5 h-1.5 rounded-full', chainDot(node.chain))} />
           <span className="text-faint">{node.chain} address</span>
@@ -344,11 +344,11 @@ export default function AddressInspector(p: Props) {
               <span className="font-mono text-fg">{node.risk.score}</span>
             </span>
           )}
-        </div>
-        <div className="flex flex-wrap gap-1.5">
+          <div className="flex gap-1.5 ml-auto">
           <ActionBtn onClick={p.onTaint} icon={<Droplets size={12} />} title="Treat this address's funds as stolen and see where they went">Taint</ActionBtn>
           <ActionBtn onClick={() => setEditing(v => !v)} icon={<Tag size={12} />} title="Name this address yourself">{p.myLabel ? 'Edit label' : 'Label'}</ActionBtn>
           {p.canRemove && <ActionBtn onClick={p.onRemove} icon={<Trash2 size={12} />} title="Remove from graph" />}
+          </div>
         </div>
         {editing && (
           <LabelEditor
@@ -365,7 +365,6 @@ export default function AddressInspector(p: Props) {
             <span>Cross-chain swap service. Click the <b className="font-medium">line</b> from a wallet into it to see where that wallet&apos;s swap came out, on which chain and address.</span>
           </p>
         )}
-        <CommunityLabels chain={node.chain} address={node.address} attester={p.attester} />
         <FlowBoxes summary={p.summary} />
       </div>
 
@@ -374,7 +373,7 @@ export default function AddressInspector(p: Props) {
         {([
           ['counterparties', `Relationships${p.counterparties.length ? ` · ${p.counterparties.length}` : ''}`],
           ['transactions', `Transactions${p.page ? ` · ${p.page.rawTxs.length}` : ''}`],
-          ['details', 'Details'],
+          ['details', 'Labels & details'],
         ] as [AddressTab, string][]).map(([id, label]) => (
           <button key={id} onClick={() => p.onTab(id)}
             className={clsx('flex-1 h-10 border-b-2 -mb-px transition-colors', p.tab === id ? 'border-accent text-fg' : 'border-transparent text-faint hover:text-fg')}>
@@ -711,6 +710,9 @@ function Details(p: Props) {
   const { node } = p
   return (
     <div className="divide-y divide-line">
+      <section className="p-4">
+        <CommunityLabels chain={node.chain} address={node.address} attester={p.attester} />
+      </section>
       {node.label && (
         <section className="p-4 space-y-1 text-[11px]">
           <div className="text-[10px] uppercase tracking-wider text-faint mb-1">Label</div>

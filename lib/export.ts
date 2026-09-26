@@ -13,6 +13,8 @@ export interface LoadedPage {
   rawTxs: RawTransaction[]
   nextCursor?: string
   warnings?: string[]
+  /** Saved without its full history (only what the graph uses): reload it when opened */
+  trimmed?: boolean
 }
 
 export interface CaseFile {
@@ -41,6 +43,27 @@ export interface CaseFile {
   clientPayments?: CheckedPayment[]
   /** Cross-chain swaps added to the graph; `via` is the service's node it leaves from */
   bridgeHops?: (CrossChainHop & { via: string; sender?: string; bridge?: string })[]
+}
+
+/**
+ * A case small enough for account storage: each address keeps only the transactions the
+ * graph uses (links between addresses on it, traced and itemized ones). The rest of its
+ * history is re-downloaded when the address is opened.
+ */
+export function slimCase(c: CaseFile): CaseFile {
+  const onGraph = new Set(c.visible)
+  const keepTx = new Set([...(c.traced ?? []).map(f => f.txid), ...(c.hubs ?? []).map(h => h.txid)])
+  const itemized = c.itemizedIds ?? []
+  const pages: Record<string, LoadedPage> = {}
+  for (const [addr, page] of Object.entries(c.pages)) {
+    if (!onGraph.has(addr)) continue
+    const rawTxs = page.rawTxs.filter(t =>
+      keepTx.has(t.txid) ||
+      itemized.some(id => id.includes(t.txid)) ||
+      [...t.inputs, ...t.outputs].some(io => io.address !== addr && onGraph.has(io.address)))
+    pages[addr] = { ...page, rawTxs, trimmed: page.trimmed || rawTxs.length < page.rawTxs.length }
+  }
+  return { ...c, pages }
 }
 
 export function parseCase(text: string): CaseFile {
