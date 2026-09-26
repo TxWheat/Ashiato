@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ExternalLink, ShieldCheck, ThumbsDown, ThumbsUp, Users, Undo2 } from 'lucide-react'
 import { Chain } from '@/lib/types'
@@ -34,24 +34,28 @@ interface Props {
   chain: Chain
   address: string
   attester?: Attester
-  /** Pre-fills the evidence field (e.g. the selected transactions) */
-  evidenceHint?: string
 }
 
 /** Labels investigators attested on-chain for this address, with trust votes */
-export default function CommunityLabels({ chain, address, attester, evidenceHint }: Props) {
+export default function CommunityLabels({ chain, address, attester }: Props) {
   const [labels, setLabels] = useState<CommunityLabel[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [flagging, setFlagging] = useState(false)
+  /** The address on screen: a reply (or delayed re-read) for an earlier one is dropped */
+  const shown = useRef('')
+  shown.current = `${chain}|${address}`
 
   const load = useCallback(async (fresh = false) => {
+    const key = `${chain}|${address}`
     try {
       const res = await fetch(`/api/community/${chain}/${encodeURIComponent(address)}${fresh ? '?fresh=1' : ''}`)
       const body = await res.json()
+      if (shown.current !== key) return
       setLabels(body.labels ?? [])
       setError(res.ok ? null : body.error ?? 'Could not read community labels')
     } catch {
+      if (shown.current !== key) return
       setError('Could not read community labels')
       setLabels([])
     }
@@ -145,7 +149,7 @@ export default function CommunityLabels({ chain, address, attester, evidenceHint
       })}
 
       {flagging && attester && (
-        <FlagForm chain={chain} address={address} evidenceHint={evidenceHint} busy={busy === 'flag'}
+        <FlagForm chain={chain} address={address} busy={busy === 'flag'}
           onCancel={() => setFlagging(false)}
           onSubmit={async input => { if (await act('flag', () => attester.label(input))) setFlagging(false) }} />
       )}
@@ -191,13 +195,13 @@ function VoteRow({ current, busy, disabled, onVote }: { current?: number; busy: 
   )
 }
 
-function FlagForm({ chain, address, evidenceHint, busy, onSubmit, onCancel }: {
-  chain: Chain; address: string; evidenceHint?: string; busy: boolean
+function FlagForm({ chain, address, busy, onSubmit, onCancel }: {
+  chain: Chain; address: string; busy: boolean
   onSubmit: (l: LabelInput) => void; onCancel: () => void
 }) {
   const [category, setCategory] = useState<CommunityCategory>('scam')
   const [name, setName] = useState('')
-  const [evidence, setEvidence] = useState(evidenceHint ?? '')
+  const [evidence, setEvidence] = useState('')
   const [confidence, setConfidence] = useState(80)
   const input: LabelInput = { chain, subject: address, category, name, evidence, confidence }
   const errs = checkLabel(input)

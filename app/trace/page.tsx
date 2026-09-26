@@ -904,7 +904,6 @@ function TracePageInner() {
   // everything where it is (collapsed chains pull their end in), and the zoom where the user left it
   /** Bumped when a view toggle (collapse / expand) adds or hides nodes, so the zoom stays put */
   const [quietRev, setQuietRev] = useState(0)
-  const layoutKey = 'fixed'
   /** One traced transaction goes, with whatever was traced onward from it and from nothing else */
   const removeTraced = (flow: TracedFlow) => {
     snapshot()
@@ -1344,7 +1343,7 @@ function TracePageInner() {
             const sender = bridge === selection.to ? selection.from : selection.to
             const into = edgeRows.filter(r => r.source === sender && r.target === bridge)
             const txids = into.flatMap(r => r.txids ?? [r.txid])
-            if (!txids.length) return undefined
+            if (!txids.length) return swapNote || undefined
             const txTimes = Object.fromEntries(into.flatMap(r => (r.txids ?? [r.txid]).map(t => [t, r.timestamp])))
             return (
               <>
@@ -1532,7 +1531,6 @@ function TracePageInner() {
               traced={inTrail ? trail.traced : drawn?.traced ?? graphTraced}
               chains={inTrail ? trail.chains : collapsed.chains}
               onChainClick={id => { setQuietRev(v => v + 1); setExpandedChains(prev => new Set(prev).add(id)) }}
-              layoutKey={layoutKey}
               quietKey={quietRev}
               hubs={inTrail ? [] : graphHubs}
               bridges={inTrail ? trail.bridges : graphBridges}

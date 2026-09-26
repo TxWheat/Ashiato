@@ -52,14 +52,17 @@ export interface CaseFile {
  */
 export function slimCase(c: CaseFile): CaseFile {
   const onGraph = new Set(c.visible)
-  const keepTx = new Set([...(c.traced ?? []).map(f => f.txid), ...(c.hubs ?? []).map(h => h.txid)])
-  const itemized = c.itemizedIds ?? []
+  // Itemized edge ids start with their txid ("txid|event|from|to|asset")
+  const keepTx = new Set([
+    ...(c.traced ?? []).map(f => f.txid),
+    ...(c.hubs ?? []).map(h => h.txid),
+    ...(c.itemizedIds ?? []).map(id => id.split('|')[0]),
+  ])
   const pages: Record<string, LoadedPage> = {}
   for (const [addr, page] of Object.entries(c.pages)) {
     if (!onGraph.has(addr)) continue
     const rawTxs = page.rawTxs.filter(t =>
       keepTx.has(t.txid) ||
-      itemized.some(id => id.includes(t.txid)) ||
       [...t.inputs, ...t.outputs].some(io => io.address !== addr && onGraph.has(io.address)))
     pages[addr] = { ...page, rawTxs, trimmed: page.trimmed || rawTxs.length < page.rawTxs.length }
   }

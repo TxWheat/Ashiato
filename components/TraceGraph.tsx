@@ -34,13 +34,13 @@ const NODE_H = 78
 const FIT = { padding: 0.3, maxZoom: 1.1 }
 const TAINT = '#ef4444'
 
+/** Cross-chain swaps: money leaves one chain and arrives on another */
+const BRIDGE = '#f97316'
+
 /**
  * Slim notched arrowheads at a fixed on-screen size (reactflow's built-in markers
  * scale with line width, so thick lines got huge heads). Referenced by id.
  */
-/** Cross-chain swaps: money leaves one chain and arrives on another */
-const BRIDGE = '#f97316'
-
 const ARROWS = {
   accent: 'rgb(var(--accent))',
   muted: 'rgb(var(--muted))',
@@ -83,14 +83,6 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
 
 export type XY = { x: number; y: number }
 
-
-
-/**
- * Nodes already on screen stay exactly where they are (whether auto-placed or
- * dragged). A new node goes next to a neighbour that's already placed, keeping
- * the offset dagre would give it, then steps down until it overlaps nothing.
- * `placed` is updated with every final position.
- */
 /** One collapsed chain drawn as a single line: this far from its start to its end */
 const CHAIN_SPAN = NODE_W + 380
 /** One hop when a chain is expanded (dagre's rank spacing) */
@@ -149,6 +141,11 @@ function compactChains(chains: CollapsedChain[], edges: Edge[], placed: Map<stri
   }
 }
 
+/**
+ * Nodes already on screen stay exactly where they are (whether auto-placed or
+ * dragged). A new node goes in the column beside a neighbour that's already placed,
+ * in the nearest free row. `placed` is updated with every final position.
+ */
 function placeNodes(laid: Node[], edges: Edge[], placed: Map<string, XY>): Node[] {
   const auto = new Map(laid.map(n => [n.id, n.position]))
   const neighbours = new Map<string, string[]>()
@@ -246,8 +243,6 @@ interface Props {
   /** Long pass-through runs drawn as one line (the middle addresses are hidden) */
   chains?: CollapsedChain[]
   onChainClick?: (id: string) => void
-  /** Changing this re-tidies the whole layout (e.g. when chains collapse or expand) */
-  layoutKey?: string
   onReady?: (api: GraphApi) => void
   /** Cross-chain hops: from the swap service's node to where the money came out */
   bridges?: BridgeLine[]
@@ -273,7 +268,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, layoutKey, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const menu = useMemo(() => onNodeAction
     ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) } }
@@ -507,14 +502,6 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     return out
   }, [edgeData, nodeData, followedPairs, traced, hubs, itemized, prices, taintByEdge, selectedEdge, chains, bridges])
 
-  // A new layoutKey re-tidies everything: forget positions so dagre lays the graph out afresh
-  const lastLayoutKey = useRef(layoutKey)
-  if (lastLayoutKey.current !== layoutKey) {
-    lastLayoutKey.current = layoutKey
-    pinned.current.clear()
-    nodeCount.current = -1 // forces a refit
-  }
-
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
 
@@ -525,15 +512,15 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     const laid = placeNodes(layoutGraph(rawNodes, rawEdges), rawEdges, pinned.current)
     setNodes(laid)
     setEdges(rawEdges)
-    // Refit on first draw and after a re-layout. Otherwise keep the user's zoom: removing
-    // nodes never moves the view, and added nodes only refit when they land off-screen.
-    const firstOrRelayout = nodeCount.current <= 0
+    // Refit on first draw. Otherwise keep the user's zoom: removing nodes never moves the
+    // view, and added nodes only pan into view when they land off-screen.
+    const firstDraw = nodeCount.current === 0
     const quiet = lastQuiet.current !== quietKey
     lastQuiet.current = quietKey
     const added = laid.filter(n => !shownIds.current.has(n.id))
     nodeCount.current = rawNodes.length
     shownIds.current = new Set(laid.map(n => n.id))
-    if (firstOrRelayout) {
+    if (firstDraw) {
       // Refit again once new nodes have been measured
       setTimeout(() => rf.current?.fitView(FIT), 60)
       setTimeout(() => rf.current?.fitView({ ...FIT, duration: 250 }), 400)
@@ -556,7 +543,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
         }
       }, 120)
     }
-  }, [rawNodes, rawEdges, setNodes, setEdges, layoutKey, quietKey, chainsKey])
+  }, [rawNodes, rawEdges, setNodes, setEdges, quietKey, chainsKey])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {

@@ -129,14 +129,13 @@ export async function followFunds(
   const flows: TracedFlow[] = []
   const ends: TraceEnd[] = []
   const rootTotal = seeds.reduce((s, l) => s + l.amount, 0)
-  const adaptiveOn = opts.adaptive !== false
-  const minAmount = rootTotal * (opts.minFraction ?? (adaptiveOn ? 0.02 : 0.002))
+  const adaptive = opts.adaptive !== false
+  const minAmount = rootTotal * (opts.minFraction ?? (adaptive ? 0.02 : 0.002))
   // The dust threshold is in the traced asset; after a swap it converts at the swap's rate
   const minFor = new Map<string, number>(seeds.map(l => [l.asset, minAmount]))
   const minOf = (asset: string) => minFor.get(asset) ?? minAmount
   const seen = new Set<string>()
   let frontier = seeds
-  const adaptive = opts.adaptive !== false
 
   const stopFor = (l: Lot): boolean => {
     const label = deps.labelOf(l.address)
@@ -378,12 +377,15 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
     return []
   }
   // Dust and spam (poisoning 0.000000001 ETH, fake tokens) never count, in or out
-  const floor = Math.max(dustFloor(lot.asset), lot.amount * 0.01)
-  const txs = all.filter(t => !t.asset.endsWith('*') && !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < floor))
+  const real = all.filter(t => !t.asset.endsWith('*') && !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < dustFloor(lot.asset)))
+  // Payments under 1% of the traced amount aren't followed
+  const floor = lot.amount * 0.01
+  const txs = real.filter(t => !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < floor))
   // Pooling: other funds of the same asset that arrived after the traced funds and
   // before a given outflow share that outflow (a balance already sitting there isn't
-  // visible from loaded history, so this can only overstate the traced share)
-  const otherIn = txs.filter(t => t.asset === lot.asset && t.outputs[0]?.address === lot.address && t.inputs[0]?.address !== lot.address && t.txid !== lot.via && t.timestamp >= lot.time)
+  // visible from loaded history, so this can only overstate the traced share). Many
+  // small deposits still add up, so they count here even though they aren't followed.
+  const otherIn = real.filter(t => t.asset === lot.asset && t.outputs[0]?.address === lot.address && t.inputs[0]?.address !== lot.address && t.txid !== lot.via && t.timestamp >= lot.time)
   const shareAt = (time: number) => {
     const other = otherIn.filter(t => t.timestamp <= time).reduce((s, t) => s + (t.outputs[0]?.amount ?? 0), 0)
     return lot.amount / (lot.amount + other)

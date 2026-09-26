@@ -50,8 +50,9 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
   const { address, busy, signIn, signOut } = useAuth()
   if (address === undefined) return null
   if (!address) {
+    // In the trace header, stay on the open trace rather than leaving it for the cases list
     return (
-      <button onClick={() => signIn('/cases')} disabled={busy}
+      <button onClick={() => signIn(compact ? undefined : '/cases')} disabled={busy}
         className="flex items-center gap-1.5 h-8 px-3 text-xs font-medium border border-line hover:border-accent text-fg disabled:opacity-50 whitespace-nowrap">
         <Wallet size={13} /> {busy ? 'Signing in…' : 'Sign in'}
       </button>
