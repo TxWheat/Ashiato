@@ -24,7 +24,7 @@ Free, open-source blockchain forensics for scam victims and independent investig
 | **Client payments** | Paste the tx hashes, wallet addresses, amounts and dates a client gives you: each is checked on-chain (verified / details differ / several matches / not found) and all of them are traced together; the report includes the comparison |
 | **Your own labels** | Name any address and set its category; your label overrides every other source wherever the address appears |
 
-Every heuristic is documented, with its limits, at `/methodology`.
+How to use every feature, and every heuristic with its limits, is documented at `/docs`.
 
 ## Getting started
 

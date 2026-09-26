@@ -9,7 +9,7 @@ import { SettingsButton } from './Settings'
 
 const PAGES = [
   { href: '/cases', label: 'Cases' },
-  { href: '/methodology', label: 'Methodology' },
+  { href: '/docs', label: 'Docs' },
   { href: '/pricing', label: 'Pricing' },
 ]
 

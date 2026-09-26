@@ -69,7 +69,7 @@ export default function Home() {
             <SearchForm />
             <p className="text-xs text-faint">
               Paste a Bitcoin, Ethereum or Tron address or transaction hash. You&apos;ll name the case and sign in, and it&apos;s saved to your account from the start.{' '}
-              <Link href="/methodology" className="underline underline-offset-2 hover:text-fg">How it works</Link>
+              <Link href="/docs" className="underline underline-offset-2 hover:text-fg">How it works</Link>
             </p>
             <SignInPanel />
           </div>
