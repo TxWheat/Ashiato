@@ -78,6 +78,12 @@ const AUTO_FULL_HISTORY_BTC = 500
 /** Participants of a searched transaction put on the graph straight away (per side) */
 const TX_PARTICIPANTS = 6
 
+/** A URL reduced to what decides which trace/case is shown */
+function urlKey(url: string): string {
+  const q = new URLSearchParams(url.split('?')[1] ?? '')
+  return [q.get('address') ?? '', (q.get('tx') ?? '').toLowerCase(), q.get('chain') ?? '', q.get('case') ?? ''].join('|')
+}
+
 function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
@@ -185,7 +191,7 @@ function TracePageInner() {
   const [follow, setFollow] = useState<FollowSettings>({ hops: 10, branches: 3, adaptive: true, minSharePct: 35 })
   const [traceStatus, setTraceStatus] = useState<string | null>(null)
   const traceCancel = useRef(false)
-  const restoring = useRef(false)
+  const restoring = useRef<string | null>(null)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
   // Right panel width: drag to resize, or expand for a wide table view (remembered)
@@ -322,6 +328,7 @@ function TracePageInner() {
 
   const resetState = () => {
     positionsRef.current.clear()
+    savedOrigin.current = null
     setSaved(null)
     setDirty(false)
     setLastSavedAt(null)
@@ -368,7 +375,7 @@ function TracePageInner() {
         } catch (e) {
           if (originChain !== 'btc') throw e
           l = await fetchTxLookup(originTx, 'tron').catch(() => { throw e })
-          restoring.current = true
+          restoring.current = urlKey(`/trace?tx=${originTx}&chain=tron`)
           router.replace(`/trace?tx=${originTx}&chain=tron`)
         }
         absorbTx(l)
@@ -392,10 +399,10 @@ function TracePageInner() {
 
   const caseParam = params.get('case')
   useEffect(() => {
-    if (restoring.current) {
-      restoring.current = false
-      return
-    }
+    // Skip only the exact URL we just wrote ourselves (a save or a restore), never a new search
+    const skip = restoring.current
+    restoring.current = null
+    if (skip && skip === urlKey(`/trace?${params.toString()}`)) return
     if (caseParam) {
       if (saved?.id === caseParam) return // already open (just saved, or the URL was tidied)
       getSavedChart(caseParam)
@@ -691,7 +698,7 @@ function TracePageInner() {
     // Started without an address: the first recipient becomes the case's anchor
     if (!originKey) {
       const first = seed.lots[0]
-      restoring.current = true
+      restoring.current = urlKey(`/trace?address=${encodeURIComponent(first.address)}&chain=${first.chain}`)
       router.replace(`/trace?address=${encodeURIComponent(first.address)}&chain=${first.chain}`)
     }
     runFollow('forward', seed)
@@ -715,7 +722,11 @@ function TracePageInner() {
     try {
       const res = await followFunds(
         seed.lots,
-        { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive, minShare: follow.minSharePct / 100 },
+        {
+          direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive, minShare: follow.minSharePct / 100,
+          // A cross-chain swap ends the trail here; the link's Bridgers box shows where it went
+          stopWhen: l => BRIDGE_NAME.test(l.name),
+        },
         // Your own labels count too: a wallet you marked as an exchange ends the trail there
         { addressTxs, btcTx, labelOf: a => mine(a) ?? knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
         (msg, partial) => {
@@ -843,12 +854,11 @@ function TracePageInner() {
     }
   }, [collapsed, graphNodes, graphEdges, graphTraced])
   const drawnNodes = drawn?.nodes ?? graphNodes
-  // The layout is only re-tidied when asked (Tidy layout): collapsing chains, removing or
-  // adding nodes keeps everything where it is, and the zoom where the user left it
-  const [tidyRev, setTidyRev] = useState(0)
+  // The layout is never re-done wholesale: collapsing chains, removing or adding nodes keeps
+  // everything where it is (collapsed chains pull their end in), and the zoom where the user left it
   /** Bumped when a view toggle (collapse / expand) adds or hides nodes, so the zoom stays put */
   const [quietRev, setQuietRev] = useState(0)
-  const layoutKey = String(tidyRev)
+  const layoutKey = 'fixed'
   const hideLink = (a: string, b: string) => {
     setHiddenLinks(prev => new Set(prev).add(pairKey(a, b)))
     setSelection(null)
@@ -967,8 +977,12 @@ function TracePageInner() {
     (c.originKind === 'tx' ? `/trace?tx=${c.origin.address}&chain=${c.origin.chain}` : `/trace?address=${encodeURIComponent(c.origin.address)}&chain=${c.origin.chain}`) +
     (id ? `&case=${encodeURIComponent(id)}` : '')
 
+  /** The origin of the open saved case, so auto-save can't write another trace into it */
+  const savedOrigin = useRef<string | null>(null)
+
   const applyCase = (c: CaseFile, from?: { id: string; name: string }) => {
     skipChange.current = true
+    savedOrigin.current = from ? c.origin.address : null
     setSaved(from ?? null)
     setLastSavedAt(from ? Date.parse(c.savedAt) : null)
     setDirty(false)
@@ -998,7 +1012,7 @@ function TracePageInner() {
     // Keep the case in the URL so a refresh or bookmark reopens (and keeps saving) the same case
     const url = caseUrl(c, from?.id)
     if (c.origin.address !== originKey || (params.get('case') ?? undefined) !== from?.id) {
-      restoring.current = true
+      restoring.current = urlKey(url)
       router.replace(url)
     }
   }
@@ -1020,6 +1034,8 @@ function TracePageInner() {
   const saveChart = async (name: string, opts: { asNew?: boolean; quiet?: boolean } = {}) => {
     const c = buildCase()
     if (!c) return
+    // Safety net: auto-save never writes a different trace over an open case
+    if (opts.quiet && saved && savedOrigin.current && savedOrigin.current !== c.origin.address) return
     const isNew = opts.asNew || !saved
     const id = isNew ? newCaseId() : saved!.id
     const counterAtSave = changeCount.current
@@ -1027,10 +1043,11 @@ function TracePageInner() {
     try {
       await saveChartToBrowser(id, name, c)
       setSaved({ id, name })
+      savedOrigin.current = c.origin.address
       setLastSavedAt(Date.now())
       if (changeCount.current === counterAtSave) setDirty(false)
       if (isNew || params.get('case') !== id) {
-        restoring.current = true
+        restoring.current = urlKey(caseUrl(c, id))
         router.replace(caseUrl(c, id))
       }
       if (!opts.quiet) flash(isNew ? `Case “${name}” created. It now saves automatically${autosave ? '' : ' when you press Save'}.` : `Saved “${name}”`)
@@ -1289,7 +1306,12 @@ function TracePageInner() {
           <span className="text-[10px] uppercase tracking-wider text-faint flex-shrink-0">{originTx ? 'tx' : originChain}</span>
           <span className="text-xs text-fg truncate font-mono">{originNode?.label?.name ?? originNode?.ens ?? truncate(originKey, 8)}</span>
         </button>
-        <div className="flex-1 flex justify-center min-w-0 px-2"><SearchForm compact /></div>
+        <div className="flex-1 flex justify-center min-w-0 px-2">
+          <SearchForm compact onAddAddress={originChain ? a => {
+            openAddress(a)
+            flash(`Added ${truncate(a, 6)} to this case`)
+          } : undefined} />
+        </div>
         <div className="flex items-center gap-2.5 text-xs text-faint flex-shrink-0">
           {traceStatus && (
             <span className="flex items-center gap-2 text-accent">
@@ -1297,12 +1319,6 @@ function TracePageInner() {
               <span className="hidden 2xl:inline">{traceStatus}</span>
               <button onClick={() => (traceCancel.current = true)} className="text-faint hover:text-fg" aria-label="Stop trace"><X size={12} /></button>
             </span>
-          )}
-          {drawnNodes.length > 2 && (
-            <button onClick={() => setTidyRev(v => v + 1)} title="Re-arrange the whole graph neatly and fit it to the screen"
-              className="h-7 px-2.5 border border-line text-[11px] font-medium text-muted hover:text-fg whitespace-nowrap">
-              Tidy layout
-            </button>
           )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
             <button

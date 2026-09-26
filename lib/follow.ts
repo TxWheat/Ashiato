@@ -78,6 +78,8 @@ export interface FollowOptions {
   maxBranches: number
   /** Trail ends at these entity types */
   stopAt: EntityType[]
+  /** Trail also ends at labels this accepts (e.g. cross-chain swap services, by name) */
+  stopWhen?: (label: EntityLabel) => boolean
   /** Ignore branches smaller than this fraction of the starting amount */
   minFraction?: number
   /**
@@ -137,7 +139,7 @@ export async function followFunds(
 
   const stopFor = (l: Lot): boolean => {
     const label = deps.labelOf(l.address)
-    if (label && opts.stopAt.includes(label.type) && l.hop > 0) {
+    if (label && (opts.stopAt.includes(label.type) || opts.stopWhen?.(label)) && l.hop > 0) {
       ends.push({ address: l.address, amount: l.amount, asset: l.asset, reason: 'entity', detail: `Reached ${label.name} (${label.type})` })
       return true
     }
@@ -334,13 +336,32 @@ async function btcBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[]) {
 
 // ── ETH (account model) ────────────────────────────────────────────────────
 
+const STABLES = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'FDUSD', 'TUSD', 'USDE', 'PYUSD'])
+/** Smallest amount worth anything: dust and poisoning spam sit below it */
+function dustFloor(asset: string) {
+  return asset === 'ETH' || asset === 'WETH' ? 0.0005 : STABLES.has(asset) ? 1 : 0
+}
+/** Loaded transactions at which an unlabelled address is treated as a service hub */
+const BUSY_HUB = 1000
+/** Adaptive tracing follows outflows of at least this share of the traced amount */
+const SIGNIFICANT = 0.05
+
 /** Same amount within ~3% (or the gas tolerance), for spotting pass-throughs */
 function sameAmount(a: number, b: number, asset: string) {
   return Math.abs(a - b) <= Math.max(a * 0.03, tolerance(a, asset))
 }
 
 async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive = true, minShare = 0) {
-  const txs = await deps.addressTxs(lot.address, lot.time)
+  const all = await deps.addressTxs(lot.address, lot.time)
+  // A wallet with this much traffic is a service (router, payment processor, unlabelled
+  // exchange), not one person's: following its outflows would trace strangers' money
+  if (adaptive && lot.hop > 0 && all.length >= BUSY_HUB) {
+    ends.push({ address: lot.address, amount: lot.amount, asset: lot.asset, reason: 'entity', detail: `Busy address (${all.length.toLocaleString('en-US')}+ transactions): almost certainly a service or exchange wallet, so the trail stops here` })
+    return []
+  }
+  // Dust and spam (poisoning 0.000000001 ETH, fake tokens) never count, in or out
+  const floor = Math.max(dustFloor(lot.asset), lot.amount * 0.01)
+  const txs = all.filter(t => !t.asset.endsWith('*') && !(t.asset === lot.asset && (t.outputs[0]?.amount ?? 0) < floor))
   // Pooling: other funds of the same asset that arrived after the traced funds and
   // before a given outflow share that outflow (a balance already sitting there isn't
   // visible from loaded history, so this can only overstate the traced share)
@@ -410,11 +431,22 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
     }]
   }
 
-  if (outs.length && diluted(outs[0].timestamp)) return []
+  // Adaptive: follow the moves that matter. Small payments leaving the wallet (each under 5% of
+  // the traced amount) are summed into one side note instead of each becoming a branch.
+  const significant = adaptive ? outs.filter(t => t.outputs[0].amount >= lot.amount * SIGNIFICANT) : outs
+  if (adaptive && significant.length < outs.length) {
+    const minor = outs.filter(t => t.outputs[0].amount < lot.amount * SIGNIFICANT)
+    const total = minor.reduce((sum, t) => sum + t.outputs[0].amount, 0)
+    ends.push({
+      address: lot.address, amount: Math.min(total, lot.amount), asset: lot.asset, reason: 'split',
+      detail: `${minor.length} small outflow${minor.length === 1 ? '' : 's'} (each under ${pct(SIGNIFICANT)} of the traced ${fmt(lot.amount, lot.asset)}) totalling ${fmt(total, lot.asset)}, not followed`,
+    })
+  }
+  if (significant.length && diluted(significant[0].timestamp)) return []
   let remaining = lot.amount
   const tol = tolerance(lot.amount, lot.asset)
   const alloc = new Map<string, { amount: number; tx: RawTransaction; covered: number }>()
-  for (const t of outs) {
+  for (const t of significant) {
     if (remaining <= tol) break
     const take = Math.min(remaining, t.outputs[0].amount)
     const to = t.outputs[0].address

@@ -234,3 +234,35 @@ describe('ETH swaps (DEX, UniswapX, 1inch)', () => {
     expect(r.flows.map(f => f.to)).toEqual(['0xnext'])
   })
 })
+
+describe('adaptive trail: noise and hubs', () => {
+  it('ignores dust/poisoning spam and small payments; follows the big move', async () => {
+    const seed = ethTx('0xvictim', '0xw', 6.14, 100)
+    const txs = [
+      seed,
+      ...Array.from({ length: 8 }, (_, i) => ethTx(`0xspam${i}`, '0xw', 0.000000001, 110 + i)),   // poisoning dust in
+      ...Array.from({ length: 5 }, (_, i) => ethTx('0xw', `0xlook${i}`, 0.000000001, 120 + i)),    // dust out
+      ethTx('0xw', '0xgas', 0.1, 130),                                                           // small payment (1.6%)
+      ethTx('0xw', '0xbig', 4.5, 200),                                                           // the real move
+    ]
+    const r = await followFunds(seedsFromTx(seed, '0xvictim').lots, opts, ethDeps(txs))
+    expect(r.flows.map(f => f.to)).toEqual(['0xbig'])
+    const note = r.ends.find(e => e.reason === 'split')
+    expect(note?.detail).toMatch(/1 small outflow .*0\.1 ETH/)
+  })
+
+  it('stops at busy hubs and at names the caller marks (cross-chain services)', async () => {
+    const seed = ethTx('0xvictim', '0xw', 1, 100)
+    const hubTraffic = Array.from({ length: 1000 }, (_, i) => ethTx(`0xu${i}`, '0xhub', 0.5, 150 + i))
+    const txs = [seed, ethTx('0xw', '0xhub', 1, 120), ...hubTraffic, ethTx('0xhub', '0xstranger', 50, 2000)]
+    const r = await followFunds(seedsFromTx(seed, '0xvictim').lots, opts, ethDeps(txs))
+    expect(r.flows.find(f => f.to === '0xstranger')).toBeUndefined()
+    expect(r.ends.find(e => e.address === '0xhub')?.detail).toMatch(/Busy address/)
+
+    const txs2 = [seed, ethTx('0xw', '0xbridge', 1, 120), ethTx('0xbridge', '0xelse', 1, 130)]
+    const r2 = await followFunds(seedsFromTx(seed, '0xvictim').lots, { ...opts, stopWhen: l => /bridgers/i.test(l.name) },
+      ethDeps(txs2, { '0xbridge': { name: 'Bridgers (verified contract)', type: 'service' } }))
+    expect(r2.flows.map(f => f.to)).toEqual(['0xbridge'])
+    expect(r2.ends.find(e => e.address === '0xbridge')?.reason).toBe('entity')
+  })
+})
