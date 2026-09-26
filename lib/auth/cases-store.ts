@@ -2,7 +2,7 @@ import 'server-only'
 
 import { eq, StoreNotConfigured, supabase } from '../supabase'
 
-// Saved cases in Supabase; every query is filtered by the signed-in owner. Table: supabase/cases.sql
+// Saved cases in Supabase; every query is filtered by the signed-in owner. Table: cases
 
 export { StoreNotConfigured }
 
