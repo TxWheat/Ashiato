@@ -24,8 +24,10 @@ async function post(body: unknown): Promise<unknown> {
 /**
  * Batched calls. Public nodes sometimes reject a batch or error on single
  * items (rate limits, batch size caps), so failed items are retried one by one.
+ * A call that still fails comes back undefined; with `strict`, a node that can't be reached
+ * (network error, HTTP error) throws instead, so it isn't mistaken for "no such transaction".
  */
-export async function rpcBatch<T = unknown>(calls: RpcCall[]): Promise<(T | undefined)[]> {
+export async function rpcBatch<T = unknown>(calls: RpcCall[], strict = false): Promise<(T | undefined)[]> {
   if (!calls.length) return []
   const out: (T | undefined)[] = new Array(calls.length)
   const failed = new Set(calls.map((_, i) => i))
@@ -44,7 +46,8 @@ export async function rpcBatch<T = unknown>(calls: RpcCall[]): Promise<(T | unde
     try {
       const r = (await post({ jsonrpc: '2.0', id: i, method: calls[i].method, params: calls[i].params })) as { result?: T }
       out[i] = r?.result
-    } catch {
+    } catch (e) {
+      if (strict) throw new Error(`Could not reach the Ethereum node (${e instanceof Error ? e.message : 'network error'}). Try again shortly.`)
       out[i] = undefined
     }
   }

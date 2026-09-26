@@ -33,9 +33,14 @@ describe('likely-change outputs stay visible', () => {
     expect(lots.map(l => [l.address, l.amount])).toEqual([[CHANGE, 15], [PAY, 2]])
     expect(flows[0].reason).toMatch(/likely change/)
   })
-  it('adaptive tracing follows the peel-chain remainder (the change) and lists the payment', () => {
-    const { lots, ends } = seedsFromTx(tx, ME)
-    expect(lots.map(l => l.address)).toEqual([CHANGE])
-    expect(ends).toMatchObject([{ address: PAY, reason: 'peel' }])
+  it('adaptive tracing follows the payment when the remainder is change (a normal payment, not a peel)', () => {
+    const { lots, ends, flows } = seedsFromTx(tx, ME)
+    expect(lots.map(l => l.address).sort()).toEqual([CHANGE, PAY].sort())
+    expect(ends).toEqual([])
+    expect(flows.find(f => f.to === PAY)?.reason).toMatch(/payment/)
+  })
+  it('traces the payment when the change goes back to the sender', () => {
+    const back: RawTransaction = { ...tx, outputs: [{ address: ME, amount: 15, index: 0 }, { address: PAY, amount: 2, index: 1 }] }
+    expect(seedsFromTx(back, ME).lots.map(l => l.address)).toEqual([PAY])
   })
 })

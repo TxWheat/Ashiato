@@ -89,10 +89,16 @@ function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
+class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+  }
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+  if (!res.ok) throw new HttpError(body.error ?? `HTTP ${res.status}`, res.status)
   return body as T
 }
 
@@ -290,7 +296,8 @@ function TracePageInner() {
         next.set(n.address, {
           ...(ex ?? n),
           balance: n.balance,
-          txCount: n.txCount,
+          // A later page only counts its own transactions
+          txCount: append && ex ? Math.max(ex.txCount, n.txCount) : n.txCount,
           risk: n.risk,
           findings: n.findings,
           ens: n.ens ?? ex?.ens,
@@ -708,13 +715,20 @@ function TracePageInner() {
           // A bare 64-hex hash is Bitcoin (Tron hashes look the same; tried next)
           const chains: Chain[] = c.chain ? [c.chain] : ['btc', 'tron']
           let found: PaymentMatch[] | null = null
+          // Not found (404) or not that chain's format (400) means try the next chain;
+          // anything else (node down, rate limit) means we couldn't check, not "not found"
+          let failure: Error | null = null
           for (const ch of chains) {
             try {
               found = transfersOf((await fetchTxLookup(c.txid, ch)).transfers)
               break
-            } catch { /* try the next chain */ }
+            } catch (e) {
+              if (!(e instanceof HttpError && (e.status === 404 || e.status === 400))) failure = e instanceof Error ? e : new Error('Could not check')
+            }
           }
-          result = found ? judgePayment(c, found, id) : { id, claim: c, status: 'not-found', notes: ['Transaction not found'] }
+          result = found ? judgePayment(c, found, id)
+            : failure ? { id, claim: c, status: 'error', notes: [failure.message] }
+              : { id, claim: c, status: 'not-found', notes: ['Transaction not found'] }
         } else {
           const chain = detectChain(c.address!)!
           // With a date, page back far enough to cover it; without one, the latest history

@@ -560,7 +560,10 @@ export function seedsFromTx(tx: RawTransaction, from: string, to?: string, adapt
   const ends: TraceEnd[] = []
   // Tracing the whole transaction: apply the same shape rules as later hops
   const plan = adaptive && !to && tx.chain === 'btc' ? planBtcSpend(tx) : null
-  const skip = new Set(plan?.side.map(i => tx.outputs[i].address) ?? [])
+  // A "peel" whose remainder is the sender's own change is an ordinary payment: the small
+  // output is the payment itself, so it is followed rather than set aside
+  const payment = plan?.shape === 'peel' && plan.follow.every(i => tx.outputs[i].address === from || tx.outputs[i].isChange)
+  const skip = new Set(payment ? [] : plan?.side.map(i => tx.outputs[i].address) ?? [])
   const totalIn = tx.inputs.reduce((s, i) => s + i.amount, 0)
   const mine = tx.inputs.filter(i => i.address === from).reduce((s, i) => s + i.amount, 0)
   const share = tx.chain === 'btc' && totalIn > 0 && mine > 0 ? mine / totalIn : 1
@@ -574,7 +577,7 @@ export function seedsFromTx(tx: RawTransaction, from: string, to?: string, adapt
     }
     const amount = o.amount * share
     lots.push({ chain: tx.chain, address: o.address, asset: tx.asset, amount, time: tx.timestamp, via: tx.txid, vout: o.index, hop: 1 })
-    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: `Starting transaction${plan ? ` (${plan.note})` : ''}${o.isChange ? ' (likely change, same owner)' : ''}` })
+    flows.push({ from, to: o.address, amount, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: `Starting transaction${payment ? ' (payment; the rest was the sender\'s change)' : plan ? ` (${plan.note})` : ''}${o.isChange ? ' (likely change, same owner)' : ''}` })
   }
   return { lots, flows, ends }
 }

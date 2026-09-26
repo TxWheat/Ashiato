@@ -50,7 +50,7 @@ export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
   const [tx, rpcReceipt] = await rpcBatch<RpcTx & RpcReceipt>([
     { method: 'eth_getTransactionByHash', params: [txid] },
     { method: 'eth_getTransactionReceipt', params: [txid] },
-  ]) as [RpcTx | undefined, RpcReceipt | undefined]
+  ], true) as [RpcTx | undefined, RpcReceipt | undefined]
   if (!tx) throw new Error('Transaction not found on Ethereum mainnet')
 
   // Token transfers live in the receipt logs; without it they would silently vanish
