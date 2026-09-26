@@ -37,7 +37,7 @@ const STATUS_TEXT: Record<string, string> = {
   wait_deposit_send: 'Waiting for deposit', wait_exchange_push: 'Swapping', wait_receive_send: 'Paying out',
   refund_complete: 'Refunded', wait_refund_send: 'Refunding', timeout: 'Timed out', fail: 'Failed', error: 'Failed',
   // Across / Relay / deBridge
-  filled: 'Completed', pending: 'Pending', expired: 'Expired', refunded: 'Refunded', refund: 'Refunded', failure: 'Failed', waiting: 'Waiting',
+  filled: 'Completed', unfilled: 'Not filled yet', slowfillrequested: 'Being filled (slow)', pending: 'Pending', expired: 'Expired', refunded: 'Refunded', refund: 'Refunded', failure: 'Failed', waiting: 'Waiting',
   fulfilled: 'Completed', sentunlock: 'Completed', claimedunlock: 'Completed', ordercancelled: 'Cancelled', claimedordercancel: 'Cancelled', created: 'Waiting',
 }
 export const statusText = (s: string) => STATUS_TEXT[s.toLowerCase()] ?? s.replace(/_/g, ' ')
@@ -67,7 +67,7 @@ export const toOurChain = (name: string): Chain | undefined => CHAIN_ALIASES[nam
 const CHAIN_DISPLAY: Record<string, string> = {
   ETH: 'Ethereum', TRX: 'Tron', TRON: 'Tron', BTC: 'Bitcoin', BSC: 'BNB Chain', POLYGON: 'Polygon', MATIC: 'Polygon',
   ARBITRUM: 'Arbitrum', ARB: 'Arbitrum', OPTIMISM: 'Optimism', OP: 'Optimism', BASE: 'Base', AVAX: 'Avalanche', SOL: 'Solana', SOLANA: 'Solana',
-  ZKSYNC: 'zkSync Era', LINEA: 'Linea', SCROLL: 'Scroll', BLAST: 'Blast', GNOSIS: 'Gnosis', MANTLE: 'Mantle', UNICHAIN: 'Unichain', ZORA: 'Zora', MODE: 'Mode', WORLD: 'World Chain', HYPEREVM: 'HyperEVM', PLASMA: 'Plasma', FANTOM: 'Fantom',
+  ZKSYNC: 'zkSync Era', LINEA: 'Linea', SCROLL: 'Scroll', BLAST: 'Blast', GNOSIS: 'Gnosis', MANTLE: 'Mantle', UNICHAIN: 'Unichain', ZORA: 'Zora', MODE: 'Mode', WORLD: 'World Chain', HYPEREVM: 'HyperEVM', ROBINHOOD: 'Robinhood Chain', PLASMA: 'Plasma', FANTOM: 'Fantom',
 }
 export const chainDisplay = (name: string) => CHAIN_DISPLAY[name.trim().toUpperCase()] ?? name
 

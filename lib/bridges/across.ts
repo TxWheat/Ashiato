@@ -1,7 +1,7 @@
 import 'server-only'
 import { fetchJson } from '../http'
 import { CrossChainHop, toOurChain } from './types'
-import { chainName, list, Raw, str, units } from './util'
+import { chainName, checksum, list, Raw, str, units } from './util'
 
 // Across (across.to) deposits: a deposit on one chain is filled by a relayer on another.
 //   GET https://app.across.to/api/deposits?depositor=0x…&limit=100
@@ -65,7 +65,7 @@ export function hopFromAcross(d: Raw): CrossChainHop | null {
 
 /** Deposits a wallet made through Across, newest first */
 export async function acrossDeposits(depositor: string): Promise<CrossChainHop[]> {
-  const res = await fetchJson<unknown>(`${BASE}/deposits?depositor=${encodeURIComponent(depositor)}&limit=100`, 120, 2)
+  const res = await fetchJson<unknown>(`${BASE}/deposits?depositor=${encodeURIComponent(checksum(depositor))}&limit=100`, 120, 2)
   const rows = Array.isArray(res) ? list(res) : list((res as Raw)?.deposits)
   return rows.map(hopFromAcross).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
 }

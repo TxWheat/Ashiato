@@ -1,4 +1,5 @@
 // Shared by the bridge API clients: tolerant field readers and chain ids
+import { getAddress } from 'viem'
 
 export type Raw = Record<string, unknown>
 
@@ -29,9 +30,14 @@ export function units(raw: string, decimals: number): number {
 /** EVM chain ids (and the ids bridges use for other chains) → the short names hops use */
 const CHAIN_BY_ID: Record<string, string> = {
   1: 'ETH', 10: 'OPTIMISM', 56: 'BSC', 100: 'GNOSIS', 130: 'UNICHAIN', 137: 'POLYGON', 250: 'FANTOM', 324: 'ZKSYNC',
-  480: 'WORLD', 999: 'HYPEREVM', 5000: 'MANTLE', 8453: 'BASE', 9745: 'PLASMA', 34443: 'MODE', 42161: 'ARBITRUM',
+  480: 'WORLD', 999: 'HYPEREVM', 4663: 'ROBINHOOD', 5000: 'MANTLE', 8453: 'BASE', 9745: 'PLASMA', 34443: 'MODE', 42161: 'ARBITRUM',
   43114: 'AVAX', 59144: 'LINEA', 81457: 'BLAST', 534352: 'SCROLL', 7777777: 'ZORA',
   // Non-EVM chains, as Across / Relay / deBridge number them
   728126428: 'TRON', 34268394551451: 'SOLANA', 792703809: 'SOLANA', 7565164: 'SOLANA', 8253038: 'BTC', 100000026: 'TRON',
 }
+/** EVM addresses in checksum case (as the bridges' own sites send them); anything else as given */
+export const checksum = (a: string) => {
+  try { return getAddress(a) } catch { return a }
+}
+
 export const chainName = (id: unknown) => CHAIN_BY_ID[str(id)] ?? (str(id) ? `Chain ${str(id)}` : '?')

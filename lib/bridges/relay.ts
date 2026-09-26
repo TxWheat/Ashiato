@@ -1,10 +1,10 @@
 import 'server-only'
 import { fetchJson } from '../http'
 import { CrossChainHop, toOurChain } from './types'
-import { chainName, list, num, obj, Raw, str } from './util'
+import { chainName, checksum, list, num, obj, Raw, str } from './util'
 
 // Relay (relay.link) requests: a solver pays out on the destination chain.
-//   GET https://api.relay.link/requests/v3?user=0x…&limit=50
+//   GET https://api.relay.link/requests/v3?user=0x…&limit=50   (header x-api-key: RELAY_API_KEY)
 // Each request has inTxs (money in), outTxs (money out), the recipient, and the route
 // with both currencies and formatted amounts.
 
@@ -44,8 +44,10 @@ export function hopFromRelay(r: Raw): CrossChainHop | null {
   }
 }
 
-/** Cross-chain requests a wallet made through Relay, newest first */
+/** Cross-chain requests a wallet made through Relay, newest first. Relay's API needs a key (x-api-key) */
 export async function relayRequests(user: string): Promise<CrossChainHop[]> {
-  const res = await fetchJson<Raw>(`${BASE}/requests/v3?user=${encodeURIComponent(user)}&limit=50`, 120, 2)
+  const key = process.env.RELAY_API_KEY
+  if (!key) throw new Error('Relay lookups need an API key on this server (RELAY_API_KEY, free from relay.link)')
+  const res = await fetchJson<Raw>(`${BASE}/requests/v3?user=${encodeURIComponent(checksum(user))}&limit=50`, 120, 2, undefined, { headers: { 'x-api-key': key } })
   return list(res?.requests).map(hopFromRelay).filter((h): h is CrossChainHop => !!h).sort((a, b) => (b.createdText ?? '').localeCompare(a.createdText ?? ''))
 }
