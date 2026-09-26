@@ -186,7 +186,11 @@ function TracePageInner() {
 
   const [selection, setSelection] = useState<Selection>(null)
   const [tab, setTab] = useState<AddressTab>('transactions')
-  const [caseCollapsed, setCaseCollapsed] = useState(false)
+  // The left case panel starts hidden so the graph gets the room; your choice is remembered
+  const [caseCollapsed, setCaseCollapsed] = useState(true)
+  useEffect(() => {
+    try { if (localStorage.getItem('ashiato.caseOpen') === '1') setCaseCollapsed(false) } catch { /* storage blocked */ }
+  }, [])
 
   const [taint, setTaint] = useState<TaintCfg | null>(null)
   const [follow, setFollow] = useState<FollowSettings>({ hops: 10, branches: 3, adaptive: true, minSharePct: 35 })
@@ -1470,7 +1474,10 @@ function TracePageInner() {
             payments={payments}
             onOpenPayments={() => setPaymentsOpen(true)}
             collapsed={caseCollapsed}
-            onToggle={() => setCaseCollapsed(c => !c)}
+            onToggle={() => setCaseCollapsed(c => {
+              try { localStorage.setItem('ashiato.caseOpen', c ? '1' : '0') } catch { /* storage blocked */ }
+              return !c
+            })}
             legendTypes={legendTypes}
             follow={follow}
             onFollow={setFollow}

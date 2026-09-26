@@ -81,7 +81,7 @@ export default function CasePanel(p: CasePanelProps) {
   return (
     p.collapsed ? (
       <aside className="w-10 flex-shrink-0 border-r border-line bg-bg hidden md:flex flex-col items-center pt-3">
-        <button onClick={p.onToggle} title="Show case panel" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
+        <button onClick={p.onToggle} title="Show case panel: trace settings, where the money ended up, client payments, taint, legend" className="text-faint hover:text-fg p-1.5"><PanelLeftOpen size={16} /></button>
         {p.traced.length > 0 && <span className="mt-2 w-2 h-2 rounded-full bg-accent" title="Trace results" />}
       </aside>
     ) : (
