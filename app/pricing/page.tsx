@@ -155,6 +155,20 @@ function Plan({ title, price, note, items, highlight, children }: {
   )
 }
 
+/**
+ * The useful part of a wallet error. viem wraps the wallet's own reason ("unknown error
+ * occurred while executing…"), so look through the causes for the specific one.
+ */
+function walletError(e: unknown): string {
+  const parts: string[] = []
+  for (let c: unknown = e, i = 0; c && i < 6; c = (c as { cause?: unknown }).cause, i++) {
+    const x = c as { shortMessage?: string; details?: string; message?: string }
+    for (const t of [x.details, x.shortMessage, x.message?.split('\n')[0]]) if (t && !parts.includes(t)) parts.push(t)
+  }
+  const specific = parts.filter(p => !/unknown error|an error occurred/i.test(p))
+  return (specific[0] ?? parts[0] ?? 'Payment failed').slice(0, 300)
+}
+
 /** Pays with the connected wallet, then asks the server to credit it */
 function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; account: string; networks: PayChain[]; onPaid: () => void }) {
   const [plan, setPlan] = useState(0)
@@ -213,7 +227,8 @@ function PayWithUsdc({ payTo, account, networks, onPaid }: { payTo: string; acco
       await waitForTransactionReceipt(config, { hash: tx, chainId: net.id })
       await claim(chain, tx)
     } catch (e) {
-      const msg = e instanceof Error ? e.message.split('\n')[0] : 'Payment failed'
+      console.error('Payment failed', e)
+      const msg = walletError(e)
       setStatus({ text: /reject|denied|cancel/i.test(msg) ? 'Cancelled in your wallet' : /exceeds balance|insufficient/i.test(msg) ? `Not enough USDC (or ${net.name} ETH for the fee) in this wallet` : msg, error: true })
     } finally {
       setWorking(false)
