@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { Chain, EntityLabel, EntityType } from './types'
+import { isEvm } from './evm'
 import { normaliseAddress } from './detect-chain'
 import { scamSnifferLabel } from './scam-lists'
 
@@ -11,7 +12,8 @@ interface Source { title: string; url: string; license: string }
 
 const DIR = path.join(process.cwd(), 'data', 'labels')
 
-let cache: Record<Chain, Map<string, EntityLabel>> | null = null
+type Dataset = 'btc' | 'eth' | 'tron'
+let cache: Record<Dataset, Map<string, EntityLabel>> | null = null
 
 function load() {
   if (cache) return cache
@@ -81,13 +83,25 @@ const SPECIAL_TRON: Record<string, EntityLabel> = {
   T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb: { name: 'Tron black-hole address (burn)', type: 'service', source: 'Tron convention' },
 }
 
+/**
+ * The label datasets cover Bitcoin, Ethereum and Tron. The other Ethereum-style networks
+ * use the Ethereum list: exchanges and most wallets keep one address on every network,
+ * and the label says where it came from.
+ */
+function fromDataset(addr: string, chain: Chain): EntityLabel | undefined {
+  if (!isEvm(chain)) return load()[chain as Dataset].get(addr)
+  const hit = load().eth.get(addr)
+  return hit && chain !== 'eth' ? { ...hit, source: `${hit.source ?? 'Label list'} (Ethereum address list)` } : hit
+}
+
 export function getLabel(address: string, chain: Chain): EntityLabel | undefined {
   const addr = normaliseAddress(address, chain)
-  if (chain === 'eth' && SPECIAL[addr]) return SPECIAL[addr]
+  const evm = isEvm(chain)
+  if (evm && SPECIAL[addr]) return SPECIAL[addr]
   if (chain === 'tron' && SPECIAL_TRON[addr]) return SPECIAL_TRON[addr]
-  const hit = load()[chain].get(addr)
+  const hit = fromDataset(addr, chain)
   if (hit && !WEAK.includes(hit.type)) return hit
-  const extra = loadExtras().get(`${chain}|${addr}`) ?? (chain === 'eth' ? scamSnifferLabel(addr) : undefined)
+  const extra = loadExtras().get(`${chain}|${addr}`) ?? (evm ? scamSnifferLabel(addr) : undefined)
   if (extra) return extra
   if (hit) return hit
   // BitMEX gives every customer a vanity deposit address starting with 3BMEX

@@ -1,5 +1,6 @@
 import { Chain, EntityLabel, RawTransaction } from '../types'
 import { MAJOR_ASSETS } from '../format'
+import { isEvm } from '../evm'
 
 // Turns a watched address's transactions into alerts: each new transfer in or out, the
 // amount, who was on the other side, and whether it reached an exchange.
@@ -19,7 +20,7 @@ export interface AlertEvent {
 const URGENT: EntityLabel['type'][] = ['exchange', 'deposit']
 /** Below this, a transfer is dust or address-poisoning spam (the trace engine's floor) */
 const dust = (asset: string) => (asset === 'ETH' || asset === 'WETH' ? 0.0005 : /^(USDT|USDC|DAI)$/.test(asset) ? 1 : 0)
-const same = (a: string, b: string, chain: Chain) => (chain === 'eth' ? a.toLowerCase() === b.toLowerCase() : a === b)
+const same = (a: string, b: string, chain: Chain) => (isEvm(chain) ? a.toLowerCase() === b.toLowerCase() : a === b)
 
 export function alertEvents(
   address: string,

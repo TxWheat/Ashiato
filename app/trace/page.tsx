@@ -40,6 +40,7 @@ import type { Attester } from '@/components/CommunityLabels'
 import { useWalletClient } from 'wagmi'
 import { signLabel, signRevoke, signVote } from '@/lib/attest/sign'
 import BridgeHops from '@/components/BridgeHops'
+import { isChain, isEvm } from '@/lib/evm'
 import { BRIDGE_NAME, CrossChainHop, chainDisplay, lookupService } from '@/lib/bridges/types'
 import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { NodeAction } from '@/components/NodeMenu'
@@ -111,7 +112,7 @@ const fetchTrace = (address: string, chain: Chain, cursor?: string) =>
 
 /** Normalises the BTC and ETH transaction endpoints into one shape */
 async function fetchTxLookup(txid: string, chain: Chain): Promise<TxLookup> {
-  if (chain === 'eth' || chain === 'tron') return getJson<TxLookup>(`/api/tx/${chain}/${txid}`)
+  if (chain !== 'btc') return getJson<TxLookup>(`/api/tx/${chain}/${txid}`)
   const info = await getJson<BtcTxInfo>(`/api/tx/btc/${txid}`)
   return { chain: 'btc', txid: info.tx.txid, timestamp: info.tx.timestamp, transfers: [info.tx], labels: info.labels, ens: {}, spentBy: info.spentBy }
 }
@@ -199,7 +200,7 @@ function TraceWorkspace() {
   const rawAddress = params.get('address') ?? ''
   const originTx = (params.get('tx') ?? '').toLowerCase()
   const chainParam = params.get('chain') as Chain | null
-  const originChain: Chain | null = chainParam === 'btc' || chainParam === 'eth' || chainParam === 'tron' ? chainParam : originTx ? (originTx.startsWith('0x') ? 'eth' : 'btc') : detectChain(rawAddress)
+  const originChain: Chain | null = isChain(chainParam) ? chainParam : originTx ? (originTx.startsWith('0x') ? 'eth' : 'btc') : detectChain(rawAddress)
   const originAddress = !originTx && originChain ? normaliseAddress(rawAddress, originChain) : ''
   const originKey = originTx || originAddress
 
@@ -316,9 +317,13 @@ function TraceWorkspace() {
   useEffect(() => {
     const c = currency.toLowerCase()
     let stale = false
-    fetch(`https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,tron&vs_currencies=${c}`)
+    fetch(`https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,tron,binancecoin,polygon-ecosystem-token&vs_currencies=${c}`)
       .then(r => r.json())
-      .then(d => { if (!stale) setPrices({ BTC: d.bitcoin?.[c] ?? 0, ETH: d.ethereum?.[c] ?? 0, WETH: d.ethereum?.[c] ?? 0, TRX: d.tron?.[c] ?? 0, USD: d.tether?.[c] ?? 0 }) })
+      .then(d => {
+        if (stale) return
+        const eth = d.ethereum?.[c] ?? 0, btc = d.bitcoin?.[c] ?? 0, bnb = d.binancecoin?.[c] ?? 0, pol = d['polygon-ecosystem-token']?.[c] ?? 0
+        setPrices({ BTC: btc, WBTC: btc, BTCB: btc, ETH: eth, WETH: eth, TRX: d.tron?.[c] ?? 0, USD: d.tether?.[c] ?? 0, BNB: bnb, WBNB: bnb, POL: pol, WPOL: pol })
+      })
       .catch(() => {})
     return () => { stale = true }
   }, [currency])
@@ -926,13 +931,13 @@ function TraceWorkspace() {
 
   /** Transaction-level: follow one output (or all) onward */
   const traceTxOut = (tx: RawTransaction, to?: string) => {
-    const from = tx.chain === 'eth' ? tx.inputs[0]?.address ?? '' : ''
+    const from = isEvm(tx.chain) ? tx.inputs[0]?.address ?? '' : ''
     runFollow('forward', seedsFromTx(tx, from, to, follow.adaptive))
   }
 
   /** Transaction-level: walk one input (or all) back to its source */
   const traceTxIn = (tx: RawTransaction, input?: TxIO) => {
-    if (tx.chain === 'eth') {
+    if (isEvm(tx.chain)) {
       runFollow('backward', backSeedsFromTx(tx, tx.outputs[0].address, input?.address))
       return
     }

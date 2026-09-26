@@ -49,6 +49,7 @@ Everything after `pre-hackathon-baseline`. Updated as work lands:
 - [x] Ashiato Pro: prepaid months in USDC on Base or Ethereum, checked on-chain by the server (payer, recipient, amount, confirmations; each transaction credited once); time stacks when renewing early; pricing page, Pro badge and renewal reminder in the account menu. Everything a victim needs stays free. Test mode (PAYMENTS_TESTNET=1) runs the same flow with free test USDC on Base Sepolia for the demo
 - [x] API routes need a signed-in account (sign-in and public community-label reads excepted)
 - [x] Docs page (`/docs`): a guide to every feature plus the methodology (replaces `/methodology`, which redirects)
+- [x] Pro: watch alerts when funds move (flagged when they reach an exchange), a plain-English trace summary written by Claude for police and exchanges, and five more networks (Base, Arbitrum, Optimism, BNB Chain, Polygon) through the same Etherscan V2 code; bridge hops to them now continue on the graph
 - [ ] Still to add: Stargate (LayerZero Scan), Wormhole, Axelar/Squid, Orbiter
 - [ ] Verifiable reports: report hash attested on-chain, `/verify` page
 - [ ] Freeze-request letter for exchange compliance teams

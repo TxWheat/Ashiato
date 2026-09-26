@@ -1,6 +1,7 @@
 import 'server-only'
 import { Chain, EntityLabel, Finding, NodeData, RawTransaction, TraceResult } from './types'
 import { getLabel } from './labels'
+import { isEvm } from './evm'
 import { buildGraph } from './graph'
 import { detectDepositAddress } from './heuristics/deposit'
 import { tornadoFindings } from './heuristics/eth/tornado'
@@ -44,7 +45,7 @@ export async function assemble(opts: {
   }
 
   if (chain === 'eth') findings.push(...tornadoFindings(address, rawTxs, labelOf))
-  if (chain === 'eth' || chain === 'tron') {
+  if (chain !== 'btc') {
     const poison = detectPoisoning(address, rawTxs)
     for (const [a, l] of poison.labels) if (!labelOf(a)) labelCache.set(a, l)
     if (poison.finding) findings.push(poison.finding)
@@ -66,7 +67,8 @@ export async function assemble(opts: {
     isOrigin: true, risk, findings,
   }
 
-  if (chain === 'eth') {
+  // ENS names are on Ethereum, but an address has the same owner on every Ethereum-style network
+  if (isEvm(chain)) {
     const ens = await lookupEnsNames([address, ...nodes.map(n => n.address)])
     for (const n of [origin, ...nodes]) {
       const name = ens.get(n.address)

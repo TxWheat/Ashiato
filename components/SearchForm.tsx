@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowUpRight, AlertCircle, Search } from 'lucide-react'
 import { clsx } from 'clsx'
 import { detectInput, searchUrl, SearchTarget, truncate } from '@/lib/detect-chain'
+import { EVM, EVM_CHAINS, isEvm, isProChain } from '@/lib/evm'
 
 /**
  * Address or transaction search. `compact` is the version used in the trace page header;
@@ -127,6 +128,17 @@ export default function SearchForm({ compact = false, onAddAddress }: { compact?
         <label htmlFor="case-name" className="block text-[10px] font-medium uppercase tracking-wider text-faint">
           Name this case <span className="normal-case tracking-normal">· {naming.chain} {naming.kind === 'tx' ? 'transaction' : 'address'} <span className="font-mono">{truncate(naming.value, 8)}</span></span>
         </label>
+        {isEvm(naming.chain) && (
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Network">
+            {EVM_CHAINS.map(c => (
+              <button key={c} type="button" role="radio" aria-checked={naming.chain === c} onClick={() => setNaming({ ...naming, chain: c })}
+                className={clsx('flex items-center gap-1.5 h-8 px-2.5 text-xs border', naming.chain === c ? 'border-accent bg-accent/10 text-fg' : 'border-line text-muted hover:text-fg')}>
+                <span className={`w-1.5 h-1.5 rounded-full ${chainDot(c)}`} />{EVM[c].name}
+                {isProChain(c) && <span className="text-[9px] font-semibold uppercase tracking-wider text-accent">Pro</span>}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row gap-3">
           <input id="case-name" value={caseName} onChange={e => setCaseName(e.target.value)} autoFocus maxLength={80}
             placeholder="e.g. Jane Doe · USDT investment scam"
@@ -134,7 +146,10 @@ export default function SearchForm({ compact = false, onAddAddress }: { compact?
           <button type="submit" className="h-12 px-5 bg-accent hover:bg-accent-hover text-accent-fg font-medium">Start case</button>
           <button type="button" onClick={() => setNaming(null)} className="h-12 px-4 border border-line text-muted hover:text-fg">Back</button>
         </div>
-        <p className="text-xs text-faint">The case is saved to your account under this name as soon as it opens. You can rename it later.</p>
+        <p className="text-xs text-faint">
+          {isEvm(naming.chain) && 'Pick the network the money is on: the same 0x address can exist on each of them. '}
+          The case is saved to your account under this name as soon as it opens. You can rename it later.
+        </p>
       </form>
     )
   }

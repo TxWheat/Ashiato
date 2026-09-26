@@ -1,4 +1,4 @@
-export type Chain = 'btc' | 'eth' | 'tron'
+export type Chain = 'btc' | 'tron' | 'eth' | 'base' | 'arbitrum' | 'optimism' | 'bsc' | 'polygon'
 
 export type EntityType =
   | 'exchange'

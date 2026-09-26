@@ -59,6 +59,8 @@ export function lookupService(name: string): BridgeService | undefined {
 
 const CHAIN_ALIASES: Record<string, Chain> = {
   ETH: 'eth', ETHEREUM: 'eth', ERC20: 'eth',
+  BASE: 'base', ARBITRUM: 'arbitrum', ARB: 'arbitrum', OPTIMISM: 'optimism', OP: 'optimism',
+  BSC: 'bsc', BNB: 'bsc', BEP20: 'bsc', POLYGON: 'polygon', MATIC: 'polygon', POL: 'polygon',
   TRX: 'tron', TRON: 'tron', TRC20: 'tron',
   BTC: 'btc', BITCOIN: 'btc',
 }

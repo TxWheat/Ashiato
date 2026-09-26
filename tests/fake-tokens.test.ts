@@ -29,3 +29,16 @@ describe('fake tokens', () => {
     expect(r.labels.has(real)).toBe(false)
   })
 })
+
+describe('real tokens per network', () => {
+  it('knows each network has its own USDT and native coin', () => {
+    // BNB Chain's real USDT is a different contract from Ethereum's
+    expect(tokenAsset('USDT', '0x55d398326f99059ff775485246999027b3197955', 'bsc')).toBe('USDT')
+    expect(tokenAsset('USDT', '0xdac17f958d2ee523a2206206994597c13d831ec7', 'bsc')).toBe('USDT*')
+    // On BNB Chain, "ETH" is a real bridged token and "BNB" is the native coin
+    expect(tokenAsset('ETH', '0x2170ed0880ac9a755fd29b2688956bd959f933f8', 'bsc')).toBe('ETH')
+    expect(tokenAsset('BNB', '0x1234000000000000000000000000000000000000', 'bsc')).toBe('BNB*')
+    expect(tokenAsset('USDC', '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 'base')).toBe('USDC')
+    expect(tokenAsset('MATIC', '0x1234000000000000000000000000000000000000', 'polygon')).toBe('MATIC*')
+  })
+})

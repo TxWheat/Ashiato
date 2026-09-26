@@ -428,7 +428,7 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
     const bought = gotTotal * (sold / swapOut.outputs[0].amount)
     const ps = shareAt(swapOut.timestamp)
     return [{
-      lot: { chain: 'eth' as const, address: lot.address, asset, amount: bought, time: swapOut.timestamp, via: swapOut.txid, hop: lot.hop + 1 },
+      lot: { chain: lot.chain, address: lot.address, asset, amount: bought, time: swapOut.timestamp, via: swapOut.txid, hop: lot.hop + 1 },
       flow: {
         from: lot.address, to: swapOut.outputs[0].address, amount: sold, asset: lot.asset, txid: swapOut.txid, time: swapOut.timestamp, hop: lot.hop + 1,
         reason: `Swapped ${fmt(sold, lot.asset)} for ${fmt(bought, asset)} in the same transaction; following the ${asset} from this wallet${ps < 0.999 ? `; pooled: traced funds ${pct(ps)} of the balance` : ''}`,
@@ -442,7 +442,7 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
     if (diluted(pass.timestamp)) return []
     const ps = shareAt(pass.timestamp)
     return [{
-      lot: { chain: 'eth' as const, address: pass.outputs[0].address, asset: lot.asset, amount: Math.min(lot.amount, pass.outputs[0].amount), time: pass.timestamp, via: pass.txid, hop: lot.hop + 1 },
+      lot: { chain: lot.chain, address: pass.outputs[0].address, asset: lot.asset, amount: Math.min(lot.amount, pass.outputs[0].amount), time: pass.timestamp, via: pass.txid, hop: lot.hop + 1 },
       flow: {
         from: lot.address, to: pass.outputs[0].address, amount: Math.min(lot.amount, pass.outputs[0].amount), asset: lot.asset, txid: pass.txid, time: pass.timestamp, hop: lot.hop + 1,
         reason: `Pass-through: ${fmt(pass.outputs[0].amount, lot.asset)} left ${duration(pass.timestamp - lot.time)} after ${fmt(lot.amount, lot.asset)} arrived (same amount)${ps < 0.999 ? `; pooled: traced funds ${pct(ps)} of the balance` : ''}`,
@@ -482,7 +482,7 @@ async function ethForward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptive
     ends.push({ address: lot.address, amount: remaining, asset: lot.asset, reason: 'no-outflow', detail: `${fmt(remaining, lot.asset)} not yet moved on (in loaded history)` })
   }
   return [...alloc.values()].map(({ amount, tx }) => ({
-    lot: { chain: 'eth' as const, address: tx.outputs[0].address, asset: lot.asset, amount, time: tx.timestamp, via: tx.txid, hop: lot.hop + 1 },
+    lot: { chain: lot.chain, address: tx.outputs[0].address, asset: lot.asset, amount, time: tx.timestamp, via: tx.txid, hop: lot.hop + 1 },
     flow: {
       from: lot.address, to: tx.outputs[0].address, amount, asset: lot.asset, txid: tx.txid, time: tx.timestamp, hop: lot.hop + 1,
       reason: `Next ${lot.asset} outflow ${duration(tx.timestamp - lot.time)} after ${fmt(lot.amount, lot.asset)} arrived; ${fmt(amount, lot.asset)} of ${fmt(tx.outputs[0].amount, lot.asset)} attributed${shareAt(tx.timestamp) < 0.999 ? `; pooled: traced funds ${pct(shareAt(tx.timestamp))} of the balance` : ''}`,
@@ -511,7 +511,7 @@ async function ethBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptiv
   if (src) {
     const amount = Math.min(lot.amount, src.outputs[0].amount)
     return [{
-      lot: { chain: 'eth' as const, address: src.inputs[0].address, asset: lot.asset, amount, time: src.timestamp, via: src.txid, hop: lot.hop + 1 },
+      lot: { chain: lot.chain, address: src.inputs[0].address, asset: lot.asset, amount, time: src.timestamp, via: src.txid, hop: lot.hop + 1 },
       flow: {
         from: src.inputs[0].address, to: lot.address, amount, asset: lot.asset, txid: src.txid, time: src.timestamp, hop: lot.hop + 1,
         reason: `Pass-through: ${fmt(src.outputs[0].amount, lot.asset)} arrived ${duration(lot.time - src.timestamp)} before ${fmt(lot.amount, lot.asset)} left (same amount)`,
@@ -543,7 +543,7 @@ async function ethBackward(lot: Lot, deps: FollowDeps, ends: TraceEnd[], adaptiv
     return []
   }
   return picked.map(({ amount, tx }) => ({
-    lot: { chain: 'eth' as const, address: tx.inputs[0].address, asset: lot.asset, amount, time: tx.timestamp, via: tx.txid, hop: lot.hop + 1 },
+    lot: { chain: lot.chain, address: tx.inputs[0].address, asset: lot.asset, amount, time: tx.timestamp, via: tx.txid, hop: lot.hop + 1 },
     flow: {
       from: tx.inputs[0].address, to: lot.address, amount, asset: lot.asset, txid: tx.txid, time: tx.timestamp, hop: lot.hop + 1,
       reason: `Most recent ${lot.asset} inflow ${duration(lot.time - tx.timestamp)} before the funds left; ${fmt(amount, lot.asset)} attributed`,
@@ -599,7 +599,7 @@ export function backSeedsFromTx(tx: RawTransaction, to: string, from?: string): 
   const sender = tx.inputs[0]?.address
   if (!sender || (from && sender !== from)) return { lots: [], flows: [] }
   return {
-    lots: [{ chain: 'eth', address: sender, asset: tx.asset, amount: received, time: tx.timestamp, via: tx.txid, hop: 1 }],
+    lots: [{ chain: tx.chain, address: sender, asset: tx.asset, amount: received, time: tx.timestamp, via: tx.txid, hop: 1 }],
     flows: [{ from: sender, to, amount: received, asset: tx.asset, txid: tx.txid, time: tx.timestamp, hop: 1, reason: 'Starting transaction' }],
   }
 }

@@ -1,4 +1,5 @@
 import { Chain, EntityLabel, Finding, RawTransaction } from '../types'
+import { isEvm } from '../evm'
 
 // Exchange deposit-address detection.
 //
@@ -52,7 +53,7 @@ export function detectDepositAddress(
       e.count++
       outByExchange.set(l.name, e)
 
-      if (chain === 'eth') {
+      if (isEvm(chain)) {
         // Look for the matching inbound transfer just before this forward
         const tol = tolerance(tx.asset, o.amount)
         const inbound = txs.find(
@@ -81,7 +82,7 @@ export function detectDepositAddress(
   if (share < 0.8) return undefined
 
   let confidence: number
-  if (chain === 'eth') {
+  if (isEvm(chain)) {
     if (matched === 0) {
       if (flow.count < 2 || share < 0.95) return undefined
       confidence = 0.5

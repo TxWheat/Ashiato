@@ -87,10 +87,37 @@ const GUIDE: Section[] = [
     id: 'pro',
     title: 'Pro and payments',
     body: [
-      'Tracing is free, and everything a scam victim needs stays free. Pro is for investigators who use Ashiato often and pays for the blockchain data behind it.',
+      'Tracing is free, and everything a scam victim needs stays free. Pro is for investigators who use Ashiato often and pays for the blockchain data behind it. Pro adds watch alerts, the plain-English summary and more networks (below).',
       'Pro is paid in USDC on Base or Ethereum for 1, 3 or 12 months. Payments are checked on the blockchain and credited to the wallet that paid; paying again adds time on top. The account menu shows when Pro ends and reminds you a week before. Wallet → Add funds buys crypto with a card; Receive shows your address for sending from an exchange (choose the Base network, it is the cheapest).',
       'Ashiato traces where money went. It never recovers funds, never charges a fee to get money back and never contacts you first. Anyone offering to recover crypto for a fee is almost certainly running a second scam.',
     ],
+  },
+  {
+    id: 'alerts',
+    title: 'Watch alerts (Pro)',
+    body: [
+      'Watch an address with the bell in its menu on the graph, or on the Alerts page. Each new transfer in or out becomes an alert, and money reaching an exchange or exchange deposit address is flagged in red: that is the moment to ask the exchange to freeze it.',
+      'Addresses are checked every few minutes while Ashiato is open, and once a day otherwise. The bell at the top right shows new alerts. Airdropped tokens and dust are ignored; tokens leaving the address always alert.',
+    ],
+    limits: 'Not instant: an alert can arrive minutes (app open) or up to a day (app closed) after the transfer. Only the newest page of an address\'s transactions is read on each check.',
+  },
+  {
+    id: 'summary',
+    title: 'Plain-English summary (Pro)',
+    body: [
+      'Export → Plain-English summary writes up the case for a police report or an exchange: what happened, where the money went with dates, amounts and transaction hashes, where it ended up, and how confident each step is. It is written by Claude, an AI model, from the traced facts only. Copy it, or open the printable report with the summary at the top.',
+    ],
+    limits: 'Always check the summary against the graph before sending it. It only knows what has been traced; trace from the victim\'s payment first.',
+  },
+  {
+    id: 'networks',
+    title: 'Networks',
+    body: [
+      'Free: Bitcoin, Ethereum and Tron. Pro adds Base, Arbitrum, Optimism, BNB Chain and Polygon. A 0x address can exist on all of these, so when you start a case from one you pick the network the money is on.',
+      'Bridge transfers to these networks now continue on the graph: a bridge hop to Base, for example, opens the Base address and can be traced further.',
+      'Labels on the extra networks come from the Ethereum lists (exchanges usually keep one address on every network); each label says where it came from. Tornado Cash checks are Ethereum-only.',
+    ],
+    limits: 'Label coverage is thinner on the extra networks. Solana is not supported yet.',
   },
   {
     id: 'privacy',

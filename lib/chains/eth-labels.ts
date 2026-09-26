@@ -4,6 +4,7 @@ import 'server-only'
 import { EntityLabel, EntityType } from '../types'
 import { fetchJson } from '../http'
 import { etherscanUrl, etherscanRateLimited } from './eth'
+import { EVM, EvmChain } from '../evm'
 
 /** Map a name tag / label list onto our entity types. Order matters: most specific first. */
 export function classifyTag(text: string): EntityType {
@@ -32,10 +33,10 @@ interface NametagRow {
  */
 let nametagsAvailable = process.env.ETHERSCAN_NAMETAGS !== '0'
 
-async function nametag(address: string): Promise<EntityLabel | undefined> {
+async function nametag(address: string, chain: EvmChain): Promise<EntityLabel | undefined> {
   if (!nametagsAvailable) return undefined
   const body = await fetchJson<{ status: string; message: string; result: NametagRow[] | NametagRow | string }>(
-    etherscanUrl({ module: 'nametag', action: 'getaddresstag', address }), 86400, 3, etherscanRateLimited
+    etherscanUrl({ module: 'nametag', action: 'getaddresstag', address }, chain), 86400, 3, etherscanRateLimited
   )
   if (body.status !== '1') {
     // Plan / access errors come back as status 0 with an explanation in `result`
@@ -52,7 +53,7 @@ async function nametag(address: string): Promise<EntityLabel | undefined> {
     name,
     type: classifyTag(`${name} ${labels.join(' ')}`),
     source: labels.length ? `Etherscan name tag (${labels.join(', ')})` : 'Etherscan name tag',
-    sourceUrl: `https://etherscan.io/address/${address}`,
+    sourceUrl: `${EVM[chain].explorer}/address/${address}`,
   }
 }
 
@@ -64,9 +65,9 @@ interface SourceRow {
 
 const GENERIC_PROXY = /^(ERC1967Proxy|TransparentUpgradeableProxy|AdminUpgradeabilityProxy|InitializableImmutableAdminUpgradeabilityProxy|OwnedUpgradeabilityProxy|UUPSProxy|BeaconProxy|Proxy|GnosisSafeProxy|SafeProxy)$/i
 
-async function sourceRow(address: string): Promise<SourceRow | undefined> {
+async function sourceRow(address: string, chain: EvmChain): Promise<SourceRow | undefined> {
   const body = await fetchJson<{ status: string; result: SourceRow[] | string }>(
-    etherscanUrl({ module: 'contract', action: 'getsourcecode', address }), 86400, 3, etherscanRateLimited
+    etherscanUrl({ module: 'contract', action: 'getsourcecode', address }, chain), 86400, 3, etherscanRateLimited
   )
   return body.status === '1' && Array.isArray(body.result) ? body.result[0] : undefined
 }
@@ -76,12 +77,12 @@ async function sourceRow(address: string): Promise<SourceRow | undefined> {
  * (e.g. ERC1967Proxy) we use its implementation's name instead. The deployer
  * chooses these names, so they're marked as inferred.
  */
-async function verifiedContract(address: string): Promise<EntityLabel | undefined> {
-  const row = await sourceRow(address)
+async function verifiedContract(address: string, chain: EvmChain): Promise<EntityLabel | undefined> {
+  const row = await sourceRow(address, chain)
   let name = row?.ContractName?.trim()
   if (!row || !name) return undefined // not a contract, or not verified
   if (row.Proxy === '1' && row.Implementation && GENERIC_PROXY.test(name)) {
-    const impl = await sourceRow(row.Implementation.toLowerCase()).catch(() => undefined)
+    const impl = await sourceRow(row.Implementation.toLowerCase(), chain).catch(() => undefined)
     name = impl?.ContractName?.trim() || name
   }
   if (/^(GnosisSafe|Safe)(L2)?$/i.test(name) || /SafeProxy/i.test(row.ContractName ?? '')) name = 'Safe multisig wallet'
@@ -90,16 +91,16 @@ async function verifiedContract(address: string): Promise<EntityLabel | undefine
     name: `${name} (verified contract)`,
     type,
     source: 'Etherscan verified contract name (set by the deployer)',
-    sourceUrl: `https://etherscan.io/address/${address}#code`,
+    sourceUrl: `${EVM[chain].explorer}/address/${address}#code`,
     inferredBy: 'contract-name',
     confidence: type === 'service' ? 0.5 : 0.7,
   }
 }
 
 /** Best Etherscan label for an address: public name tag, else verified contract name */
-export async function etherscanLabel(address: string): Promise<EntityLabel | undefined> {
+export async function etherscanLabel(address: string, chain: EvmChain = 'eth'): Promise<EntityLabel | undefined> {
   try {
-    return (await nametag(address)) ?? (await verifiedContract(address))
+    return (await nametag(address, chain)) ?? (await verifiedContract(address, chain))
   } catch {
     return undefined // labels are best-effort; never fail a trace over them
   }

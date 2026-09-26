@@ -11,7 +11,7 @@ import { addAlerts, markChecked, WatchRow } from './store'
 // transactions (the same call as opening it), so a check costs one lookup per address.
 
 export async function latestTransactions(chain: Chain, address: string) {
-  const page = chain === 'btc' ? await traceBtcAddress(address) : chain === 'tron' ? await traceTronAddress(address) : await traceEthAddress(address)
+  const page = chain === 'btc' ? await traceBtcAddress(address) : chain === 'tron' ? await traceTronAddress(address) : await traceEthAddress(address, undefined, chain)
   return page.rawTxs
 }
 

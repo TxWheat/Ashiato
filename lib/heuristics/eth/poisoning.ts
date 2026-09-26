@@ -35,7 +35,7 @@ export function detectPoisoning(address: string, txs: RawTransaction[]): Poisoni
   const genuine = new Set<string>()
   const junk = new Set<string>()
   for (const t of txs) {
-    if (t.chain !== 'eth' && t.chain !== 'tron') continue
+    if (t.chain === 'btc') continue
     const from = t.inputs[0]?.address
     const to = t.outputs[0]?.address
     const other = from === me ? to : to === me ? from : undefined

@@ -32,12 +32,12 @@ describe('Bridgers orders', () => {
 
   it('handles BNB Chain sources', () => {
     const h = hopFromBridgers({ ...real, fromChain: 'BSC', fromCoinCode: 'BNB(BSC)', fromTokenAmount: '4.5' })
-    expect(h).toMatchObject({ fromChainName: 'BSC', fromChain: undefined, fromAsset: 'BNB', fromAmount: 4.5, toChain: 'tron' })
+    expect(h).toMatchObject({ fromChainName: 'BSC', fromChain: 'bsc', fromAsset: 'BNB', fromAmount: 4.5, toChain: 'tron' })
   })
 
   it('reads the chain from the coin code when the chain field is missing', () => {
     const h = hopFromBridgers({ hash: '0x1', toAddress: 'Tx', fromCoinCode: 'USDT(ETH)', toCoinCode: 'USDT(BSC)', fromTokenAmount: 5, toTokenAmount: 4.9 })
-    expect(h).toMatchObject({ fromChainName: 'ETH', toChainName: 'BSC', fromChain: 'eth', toChain: undefined })
+    expect(h).toMatchObject({ fromChainName: 'ETH', toChainName: 'BSC', fromChain: 'eth', toChain: 'bsc' })
   })
 
   it('skips records without a hash or destination', () => {

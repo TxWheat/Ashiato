@@ -1,7 +1,9 @@
 import 'server-only'
 import { NextResponse } from 'next/server'
 import { Chain, TraceResult } from './types'
-import { detectChain, normaliseAddress } from './detect-chain'
+import { addressFits, normaliseAddress } from './detect-chain'
+import { isProChain } from './evm'
+import { requirePro } from './billing/pro'
 import { traceBtcAddress } from './chains/btc'
 import { traceEthAddress, MissingApiKeyError } from './chains/eth'
 import { traceTronAddress } from './chains/tron'
@@ -15,8 +17,12 @@ export async function handleTrace(
 ): Promise<TraceResult | NextResponse> {
   const address = decodeURIComponent(rawAddress).trim()
   const chain = chainParam as Chain
-  if (!['btc', 'eth', 'tron'].includes(chain) || detectChain(address) !== chain) {
+  if (!addressFits(address, chain)) {
     return NextResponse.json({ error: `Not a valid ${chainParam.toUpperCase()} address` }, { status: 400 })
+  }
+  if (isProChain(chain)) {
+    const pro = await requirePro()
+    if ('response' in pro) return pro.response
   }
   // BTC: last txid; ETH: page number; Tron: two TronGrid fingerprints
   if (cursor && !/^[0-9a-fA-F]{64}$|^\d{1,4}$|^[\w+/=.-]{1,300}~[\w+/=.-]{1,300}$/.test(cursor)) {
@@ -28,7 +34,7 @@ export async function handleTrace(
       ? await traceBtcAddress(addr, cursor ?? undefined)
       : chain === 'tron'
         ? await traceTronAddress(addr, cursor ?? undefined)
-        : await traceEthAddress(addr, cursor ?? undefined)
+        : await traceEthAddress(addr, cursor ?? undefined, chain)
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to trace address'
     const status = e instanceof MissingApiKeyError ? 400 : e instanceof UpstreamError && e.status === 429 ? 429 : 502

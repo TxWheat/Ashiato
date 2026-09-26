@@ -5,8 +5,9 @@ import { getLabel } from '../labels'
 import { lookupEnsNames } from '../ens'
 import { tokenAsset, internalTransfersByHash, receiptViaEtherscan, toUnits } from './eth'
 import { warmScamLists } from '../scam-lists'
+import { EVM, EvmChain } from '../evm'
 
-// One Ethereum transaction and every value transfer inside it: the ETH value,
+// One transaction on an Ethereum-style network and every value transfer inside it: the native value,
 // ERC-20 Transfer events from the receipt, and internal ETH transfers.
 // Uses JSON-RPC (not the Etherscan quota) except for internal transfers.
 
@@ -17,7 +18,7 @@ interface RpcLog { address: string; topics: string[]; data: string; logIndex: st
 interface RpcReceipt { status: string; contractAddress: string | null; logs: RpcLog[] }
 
 export interface EthTxDetail {
-  chain: 'eth'
+  chain: EvmChain
   txid: string
   timestamp: number
   failed: boolean
@@ -45,19 +46,19 @@ function decodeSymbol(result: string | undefined): string | null {
   }
 }
 
-export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
+export async function fetchEthTx(hash: string, chain: EvmChain = 'eth'): Promise<EthTxDetail> {
   await warmScamLists()
   const txid = hash.toLowerCase()
   const warnings: string[] = []
   const [tx, rpcReceipt] = await rpcBatch<RpcTx & RpcReceipt>([
     { method: 'eth_getTransactionByHash', params: [txid] },
     { method: 'eth_getTransactionReceipt', params: [txid] },
-  ], true) as [RpcTx | undefined, RpcReceipt | undefined]
-  if (!tx) throw new Error('Transaction not found on Ethereum mainnet')
+  ], true, chain) as [RpcTx | undefined, RpcReceipt | undefined]
+  if (!tx) throw new Error(`Transaction not found on ${EVM[chain].name}`)
 
   // Token transfers live in the receipt logs; without it they would silently vanish
   let receipt = rpcReceipt
-  if (!receipt?.logs) receipt = await receiptViaEtherscan<RpcReceipt>(txid).catch(() => undefined)
+  if (!receipt?.logs) receipt = await receiptViaEtherscan<RpcReceipt>(txid, chain).catch(() => undefined)
   if (!receipt?.logs) warnings.push('Could not load this transaction\'s receipt, so token transfers (e.g. USDT) may be missing. Try again shortly.')
 
   const tokenLogs = (receipt?.logs ?? []).filter(l => l.topics[0] === TRANSFER_TOPIC && l.topics.length === 3)
@@ -65,24 +66,25 @@ export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
   const meta = await rpcBatch<string | { timestamp: string }>([
     ...(tx.blockNumber ? [{ method: 'eth_getBlockByNumber', params: [tx.blockNumber, false] }] : []),
     ...tokens.flatMap(t => [ethCall(t, '0x95d89b41'), ethCall(t, '0x313ce567')]),
-  ])
+  ], false, chain)
   const block = tx.blockNumber ? (meta.shift() as { timestamp: string } | undefined) : undefined
   const timestamp = block ? Number(hexToBig(block.timestamp)) : 0
 
   const tokenInfo = new Map<string, { symbol: string; decimals: number }>()
   tokens.forEach((t, i) => {
-    const symbol = tokenAsset(decodeSymbol(meta[i * 2] as string) ?? 'TOKEN', t)
+    const symbol = tokenAsset(decodeSymbol(meta[i * 2] as string) ?? 'TOKEN', t, chain)
     const d = meta[i * 2 + 1] as string | undefined
     tokenInfo.set(t, { symbol, decimals: d && d !== '0x' ? Number(hexToBig(d)) : 18 })
   })
 
   const failed = receipt?.status === '0x0'
-  const base = { txid, timestamp, chain: 'eth' as const, gasPriceGwei: tx.gasPrice ? Number(hexToBig(tx.gasPrice)) / 1e9 : undefined }
+  const native = EVM[chain].native
+  const base = { txid, timestamp, chain, gasPriceGwei: tx.gasPrice ? Number(hexToBig(tx.gasPrice)) / 1e9 : undefined }
   const transfers: RawTransaction[] = []
   const to = (tx.to ?? receipt?.contractAddress ?? '').toLowerCase()
   const value = toUnits(hexToBig(tx.value).toString(), 18)
   if (to) {
-    transfers.push({ ...base, asset: 'ETH', kind: 'normal', inputs: [{ address: tx.from.toLowerCase(), amount: 0 }], outputs: [{ address: to, amount: failed ? 0 : value }] })
+    transfers.push({ ...base, asset: native, kind: 'normal', inputs: [{ address: tx.from.toLowerCase(), amount: 0 }], outputs: [{ address: to, amount: failed ? 0 : value }] })
   }
   if (!failed) {
     for (const l of tokenLogs) {
@@ -95,11 +97,11 @@ export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
       })
     }
     try {
-      for (const it of await internalTransfersByHash(txid)) {
-        transfers.push({ ...base, asset: 'ETH', kind: 'internal', eventId: it.traceId, inputs: [{ address: it.from, amount: 0 }], outputs: [{ address: it.to, amount: it.value }] })
+      for (const it of await internalTransfersByHash(txid, chain)) {
+        transfers.push({ ...base, asset: native, kind: 'internal', eventId: it.traceId, inputs: [{ address: it.from, amount: 0 }], outputs: [{ address: it.to, amount: it.value }] })
       }
     } catch (e) {
-      warnings.push(`Internal ETH transfers unavailable: ${e instanceof Error ? e.message : 'error'}`)
+      warnings.push(`Internal ${native} transfers unavailable: ${e instanceof Error ? e.message : 'error'}`)
     }
   } else {
     warnings.push('This transaction failed on-chain; no value moved')
@@ -114,9 +116,9 @@ export async function fetchEthTx(hash: string): Promise<EthTxDetail> {
   const addrs = [...new Set(transfers.flatMap(t => [t.inputs[0].address, t.outputs[0].address]))]
   const labels: Record<string, EntityLabel> = {}
   for (const a of addrs) {
-    const l = getLabel(a, 'eth')
+    const l = getLabel(a, chain)
     if (l) labels[a] = l
   }
   const ens = Object.fromEntries(await lookupEnsNames(addrs))
-  return { chain: 'eth', txid, timestamp, failed, transfers, labels, ens, warnings }
+  return { chain, txid, timestamp, failed, transfers, labels, ens, warnings }
 }

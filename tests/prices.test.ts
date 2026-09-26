@@ -38,6 +38,6 @@ describe('CryptoCompare daily history', () => {
     }))))
     const prices = await dailyPrices('NZD')
     expect(prices.ETH).toEqual({ 100: 2000 })
-    expect(Object.keys(prices).sort()).toEqual(['BTC', 'ETH', 'TRX', 'USD'])
+    expect(Object.keys(prices).sort()).toEqual(['BNB', 'BTC', 'ETH', 'POL', 'TRX', 'USD'])
   })
 })

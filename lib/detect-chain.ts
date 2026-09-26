@@ -1,4 +1,5 @@
 import { Chain } from './types'
+import { isEvm } from './evm'
 
 export function detectChain(input: string): Chain | null {
   const t = input.trim()
@@ -10,10 +11,16 @@ export function detectChain(input: string): Chain | null {
   return null
 }
 
+/** Does the address belong on this network? (0x addresses fit every Ethereum-style network) */
+export function addressFits(address: string, chain: string): chain is Chain {
+  const found = detectChain(address)
+  return found === 'eth' ? isEvm(chain) : found !== null && found === chain
+}
+
 /** Canonical form used as node IDs and label keys */
 export function normaliseAddress(address: string, chain: Chain): string {
   const a = address.trim()
-  if (chain === 'eth') return a.toLowerCase()
+  if (isEvm(chain)) return a.toLowerCase()
   return /^bc1/i.test(a) ? a.toLowerCase() : a
 }
 

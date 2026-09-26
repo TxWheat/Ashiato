@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { isEvm } from './evm'
 import { Chain, EntityLabel, EntityType } from './types'
 
 /**
@@ -17,7 +18,7 @@ export interface MyLabel {
   updated: number
 }
 
-export const myLabelKey = (chain: Chain, address: string) => `${chain}:${chain === 'eth' ? address.toLowerCase() : address}`
+export const myLabelKey = (chain: Chain, address: string) => `${chain}:${isEvm(chain) ? address.toLowerCase() : address}`
 
 function read(): Record<string, MyLabel> {
   try {

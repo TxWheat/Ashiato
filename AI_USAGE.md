@@ -41,6 +41,7 @@ Log (updated as work lands):
 | Scam lists and bridge labels (owner chose the sources; licences checked, GPL list kept out of the repo) | Claude Code (drafted) | Owner |
 | Accounts: wallet/email sign-in, sessions, Supabase case storage, My cases page, home page sign-in (owner's design and screenshots) | Claude Code (drafted) | Owner |
 | Ashiato Pro (owner's pricing and payment model: cheap, USDC months, cards later): payments table, on-chain USDC checks, pricing page, account-menu status; API routes require sign-in | Claude Code (drafted) | Owner |
+| Pro features (owner's picks from the roadmap): watch alerts with a daily cron, Claude-written trace summary (Anthropic SDK), Base / Arbitrum / Optimism / BNB Chain / Polygon support | Claude Code (drafted) | Owner |
 
 ## Prompts and plans
 

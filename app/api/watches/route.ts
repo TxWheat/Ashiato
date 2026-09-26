@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { currentUser } from '@/lib/auth/session'
 import { requirePro } from '@/lib/billing/pro'
 import { StoreNotConfigured } from '@/lib/supabase'
-import { detectChain, normaliseAddress } from '@/lib/detect-chain'
+import { addressFits, normaliseAddress } from '@/lib/detect-chain'
 import { addWatch, removeWatch, watchesOf } from '@/lib/alerts/store'
 import { newestTime } from '@/lib/alerts/check'
 
@@ -29,15 +29,15 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as { chain?: string; address?: string; label?: string } | null
   const chain = body?.chain
   const raw = body?.address?.trim() ?? ''
-  if (!chain || !['btc', 'eth', 'tron'].includes(chain) || detectChain(raw) !== chain) return NextResponse.json({ error: 'Not a valid address' }, { status: 400 })
-  const address = normaliseAddress(raw, chain as 'btc' | 'eth' | 'tron')
+  if (!chain || !addressFits(raw, chain)) return NextResponse.json({ error: 'Not a valid address' }, { status: 400 })
+  const address = normaliseAddress(raw, chain)
   try {
     const mine = await watchesOf(pro.wallet)
     if (!mine.some(w => w.chain === chain && w.address === address) && mine.length >= MAX_WATCHES) {
       return NextResponse.json({ error: `You can watch up to ${MAX_WATCHES} addresses` }, { status: 400 })
     }
     // Only transfers after now alert, not the address's history
-    const lastSeen = await newestTime(chain as 'btc' | 'eth' | 'tron', address)
+    const lastSeen = await newestTime(chain, address)
     const watch = await addWatch({ wallet: pro.wallet, chain, address, label: body?.label?.trim().slice(0, 80) || null, last_seen: lastSeen })
     return NextResponse.json({ watch })
   } catch (e) {
