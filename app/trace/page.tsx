@@ -723,7 +723,6 @@ function TracePageInner() {
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
     }
     show(seed.flows)
-    setTrailView(true)
     freshTrail()
     setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
     try {
@@ -1378,7 +1377,7 @@ function TracePageInner() {
               title={trailView ? 'Show every address in the case' : 'Show only the traced trail, laid out hop by hop'}
               className={`h-7 px-2.5 border border-line text-[11px] font-medium ${trailView ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg'}`}
             >
-              {trailView ? 'Trail only' : 'Show trail only'}
+              {trailView ? 'Show whole case' : 'Show trail only'}
             </button>
           )}
           {(collapsed.chains.length > 0 || expandedChains.size > 0 || !collapseOn) && traced.length > 0 && (
@@ -1516,6 +1515,13 @@ function TracePageInner() {
           {!initialLoading && !error && graphNodes.length === 1 && hubs.size === 0 && (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-10 bg-panel border border-line px-4 py-2.5 text-[12px] text-muted">
               Click the address, then add counterparties from <b className="text-fg font-medium">Relationships</b> with <b className="text-fg font-medium">+</b>. To follow money, open a transaction and press <b className="text-fg font-medium">Trace</b>. Click empty space to hide the panel.
+            </div>
+          )}
+
+          {inTrail && !initialLoading && !error && (
+            <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-3 bg-panel border border-accent px-3 h-8 text-[11px] text-muted">
+              Trail view: {trail.nodes.length} of {graphNodes.length} addresses shown. Nothing is removed from your case.
+              <button onClick={() => setTrailView(false)} className="font-medium text-fg underline underline-offset-2 hover:text-accent">Show whole case</button>
             </div>
           )}
 
