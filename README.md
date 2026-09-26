@@ -4,7 +4,7 @@
 
 > Built on at **ETHGlobal Tokyo 2026** (Continuity track): see [HACKATHON.md](HACKATHON.md) for what existed before and what was added, and [AI_USAGE.md](AI_USAGE.md).
 
-Free, open-source blockchain forensics for scam victims and independent investigators. Trace Bitcoin, Ethereum and Tron funds (including USDT) hop by hop, find the exchange deposit address where they were cashed out, and export a report you can hand to an exchange or the police. No sign-up, no paywall.
+Free, open-source blockchain forensics for scam victims and independent investigators. Trace Bitcoin, Ethereum and Tron funds (including USDT) hop by hop, find the exchange deposit address where they were cashed out, and export a report you can hand to an exchange or the police. Free for victims, with a wallet or email sign-in and no personal data stored. Pro (paid in USDC) adds watch alerts, a plain-English summary for police reports, and Base, Arbitrum, Optimism, BNB Chain and Polygon.
 
 ## What it does
 
