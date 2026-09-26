@@ -19,7 +19,7 @@ import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
 import type { CollapsedChain } from '@/lib/collapse'
 import { TracedFlow } from '@/lib/follow'
-import { layoutKey, tidyLayout, type XY } from '@/lib/layout'
+import { layoutGraph, NODE_W, placeNodes, tidyLayout, type XY } from '@/lib/layout'
 import { ENTITY_STYLE, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort, topAssets } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
 import { NodeAction, NodeMenuContext } from './NodeMenu'
@@ -68,6 +68,64 @@ function ArrowDefs() {
 
 export type { XY } from '@/lib/layout'
 
+/** One collapsed chain drawn as a single line: this far from its start to its end */
+const CHAIN_SPAN = NODE_W + 380
+/** One hop when a chain is expanded (dagre's rank spacing) */
+const HOP_SPAN = NODE_W + 240
+
+/** Addresses after `start` (following money forward), never going back left of `floorX` */
+function downstream(start: string, edges: Edge[], placed: Map<string, XY>, floorX: number, stop: string): string[] {
+  const out = new Map<string, string[]>()
+  for (const e of edges) out.set(e.source, [...(out.get(e.source) ?? []), e.target])
+  const seen = new Set([start])
+  const queue = [start]
+  while (queue.length) {
+    for (const n of out.get(queue.shift()!) ?? []) {
+      if (seen.has(n) || n === stop) continue
+      const p = placed.get(n)
+      if (!p || p.x <= floorX) continue
+      seen.add(n)
+      queue.push(n)
+    }
+  }
+  return [...seen]
+}
+
+/**
+ * Keep collapsed chains compact without re-laying out the graph: when a chain collapses, its
+ * end and everything after it slide left to sit one line after the start; when it expands,
+ * they slide back (or, for a chain that started collapsed, right by enough room for its hops).
+ */
+function compactChains(chains: CollapsedChain[], edges: Edge[], placed: Map<string, XY>, prev: Map<string, CollapsedChain>, shifts: Map<string, number>) {
+  const now = new Set(chains.map(c => c.id))
+  const move = (ids: string[], dx: number) => {
+    for (const id of ids) {
+      const p = placed.get(id)
+      if (p) placed.set(id, { x: p.x + dx, y: p.y })
+    }
+  }
+  // Expanded: make room again
+  for (const [id, c] of prev) {
+    if (now.has(id)) continue
+    const a = placed.get(c.from), b = placed.get(c.to)
+    if (!a || !b) continue
+    const dx = shifts.get(id) !== undefined ? -shifts.get(id)! : Math.max(0, a.x + (c.middle.length + 1) * HOP_SPAN - b.x)
+    shifts.delete(id)
+    if (dx > 1) move(downstream(c.to, edges, placed, a.x, c.from), dx)
+  }
+  // Newly collapsed: pull the end in
+  for (const c of chains) {
+    if (prev.has(c.id)) continue
+    const a = placed.get(c.from), b = placed.get(c.to)
+    if (!a || !b) continue
+    const dx = a.x + CHAIN_SPAN - b.x
+    if (dx < -1) {
+      move(downstream(c.to, edges, placed, a.x, c.from), dx)
+      shifts.set(c.id, dx)
+    }
+  }
+}
+
 /** "2.15K USDT ($2.9K NZD)" */
 function amountWithValue(amount: number, asset: string, value: number, currency: CurrencyCode): string {
   const fiat = fmtFiatShort(value, currency)
@@ -108,8 +166,10 @@ interface Props {
   onPaneClick?: () => void
   /** Where each node sits (auto-placed or dragged). Owned by the page so a saved chart keeps its layout. */
   positions: Map<string, XY>
-  /** Addresses the user dragged: they keep their spot when the graph is laid out again */
+  /** Addresses the user dragged: they keep their spot when an auto trace tidies the graph */
   moved: Set<string>
+  /** Changes each time an auto trace adds to the graph: the whole graph is tidied then */
+  tidyKey?: number
   /** The user moved nodes (so the saved case needs updating) */
   onLayoutChange?: () => void
   /** Long pass-through runs drawn as one line (the middle addresses are hidden) */
@@ -145,7 +205,7 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, moved, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, watched, annotations = [], onAnnotations }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, moved, tidyKey, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, watched, annotations = [], onAnnotations }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const { currency } = useSettings()
   const pricing = usePricing()
@@ -163,8 +223,14 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
   /** Node ids on the canvas last time, to tell what was just added */
   const shownIds = useRef(new Set<string>())
   const lastQuiet = useRef(quietKey)
-  /** The graph's shape at the last layout */
-  const lastLayout = useRef('')
+  /** Collapsed chains last time, and how far each one's end (and everything after it) was slid in */
+  const prevChains = useRef(new Map<string, CollapsedChain>())
+  const chainsRef = useRef(chains)
+  chainsRef.current = chains
+  const chainsKey = chains.map(c => c.id).sort().join(',')
+  const chainShift = useRef(new Map<string, number>())
+  /** The auto trace that last tidied the graph */
+  const lastTidy = useRef(tidyKey)
 
   // Highlight the selected address's counterparties: green paid it, red were paid by it
   const relation = useMemo(() => {
@@ -389,35 +455,64 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
 
   useEffect(() => {
     if (rawNodes.length === 0) return
-    // Always a tidy layout: whenever addresses or links change, the whole graph is laid out
-    // again (left to right along the trail). Only addresses the user dragged keep their spot.
-    const key = layoutKey(rawNodes, rawEdges)
-    const reshaped = key !== lastLayout.current
-    if (reshaped || rawNodes.some(n => !pinned.current.has(n.id))) {
+    // An auto trace tidies the whole graph (left to right along the trail; addresses the user
+    // dragged keep their spot). Anything else leaves what's on the graph where it is and only
+    // places new addresses beside where they connect.
+    const tidy = tidyKey !== lastTidy.current
+    lastTidy.current = tidyKey
+    let laid: Node[]
+    if (tidy) {
       const fixed = new Map([...moved].flatMap(id => { const p = pinned.current.get(id); return p ? [[id, p] as const] : [] }))
       for (const [id, p] of tidyLayout(rawNodes, rawEdges, tracedRef.current, fixed)) pinned.current.set(id, p)
-      lastLayout.current = key
+      laid = rawNodes.map(n => ({ ...n, position: pinned.current.get(n.id)! }))
+      chainShift.current.clear()
+    } else {
+      // A reopened case keeps its saved layout exactly: its chains are already as the user left
+      // them, so only chains collapsed from here on pull their end in
+      const reopened = nodeCount.current === 0 && pinned.current.size > 0
+      if (!reopened) compactChains(chainsRef.current, rawEdges, pinned.current, prevChains.current, chainShift.current)
+      // Only new nodes need the automatic layout; a selection or highlight change skips dagre
+      const needsLayout = rawNodes.some(n => !pinned.current.has(n.id))
+      laid = placeNodes(needsLayout ? layoutGraph(rawNodes, rawEdges) : rawNodes, rawEdges, pinned.current, tracedRef.current)
     }
-    const laid = rawNodes.map(n => ({ ...n, position: pinned.current.get(n.id)! }))
+    prevChains.current = new Map(chainsRef.current.map(c => [c.id, c]))
     // Annotations keep their own positions and are never laid out
     setNodes(prev => [...laid, ...prev.filter(n => n.id.startsWith(NOTE_PREFIX))])
     setEdges(rawEdges)
-    // Fit on first draw and whenever addresses are added (the layout moves); removing
-    // addresses keeps the user's zoom
+    // Refit on first draw and after a tidy. Otherwise keep the user's zoom: removing nodes never
+    // moves the view, and added nodes only pan into view when they land off-screen.
     const firstDraw = nodeCount.current === 0
     const quiet = lastQuiet.current !== quietKey
     lastQuiet.current = quietKey
-    const added = laid.some(n => !shownIds.current.has(n.id))
+    const added = laid.filter(n => !shownIds.current.has(n.id))
     nodeCount.current = rawNodes.length
     shownIds.current = new Set(laid.map(n => n.id))
     if (firstDraw) {
       // Refit again once new nodes have been measured
       setTimeout(() => rf.current?.fitView(FIT), 60)
       setTimeout(() => rf.current?.fitView({ ...FIT, duration: 250 }), 400)
-    } else if (added && !quiet) {
+    } else if (tidy) {
       setTimeout(() => rf.current?.fitView({ ...FIT, duration: 300 }), 80)
+    } else if (added.length && !quiet) {
+      setTimeout(() => {
+        const inst = rf.current
+        const el = document.querySelector('.react-flow')
+        if (!inst || !el) return
+        const { x, y, zoom } = inst.getViewport()
+        const w = el.clientWidth, h = el.clientHeight
+        const offscreen = added.some(n => {
+          const sx = n.position.x * zoom + x, sy = n.position.y * zoom + y
+          return sx < 0 || sy < 0 || sx + 200 * zoom > w || sy + 60 * zoom > h
+        })
+        // Pan to what was added, keeping the user's zoom (fitting everything zoomed right out)
+        if (offscreen) {
+          const xs = added.map(n => n.position.x), ys = added.map(n => n.position.y)
+          const cx = (Math.min(...xs) + Math.max(...xs) + 200) / 2, cy = (Math.min(...ys) + Math.max(...ys) + 60) / 2
+          inst.setCenter(cx, cy, { zoom, duration: 300 })
+        }
+      }, 120)
     }
-  }, [rawNodes, rawEdges, setNodes, setEdges, quietKey, moved])
+  }, [rawNodes, rawEdges, setNodes, setEdges, quietKey, chainsKey, moved, tidyKey])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {

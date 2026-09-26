@@ -246,8 +246,10 @@ function TraceWorkspace() {
   const restoring = useRef<string | null>(null)
   /** Node positions on the canvas (shared with the graph, saved with the chart) */
   const positionsRef = useRef(new Map<string, XY>())
-  /** Addresses the user dragged; everything else is laid out automatically */
+  /** Addresses the user dragged: an auto trace tidies everything else */
   const movedRef = useRef(new Set<string>())
+  /** Bumped while an auto trace adds to the graph, which then lays the whole graph out tidily */
+  const [tidyKey, setTidyKey] = useState(0)
   // Right panel width: drag to resize, or expand for a wide table view (remembered)
   const [panelW, setPanelW] = useState(400)
   const [panelExpanded, setPanelExpanded] = useState(false)
@@ -897,6 +899,7 @@ function TraceWorkspace() {
       const real = flows.filter(f => f.from && f.to)
       setTraced(uniqueFlows([...before, ...real]))
       showOnGraph([...new Set(real.flatMap(f => [f.from, f.to]))])
+      setTidyKey(k => k + 1)
     }
     show(seed.flows)
     setTraceStatus(direction === 'forward' ? 'Following the funds…' : 'Walking back to the source…')
@@ -923,6 +926,7 @@ function TraceWorkspace() {
       // Addresses the trail stopped at belong on the graph; peeled-off payments and minor
       // splits were deliberately not followed, so they stay in the side list only
       showOnGraph(res.ends.filter(e => !OFF_TRAIL.includes(e.reason)).map(e => e.address))
+      setTidyKey(k => k + 1)
       setTraceEnds(prev => mergeEnds([...prev, ...(seed.ends ?? []), ...res.ends]))
       const cashOut = res.ends.filter(e => e.reason === 'entity').length
       flash(`Traced ${flows.length} hop${flows.length === 1 ? '' : 's'}${cashOut ? ` · reached ${cashOut} exchange/mixer/sanctioned endpoint${cashOut === 1 ? '' : 's'}` : ''}`)
@@ -1183,8 +1187,7 @@ function TraceWorkspace() {
           followedPairs: [...followedPairs],
           traced,
           traceEnds,
-          // Only where the user moved things: the rest is laid out fresh when the case opens
-          positions: Object.fromEntries([...positionsRef.current].filter(([a]) => movedRef.current.has(a) && (visible.has(a) || hubs.has(a.replace(/^tx:/, ''))))),
+          positions: Object.fromEntries([...positionsRef.current].filter(([a]) => visible.has(a) || hubs.has(a.replace(/^tx:/, '')))),
           moved: [...movedRef.current],
           itemizedIds: [...itemizedIds],
           hiddenLinks: [...hiddenLinks],
@@ -1215,11 +1218,9 @@ function TraceWorkspace() {
     setDirty(false)
     positionsRef.current.clear()
     movedRef.current.clear()
-    // Cases saved before tidy layouts kept every position: those are laid out afresh
-    for (const id of c.moved ?? []) {
-      const pos = c.positions?.[id]
-      if (pos) { positionsRef.current.set(id, pos); movedRef.current.add(id) }
-    }
+    // A saved case opens exactly as it was left
+    for (const [id, pos] of Object.entries(c.positions ?? {})) positionsRef.current.set(id, pos)
+    for (const id of c.moved ?? []) movedRef.current.add(id)
     setKnownNow(new Map(c.known.map(n => [n.address, n])))
     // Older cases put peeled-off payments on the chart; take those off unless they're on the trail
     const trail = new Set((c.traced ?? []).flatMap(f => [f.from, f.to]))
@@ -1697,6 +1698,7 @@ function TraceWorkspace() {
               onPaneClick={() => setSelection(null)}
               positions={positionsRef.current}
               moved={movedRef.current}
+              tidyKey={tidyKey}
               onLayoutChange={() => setLayoutRev(v => v + 1)}
               onReady={api => (graphApi.current = api)}
             />
