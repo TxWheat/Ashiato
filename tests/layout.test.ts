@@ -14,7 +14,7 @@ describe('tidy layout', () => {
   const trail = [flow('W', 'A', 1, 6), flow('A', 'B', 2, 4), flow('B', 'K', 3, 4), flow('A', 'C', 2, 2), flow('C', 'D', 3, 1), flow('D', 'C', 4, 0.5)]
   const edges = [edge('V', 'S'), edge('S', 'W'), edge('R', 'W'), edge('R', 'r1'), edge('R', 'r2'), edge('R', 'B'), edge('K', 'A'),
     ...trail.map(f => edge(f.from, f.to))]
-  const pos = tidyLayout(ids.map(node), edges, trail)
+  const pos = tidyLayout(ids.map(id => node(id)), edges, trail)
   const at = (id: string) => pos.get(id)!
 
   it('reads left to right along the trail, one column per hop', () => {
@@ -34,17 +34,17 @@ describe('tidy layout', () => {
   })
 
   it('is the same every time (reopening a case gives the same picture)', () => {
-    expect(tidyLayout(ids.map(node), edges, trail)).toEqual(pos)
+    expect(tidyLayout(ids.map(id => node(id)), edges, trail)).toEqual(pos)
   })
 
   it('keeps addresses the user dragged where they put them', () => {
-    const moved = tidyLayout(ids.map(node), edges, trail, new Map([['R', { x: -999, y: 5 }]]))
+    const moved = tidyLayout(ids.map(id => node(id)), edges, trail, new Map([['R', { x: -999, y: 5 }]]))
     expect(moved.get('R')).toEqual({ x: -999, y: 5 })
   })
 
   it('knows when the shape changed', () => {
-    expect(layoutKey(ids.map(node), edges)).toBe(layoutKey([...ids].reverse().map(node), [...edges].reverse()))
-    expect(layoutKey(ids.map(node), edges)).not.toBe(layoutKey(ids.map(node), edges.slice(1)))
+    expect(layoutKey(ids.map(id => node(id)), edges)).toBe(layoutKey([...ids].reverse().map(id => node(id)), [...edges].reverse()))
+    expect(layoutKey(ids.map(id => node(id)), edges)).not.toBe(layoutKey(ids.map(id => node(id)), edges.slice(1)))
   })
 })
 

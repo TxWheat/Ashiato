@@ -42,7 +42,7 @@ export default function AddressNode({ id, data, selected }: { id: string; data: 
         'relative w-[196px] bg-panel border px-3 py-2.5 transition-shadow',
         data.isOrigin ? 'border-accent border-2' : labelled ? `${style.border} border-2` : 'border-line',
         data.label?.inferredBy && 'border-dashed',
-        selected && 'ring-2 ring-accent/60',
+        selected && 'ring-2 ring-accent ring-offset-2 ring-offset-bg',
         data.view.relation === 'in' && 'shadow-[0_0_0_2px_rgb(34_197_94),0_0_22px_rgb(34_197_94/0.45)]',
         data.view.relation === 'out' && 'shadow-[0_0_0_2px_rgb(239_68_68),0_0_22px_rgb(239_68_68/0.45)]',
         data.view.relation === 'both' && 'shadow-[0_0_0_2px_rgb(234_179_8),0_0_22px_rgb(234_179_8/0.45)]',
