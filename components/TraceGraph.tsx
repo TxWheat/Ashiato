@@ -605,6 +605,8 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
           onNodeClick(n.id)
         }}
         onNodeDragStart={() => setMenuFor(null)}
+        // Like Breadcrumbs: zooming or panning closes the node menu (it doesn't scale with the graph)
+        onMoveStart={() => setMenuFor(null)}
         onPaneClick={() => { setMenuFor(null); onPaneClick?.() }}
         onEdgeClick={(_, e) => {
           setMenuFor(null)
