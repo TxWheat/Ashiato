@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import LogoMark from './LogoMark'
 import { usePathname } from 'next/navigation'
 import { clsx } from 'clsx'
 import { Github } from 'lucide-react'
@@ -18,7 +19,8 @@ export default function SiteNav() {
   const path = usePathname()
   return (
     <nav className="flex items-center justify-between h-16 px-4 sm:px-10 border-b border-line">
-      <Link href="/" className="text-[15px] font-medium tracking-[0.28em] text-fg">
+      <Link href="/" className="flex items-center gap-2.5 text-[15px] font-medium tracking-[0.28em] text-fg">
+        <LogoMark size={26} />
         ASHIATO <span className="ml-1 tracking-normal text-faint font-normal" lang="ja">足跡</span>
       </Link>
       <div className="flex items-center gap-6 text-sm font-medium">

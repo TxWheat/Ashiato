@@ -1,0 +1,21 @@
+/** The Ashiato mark: two footprints and the trail between them (same drawing as app/icon.svg) */
+export default function LogoMark({ size = 22, className }: { size?: number; className?: string }) {
+  const sole = 'M4 -70 C 34 -70 46 -40 44 -8 C 42 18 30 30 30 52 C 30 76 18 96 -2 96 C -24 96 -34 76 -32 54 C -30 30 -44 10 -44 -16 C -44 -48 -26 -70 4 -70 Z'
+  const toes = (
+    <>
+      <path d={sole} /><circle cx="30" cy="-96" r="14" /><circle cx="2" cy="-106" r="15" /><circle cx="-26" cy="-98" r="13" />
+    </>
+  )
+  return (
+    <svg viewBox="0 0 512 512" width={size} height={size} className={className} aria-hidden="true">
+      <rect width="512" height="512" rx="116" fill="#5B4FE6" />
+      <g transform="translate(256 262) scale(1.14) translate(-256 -262)">
+        <path d="M176 420 Q 214 300 336 300" stroke="#fff" strokeOpacity=".4" strokeWidth="14" strokeLinecap="round" strokeDasharray="1 30" fill="none" />
+        <g fill="#fff">
+          <g transform="translate(168 312) rotate(-12) scale(-1 1)" fillOpacity=".5">{toes}</g>
+          <g transform="translate(340 200) rotate(14)">{toes}</g>
+        </g>
+      </g>
+    </svg>
+  )
+}

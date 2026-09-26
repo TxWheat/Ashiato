@@ -1,17 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#17171c"/>
-  <g fill="#6b6bf5">
-    <!-- left print (lower) -->
-    <g transform="translate(150 300) rotate(-12)">
-      <path d="M0 -70 C 38 -70 52 -30 48 10 C 44 52 30 96 0 96 C -30 96 -44 52 -48 10 C -52 -30 -38 -70 0 -70 Z"/>
-      <circle cx="-34" cy="-98" r="15"/><circle cx="-8" cy="-112" r="15"/><circle cx="18" cy="-110" r="13"/><circle cx="38" cy="-97" r="11"/>
+  <rect width="512" height="512" rx="116" fill="#5B4FE6"/>
+  <g transform="translate(256 262) scale(1.14) translate(-256 -262)">
+  <path d="M176 420 Q 214 300 336 300" stroke="#fff" stroke-opacity=".4" stroke-width="14" stroke-linecap="round" stroke-dasharray="1 30" fill="none"/>
+  <g fill="#fff">
+    <g transform="translate(168 312) rotate(-12) scale(-1 1)" fill-opacity=".5">
+      <path d="M4 -70 C 34 -70 46 -40 44 -8 C 42 18 30 30 30 52 C 30 76 18 96 -2 96 C -24 96 -34 76 -32 54 C -30 30 -44 10 -44 -16 C -44 -48 -26 -70 4 -70 Z"/><circle cx="30" cy="-96" r="14"/><circle cx="2" cy="-106" r="15"/><circle cx="-26" cy="-98" r="13"/>
+    </g>
+    <g transform="translate(340 200) rotate(14)">
+      <path d="M4 -70 C 34 -70 46 -40 44 -8 C 42 18 30 30 30 52 C 30 76 18 96 -2 96 C -24 96 -34 76 -32 54 C -30 30 -44 10 -44 -16 C -44 -48 -26 -70 4 -70 Z"/><circle cx="30" cy="-96" r="14"/><circle cx="2" cy="-106" r="15"/><circle cx="-26" cy="-98" r="13"/>
     </g>
   </g>
-  <g fill="#ffffff">
-    <!-- right print (upper, one step ahead) -->
-    <g transform="translate(340 196) rotate(10)">
-      <path d="M0 -70 C 38 -70 52 -30 48 10 C 44 52 30 96 0 96 C -30 96 -44 52 -48 10 C -52 -30 -38 -70 0 -70 Z"/>
-      <circle cx="34" cy="-98" r="15"/><circle cx="8" cy="-112" r="15"/><circle cx="-18" cy="-110" r="13"/><circle cx="-38" cy="-97" r="11"/>
-    </g>
-  </g>
+</g>
 </svg>
