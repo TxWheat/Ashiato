@@ -722,7 +722,11 @@ function TracePageInner() {
     try {
       const res = await followFunds(
         seed.lots,
-        { direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive, minShare: follow.minSharePct / 100 },
+        {
+          direction, maxHops: follow.hops, maxBranches: follow.branches, stopAt: STOP_AT, adaptive: follow.adaptive, minShare: follow.minSharePct / 100,
+          // A cross-chain swap ends the trail here; the link's Bridgers box shows where it went
+          stopWhen: l => BRIDGE_NAME.test(l.name),
+        },
         // Your own labels count too: a wallet you marked as an exchange ends the trail there
         { addressTxs, btcTx, labelOf: a => mine(a) ?? knownRef.current.get(a)?.label ?? btcLabels.current.get(a) },
         (msg, partial) => {

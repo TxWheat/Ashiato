@@ -165,14 +165,37 @@ function placeNodes(laid: Node[], edges: Edge[], placed: Map<string, XY>): Node[
   for (const n of kept) final.set(n.id, placed.get(n.id)!)
   const clear = (p: XY) =>
     [...final.values()].every(q => Math.abs(q.x - p.x) >= NODE_W + 30 || Math.abs(q.y - p.y) >= NODE_H + 24)
-  for (const n of laid) {
-    if (final.has(n.id)) continue
+  // A fresh graph (nothing on the canvas yet) takes the automatic layout as is
+  if (final.size === 0) {
+    for (const n of laid) placed.set(n.id, n.position)
+    return laid
+  }
+  const outgoing = new Set(edges.map(e => `${e.source}>${e.target}`))
+  // New nodes go in the column next to a node already on the canvas (right if money flows to
+  // them, left if it comes from them), in the nearest free row, so they never land on existing
+  // nodes. Only nodes with nothing placed around them fall back to the automatic layout.
+  // Nodes nearest the existing graph go first, so a traced chain grows outwards step by step.
+  const pending = laid.filter(n => !final.has(n.id))
+  for (let guard = 0; pending.length && guard < 10_000; guard++) {
+    const i = pending.findIndex(n => (neighbours.get(n.id) ?? []).some(id => final.has(id)))
+    const n = pending.splice(i >= 0 ? i : 0, 1)[0]
     const anchor = (neighbours.get(n.id) ?? []).find(id => final.has(id))
     const me = auto.get(n.id)!
-    let pos = anchor
-      ? { x: final.get(anchor)!.x + me.x - auto.get(anchor)!.x, y: final.get(anchor)!.y + me.y - auto.get(anchor)!.y }
-      : { x: me.x + shift.x, y: me.y + shift.y }
-    for (let i = 0; i < 60 && !clear(pos); i++) pos = { x: pos.x, y: pos.y + NODE_H + 24 }
+    let pos: XY
+    if (anchor) {
+      const a = final.get(anchor)!
+      const dir = outgoing.has(`${anchor}>${n.id}`) ? 1 : outgoing.has(`${n.id}>${anchor}`) ? -1 : me.x >= auto.get(anchor)!.x ? 1 : -1
+      const x = a.x + dir * (NODE_W + 240)
+      pos = { x, y: a.y }
+      for (let k = 1; k < 80 && !clear(pos); k++) {
+        // 0, +1, -1, +2, -2 … rows away from the anchor's row
+        const step = Math.ceil(k / 2) * (k % 2 ? 1 : -1)
+        pos = { x, y: a.y + step * (NODE_H + 24) }
+      }
+    } else {
+      pos = { x: me.x + shift.x, y: me.y + shift.y }
+      for (let k = 0; k < 60 && !clear(pos); k++) pos = { x: pos.x, y: pos.y + NODE_H + 24 }
+    }
     final.set(n.id, pos)
   }
   for (const [id, p] of final) placed.set(id, p)
