@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readSessionToken, SESSION_COOKIE } from '@/lib/auth/session'
 
 // Every API route needs a signed-in account (the data calls cost real API quota), except
-// sign-in itself and the public community-label reads.
+// sign-in itself, the public community-label reads and scheduled jobs (which check their own secret).
 
-const PUBLIC = [/^\/api\/auth\//, /^\/api\/community(\/|$)/]
+const PUBLIC = [/^\/api\/auth\//, /^\/api\/community(\/|$)/, /^\/api\/cron\//]
 
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname

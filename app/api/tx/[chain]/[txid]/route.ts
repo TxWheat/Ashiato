@@ -3,9 +3,11 @@ import { fetchBtcTx } from '@/lib/chains/btc'
 import { fetchEthTx } from '@/lib/chains/eth-tx'
 import { fetchTronTx } from '@/lib/chains/tron'
 import { UpstreamError } from '@/lib/http'
+import { isEvm, isProChain } from '@/lib/evm'
+import { requirePro } from '@/lib/billing/pro'
 
 // One transaction. BTC: with the spender of each output (exact UTXO tracing).
-// ETH: every value transfer inside it (ETH, ERC-20 events, internal).
+// Ethereum-style networks: every value transfer inside it (native coin, tokens, internal).
 // Traces can take a while on free APIs; Vercel cuts functions off at the default otherwise
 export const maxDuration = 60
 
@@ -14,10 +16,14 @@ export async function GET(
   { params }: { params: Promise<{ chain: string; txid: string }> }
 ) {
   const { chain, txid } = await params
-  if (chain === 'eth') {
+  if (isEvm(chain)) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(txid)) return NextResponse.json({ error: 'Invalid transaction hash' }, { status: 400 })
+    if (isProChain(chain)) {
+      const pro = await requirePro()
+      if ('response' in pro) return pro.response
+    }
     try {
-      return NextResponse.json(await fetchEthTx(txid))
+      return NextResponse.json(await fetchEthTx(txid, chain))
     } catch (e) {
       const notFound = e instanceof Error && /not found/i.test(e.message)
       return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load transaction' }, { status: notFound ? 404 : 502 })

@@ -1,6 +1,6 @@
 import { hashTypedData, isAddress, isHex, verifyTypedData } from 'viem'
 import { Chain } from '../types'
-import { detectChain, normaliseAddress } from '../detect-chain'
+import { addressFits, normaliseAddress } from '../detect-chain'
 import { checkLabel, LabelInput, VoteInput } from './encode'
 import { CommunityCategory } from './config'
 
@@ -92,7 +92,7 @@ export function cleanSigned(body: unknown, now = Math.floor(Date.now() / 1000)):
   if (b.kind === 'label') {
     const chain = m.chain as Chain
     const subject = String(m.subject ?? '').trim()
-    if (!['btc', 'eth', 'tron'].includes(chain) || detectChain(subject) !== chain) return `Not a valid ${String(m.chain).toUpperCase()} address`
+    if (!addressFits(subject, chain)) return `Not a valid ${String(m.chain).toUpperCase()} address`
     const message: LabelMessage = {
       attester, time, chain, subject: normaliseAddress(subject, chain),
       category: String(m.category) as CommunityCategory, name: String(m.name ?? ''), evidence: String(m.evidence ?? ''), confidence: Number(m.confidence),

@@ -20,6 +20,7 @@ import { toPng } from 'html-to-image'
 import { EdgeData } from '@/lib/types'
 import type { CollapsedChain } from '@/lib/collapse'
 import { TracedFlow } from '@/lib/follow'
+import { NODE_H, NODE_W, placeNodes, type XY } from '@/lib/layout'
 import { ENTITY_STYLE, fmtCompact, fmtDateTime, fmtDay, fmtFiatShort, topAssets } from '@/lib/format'
 import AddressNode, { AddressNodeData, TxNode, TxHubData } from './AddressNode'
 import { NodeAction, NodeMenuContext } from './NodeMenu'
@@ -34,8 +35,6 @@ import { usePricing } from './Pricing'
 const nodeTypes = { addressNode: AddressNode, tx: TxNode, annotation: AnnotationNode }
 const edgeTypes = { label: LabelEdge }
 
-const NODE_W = 196
-const NODE_H = 78
 const FIT = { padding: 0.3, maxZoom: 1.1 }
 
 /** Cross-chain swaps: money leaves one chain and arrives on another */
@@ -84,7 +83,7 @@ function layoutGraph(nodes: Node[], edges: Edge[]) {
   })
 }
 
-export type XY = { x: number; y: number }
+export type { XY } from '@/lib/layout'
 
 /** One collapsed chain drawn as a single line: this far from its start to its end */
 const CHAIN_SPAN = NODE_W + 380
@@ -144,65 +143,6 @@ function compactChains(chains: CollapsedChain[], edges: Edge[], placed: Map<stri
   }
 }
 
-/**
- * Nodes already on screen stay exactly where they are (whether auto-placed or
- * dragged). A new node goes in the column beside a neighbour that's already placed,
- * in the nearest free row. `placed` is updated with every final position.
- */
-function placeNodes(laid: Node[], edges: Edge[], placed: Map<string, XY>): Node[] {
-  const auto = new Map(laid.map(n => [n.id, n.position]))
-  const neighbours = new Map<string, string[]>()
-  for (const e of edges) {
-    neighbours.set(e.source, [...(neighbours.get(e.source) ?? []), e.target])
-    neighbours.set(e.target, [...(neighbours.get(e.target) ?? []), e.source])
-  }
-  // Fallback shift for new nodes with no placed neighbour: how far placed nodes sit from their auto spot
-  const kept = laid.filter(n => placed.has(n.id))
-  const shift = kept.length
-    ? kept.reduce((d, n) => ({ x: d.x + (placed.get(n.id)!.x - n.position.x) / kept.length, y: d.y + (placed.get(n.id)!.y - n.position.y) / kept.length }), { x: 0, y: 0 })
-    : { x: 0, y: 0 }
-
-  const final = new Map<string, XY>()
-  for (const n of kept) final.set(n.id, placed.get(n.id)!)
-  const clear = (p: XY) =>
-    [...final.values()].every(q => Math.abs(q.x - p.x) >= NODE_W + 30 || Math.abs(q.y - p.y) >= NODE_H + 24)
-  // A fresh graph (nothing on the canvas yet) takes the automatic layout as is
-  if (final.size === 0) {
-    for (const n of laid) placed.set(n.id, n.position)
-    return laid
-  }
-  const outgoing = new Set(edges.map(e => `${e.source}>${e.target}`))
-  // New nodes go in the column next to a node already on the canvas (right if money flows to
-  // them, left if it comes from them), in the nearest free row, so they never land on existing
-  // nodes. Only nodes with nothing placed around them fall back to the automatic layout.
-  // Nodes nearest the existing graph go first, so a traced chain grows outwards step by step.
-  const pending = laid.filter(n => !final.has(n.id))
-  for (let guard = 0; pending.length && guard < 10_000; guard++) {
-    const i = pending.findIndex(n => (neighbours.get(n.id) ?? []).some(id => final.has(id)))
-    const n = pending.splice(i >= 0 ? i : 0, 1)[0]
-    const anchor = (neighbours.get(n.id) ?? []).find(id => final.has(id))
-    const me = auto.get(n.id)!
-    let pos: XY
-    if (anchor) {
-      const a = final.get(anchor)!
-      const dir = outgoing.has(`${anchor}>${n.id}`) ? 1 : outgoing.has(`${n.id}>${anchor}`) ? -1 : me.x >= auto.get(anchor)!.x ? 1 : -1
-      const x = a.x + dir * (NODE_W + 240)
-      pos = { x, y: a.y }
-      for (let k = 1; k < 80 && !clear(pos); k++) {
-        // 0, +1, -1, +2, -2 … rows away from the anchor's row
-        const step = Math.ceil(k / 2) * (k % 2 ? 1 : -1)
-        pos = { x, y: a.y + step * (NODE_H + 24) }
-      }
-    } else {
-      pos = { x: me.x + shift.x, y: me.y + shift.y }
-      for (let k = 0; k < 60 && !clear(pos); k++) pos = { x: pos.x, y: pos.y + NODE_H + 24 }
-    }
-    final.set(n.id, pos)
-  }
-  for (const [id, p] of final) placed.set(id, p)
-  return laid.map(n => ({ ...n, position: final.get(n.id)! }))
-}
-
 /** "2.15K USDT ($2.9K NZD)" */
 function amountWithValue(amount: number, asset: string, value: number, currency: CurrencyCode): string {
   const fiat = fmtFiatShort(value, currency)
@@ -256,6 +196,8 @@ interface Props {
   quietKey?: number
   /** Quick actions shown around a clicked node; without this, clicks go straight to onNodeClick */
   onNodeAction?: (address: string, action: NodeAction) => void
+  /** Addresses with watch alerts on (shown in the node menu) */
+  watched?: Set<string>
   /** Shapes and text drawn on the graph (saved with the case) */
   annotations?: Annotation[]
   onAnnotations?: (next: Annotation[]) => void
@@ -276,17 +218,20 @@ export function pairKey(a: string, b: string) {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, annotations = [], onAnnotations }: Props) {
+export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedPairs, traced, hubs, itemized, prices, selected, selectedEdge, selectedHub, onNodeClick, onEdgeClick, onHubClick, onPaneClick, positions, onLayoutChange, chains = [], onChainClick, onReady, bridges = [], onBridgeClick, quietKey, onNodeAction, watched, annotations = [], onAnnotations }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const { currency } = useSettings()
   const pricing = usePricing()
   const menu = useMemo(() => onNodeAction
-    ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) } }
-    : null, [menuFor, onNodeAction])
+    ? { openFor: menuFor, act: (a: string, action: NodeAction) => { setMenuFor(null); onNodeAction(a, action) }, watched }
+    : null, [menuFor, onNodeAction, watched])
   const rf = useRef<ReactFlowInstance | null>(null)
   // Where every node sits: auto-placed or dragged. Kept stable as nodes are added.
   const pinned = useRef(positions)
   pinned.current = positions
+  /** The traced trail, read when placing new nodes (a trace also changes the nodes, which re-runs placement) */
+  const tracedRef = useRef(traced)
+  tracedRef.current = traced
   const nodeCount = useRef(0)
   /** Node ids on the canvas last time, to tell what was just added */
   const shownIds = useRef(new Set<string>())
@@ -528,7 +473,7 @@ export default function TraceGraph({ nodes: nodeData, edges: edgeData, followedP
     prevChains.current = new Map(chainsRef.current.map(c => [c.id, c]))
     // Only new nodes need the automatic layout; a selection or highlight change skips dagre
     const needsLayout = rawNodes.some(n => !pinned.current.has(n.id))
-    const laid = placeNodes(needsLayout ? layoutGraph(rawNodes, rawEdges) : rawNodes, rawEdges, pinned.current)
+    const laid = placeNodes(needsLayout ? layoutGraph(rawNodes, rawEdges) : rawNodes, rawEdges, pinned.current, tracedRef.current)
     // Annotations keep their own positions and are never laid out
     setNodes(prev => [...laid, ...prev.filter(n => n.id.startsWith(NOTE_PREFIX))])
     setEdges(rawEdges)

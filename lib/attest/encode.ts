@@ -1,6 +1,7 @@
 import { decodeAbiParameters, encodeAbiParameters, parseAbiParameters } from 'viem'
 import { Chain } from '../types'
 import { normaliseAddress } from '../detect-chain'
+import { isChain } from '../evm'
 import { ACCUSING, COMMUNITY_CATEGORIES, CommunityCategory, SCHEMAS } from './config'
 
 export interface LabelInput {
@@ -44,7 +45,7 @@ export function encodeLabel(l: LabelInput): `0x${string}` {
 export function decodeLabel(data: `0x${string}`): LabelInput | null {
   try {
     const [chain, subject, category, name, evidence, confidence] = decodeAbiParameters(P.label, data)
-    if (!['btc', 'eth', 'tron'].includes(chain) || !COMMUNITY_CATEGORIES.includes(category as CommunityCategory)) return null
+    if (!isChain(chain) || !COMMUNITY_CATEGORIES.includes(category as CommunityCategory)) return null
     return { chain: chain as Chain, subject: normaliseAddress(subject, chain as Chain), category: category as CommunityCategory, name, evidence, confidence }
   } catch {
     return null

@@ -10,7 +10,9 @@ import { CurrencyCode } from './currency'
 const BASE = (process.env.CRYPTOCOMPARE_API_URL || 'https://min-api.cryptocompare.com').replace(/\/$/, '')
 
 /** Our asset → the coin whose price it uses (stablecoins are valued as USDT) */
-const COINS: Record<string, string> = { BTC: 'BTC', ETH: 'ETH', TRX: 'TRX', USD: 'USDT' }
+const COINS: Record<string, string> = { BTC: 'BTC', ETH: 'ETH', TRX: 'TRX', USD: 'USDT', BNB: 'BNB', POL: 'POL' }
+/** Coins added with the extra networks: a gap in their history never fails the rest */
+const OPTIONAL = new Set(['BNB', 'POL'])
 
 interface HistoDay { Response?: string; Message?: string; Data?: { Data?: { time: number; close: number }[] } }
 
@@ -21,7 +23,11 @@ export async function dailyPrices(currency: CurrencyCode): Promise<Record<string
   const out: Record<string, Record<number, number>> = {}
   await Promise.all(Object.entries(COINS).map(async ([asset, coin]) => {
     const res = await fetchJson<HistoDay>(`${BASE}/data/v2/histoday?fsym=${coin}&tsym=${currency}&limit=2000`, 6 * 3600, 2, undefined, { headers })
-    if (res.Response === 'Error') throw new Error(`Price history: ${res.Message ?? 'request failed'}`)
+      .catch(e => { if (OPTIONAL.has(asset)) return { Data: { Data: [] } } as HistoDay; throw e })
+    if (res.Response === 'Error') {
+      if (OPTIONAL.has(asset)) return
+      throw new Error(`Price history: ${res.Message ?? 'request failed'}`)
+    }
     const days: Record<number, number> = {}
     for (const d of res.Data?.Data ?? []) if (d.close > 0) days[Math.floor(d.time / 86400)] = d.close
     out[asset] = days

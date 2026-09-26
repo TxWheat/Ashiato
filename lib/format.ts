@@ -1,4 +1,5 @@
 import { Chain, EntityType } from './types'
+import { EVM, isEvm } from './evm'
 import { CurrencyCode, fmtMoney } from './currency'
 
 export function nativeAsset(chain: Chain): string {
@@ -58,27 +59,25 @@ export function fmtDate(ts: number): string {
 }
 
 export function explorerAddressUrl(address: string, chain: Chain): string {
-  return chain === 'btc'
-    ? `https://mempool.space/address/${address}`
-    : chain === 'tron'
-      ? `https://tronscan.org/#/address/${address}`
-      : `https://etherscan.io/address/${address}`
+  if (isEvm(chain)) return `${EVM[chain].explorer}/address/${address}`
+  return chain === 'btc' ? `https://mempool.space/address/${address}` : `https://tronscan.org/#/address/${address}`
 }
 
 export function explorerTxUrl(txid: string, chain: Chain): string {
-  return chain === 'btc'
-    ? `https://mempool.space/tx/${txid}`
-    : chain === 'tron'
-      ? `https://tronscan.org/#/transaction/${txid}`
-      : `https://etherscan.io/tx/${txid}`
+  if (isEvm(chain)) return `${EVM[chain].explorer}/tx/${txid}`
+  return chain === 'btc' ? `https://mempool.space/tx/${txid}` : `https://tronscan.org/#/transaction/${txid}`
 }
 
 /** Dot colour per chain (class names written out for Tailwind) */
 export function chainDot(chain: Chain): string {
-  return chain === 'btc' ? 'bg-orange-500' : chain === 'tron' ? 'bg-red-500' : 'bg-violet-500'
+  return CHAIN_DOT[chain]
+}
+const CHAIN_DOT: Record<Chain, string> = {
+  btc: 'bg-orange-500', tron: 'bg-red-500', eth: 'bg-violet-500', base: 'bg-blue-500', arbitrum: 'bg-sky-500',
+  optimism: 'bg-rose-500', bsc: 'bg-yellow-500', polygon: 'bg-fuchsia-500',
 }
 
-export const CHAIN_NAME: Record<Chain, string> = { btc: 'Bitcoin', eth: 'Ethereum', tron: 'Tron' }
+export { CHAIN_NAME } from './evm'
 
 /** Fiat value, or 0 when no price is known for the asset */
 export function fiatValue(amount: number, asset: string, prices: Record<string, number>): number {
@@ -113,7 +112,7 @@ export const ENTITY_STYLE: Record<EntityType, { hex: string; label: string; bord
 export const RISKY_TYPES: EntityType[] = ['sanctioned', 'scam', 'hack', 'ransomware', 'illicit', 'darknet', 'mixer', 'coinjoin']
 
 /** Assets that are never airdrop spam */
-export const MAJOR_ASSETS = new Set(['ETH', 'BTC', 'TRX', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC'])
+export const MAJOR_ASSETS = new Set(['ETH', 'BTC', 'TRX', 'USDT', 'USDC', 'DAI', 'WETH', 'WBTC', 'BNB', 'WBNB', 'BTCB', 'POL', 'WPOL'])
 
 /**
  * The few assets worth naming in a short label: highest value first, then

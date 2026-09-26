@@ -32,9 +32,9 @@ const FREE = [
 const PRO = [
   'Everything in Free',
   'Supports the data that keeps tracing free',
-  'Watch alerts when funds move (coming soon)',
-  'Plain-English trace summary for police reports (coming soon)',
-  'More chains: Base, Arbitrum, BNB and more (coming soon)',
+  'Watch alerts when funds move, flagged when they reach an exchange',
+  'Plain-English trace summary for police reports',
+  'More networks: Base, Arbitrum, Optimism, BNB Chain and Polygon',
 ]
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })

@@ -31,6 +31,7 @@ import SaveChartButton from '@/components/SaveChartButton'
 import ExportMenu from '@/components/ExportMenu'
 import SearchForm from '@/components/SearchForm'
 import { AccountButton } from '@/components/SignIn'
+import AlertsBell from '@/components/AlertsBell'
 import { useAuth } from '@/components/Providers'
 import { SettingsButton, useSettings } from '@/components/Settings'
 import { PricingContext } from '@/components/Pricing'
@@ -39,6 +40,7 @@ import type { Attester } from '@/components/CommunityLabels'
 import { useWalletClient } from 'wagmi'
 import { signLabel, signRevoke, signVote } from '@/lib/attest/sign'
 import BridgeHops from '@/components/BridgeHops'
+import { isChain, isEvm } from '@/lib/evm'
 import { BRIDGE_NAME, CrossChainHop, chainDisplay, lookupService } from '@/lib/bridges/types'
 import type { GraphApi, XY } from '@/components/TraceGraph'
 import type { NodeAction } from '@/components/NodeMenu'
@@ -110,7 +112,7 @@ const fetchTrace = (address: string, chain: Chain, cursor?: string) =>
 
 /** Normalises the BTC and ETH transaction endpoints into one shape */
 async function fetchTxLookup(txid: string, chain: Chain): Promise<TxLookup> {
-  if (chain === 'eth' || chain === 'tron') return getJson<TxLookup>(`/api/tx/${chain}/${txid}`)
+  if (chain !== 'btc') return getJson<TxLookup>(`/api/tx/${chain}/${txid}`)
   const info = await getJson<BtcTxInfo>(`/api/tx/btc/${txid}`)
   return { chain: 'btc', txid: info.tx.txid, timestamp: info.tx.timestamp, transfers: [info.tx], labels: info.labels, ens: {}, spentBy: info.spentBy }
 }
@@ -185,6 +187,7 @@ function TracePageInner() {
 function TraceWorkspace() {
   const params = useSearchParams()
   const router = useRouter()
+  const { address: authAddress } = useAuth()
 
   // The connected wallet signs community labels and votes (free: a signature, no transaction)
   const { data: walletClient } = useWalletClient()
@@ -197,7 +200,7 @@ function TraceWorkspace() {
   const rawAddress = params.get('address') ?? ''
   const originTx = (params.get('tx') ?? '').toLowerCase()
   const chainParam = params.get('chain') as Chain | null
-  const originChain: Chain | null = chainParam === 'btc' || chainParam === 'eth' || chainParam === 'tron' ? chainParam : originTx ? (originTx.startsWith('0x') ? 'eth' : 'btc') : detectChain(rawAddress)
+  const originChain: Chain | null = isChain(chainParam) ? chainParam : originTx ? (originTx.startsWith('0x') ? 'eth' : 'btc') : detectChain(rawAddress)
   const originAddress = !originTx && originChain ? normaliseAddress(rawAddress, originChain) : ''
   const originKey = originTx || originAddress
 
@@ -314,9 +317,13 @@ function TraceWorkspace() {
   useEffect(() => {
     const c = currency.toLowerCase()
     let stale = false
-    fetch(`https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,tron&vs_currencies=${c}`)
+    fetch(`https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,tron,binancecoin,polygon-ecosystem-token&vs_currencies=${c}`)
       .then(r => r.json())
-      .then(d => { if (!stale) setPrices({ BTC: d.bitcoin?.[c] ?? 0, ETH: d.ethereum?.[c] ?? 0, WETH: d.ethereum?.[c] ?? 0, TRX: d.tron?.[c] ?? 0, USD: d.tether?.[c] ?? 0 }) })
+      .then(d => {
+        if (stale) return
+        const eth = d.ethereum?.[c] ?? 0, btc = d.bitcoin?.[c] ?? 0, bnb = d.binancecoin?.[c] ?? 0, pol = d['polygon-ecosystem-token']?.[c] ?? 0
+        setPrices({ BTC: btc, WBTC: btc, BTCB: btc, ETH: eth, WETH: eth, TRX: d.tron?.[c] ?? 0, USD: d.tether?.[c] ?? 0, BNB: bnb, WBNB: bnb, POL: pol, WPOL: pol })
+      })
       .catch(() => {})
     return () => { stale = true }
   }, [currency])
@@ -614,7 +621,35 @@ function TraceWorkspace() {
         if (addr === originAddress) flash("The case's starting address can't be removed")
         else removeNode(addr)
         break
+      case 'watch':
+        toggleWatch(addr); break
     }
+  }
+
+  // Watch alerts (Pro): addresses this account watches, address → watch id
+  const [watches, setWatches] = useState<Map<string, string>>(new Map())
+  const watched = useMemo(() => new Set(watches.keys()), [watches])
+  useEffect(() => {
+    if (!authAddress) return
+    fetch('/api/watches').then(r => (r.ok ? r.json() : null)).then(b => {
+      if (b?.watches) setWatches(new Map(b.watches.map((w: { address: string; id: string }) => [w.address, w.id])))
+    }).catch(() => {})
+  }, [authAddress])
+  const toggleWatch = async (addr: string) => {
+    const id = watches.get(addr)
+    if (id) {
+      setWatches(m => { const n = new Map(m); n.delete(addr); return n })
+      await fetch(`/api/watches?id=${id}`, { method: 'DELETE' }).catch(() => {})
+      flash('Stopped watching this address')
+      return
+    }
+    flash('Watching… checking the address')
+    const res = await fetch('/api/watches', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chain: chainOf(addr), address: addr, label: nameOf(addr) }) }).catch(() => null)
+    const body = await res?.json().catch(() => ({})) ?? {}
+    if (res?.ok) {
+      setWatches(m => new Map(m).set(addr, body.watch.id))
+      flash('Watching: you will get an alert (the bell, top right) when funds move')
+    } else flash(res?.status === 402 ? 'Watch alerts are part of Pro (see Pricing)' : body.error ?? 'Could not watch this address')
   }
 
   const addToGraph = (addrs: string[]) => {
@@ -741,7 +776,8 @@ function TraceWorkspace() {
       n.delete(addr)
       return n
     })
-    setSelection(originAddress && addr !== originAddress ? { kind: 'address', id: originAddress } : originTx ? { kind: 'tx', id: originTx } : null)
+    // Removing never opens a panel: only a selection of the removed address itself is cleared
+    setSelection(s => (s?.kind === 'address' && s.id === addr ? null : s))
   }
 
   // ── Follow the funds ─────────────────────────────────────────────────────
@@ -896,13 +932,13 @@ function TraceWorkspace() {
 
   /** Transaction-level: follow one output (or all) onward */
   const traceTxOut = (tx: RawTransaction, to?: string) => {
-    const from = tx.chain === 'eth' ? tx.inputs[0]?.address ?? '' : ''
+    const from = isEvm(tx.chain) ? tx.inputs[0]?.address ?? '' : ''
     runFollow('forward', seedsFromTx(tx, from, to, follow.adaptive))
   }
 
   /** Transaction-level: walk one input (or all) back to its source */
   const traceTxIn = (tx: RawTransaction, input?: TxIO) => {
-    if (tx.chain === 'eth') {
+    if (isEvm(tx.chain)) {
       runFollow('backward', backSeedsFromTx(tx, tx.outputs[0].address, input?.address))
       return
     }
@@ -1052,9 +1088,15 @@ function TraceWorkspace() {
    *  swaps added to the graph (money into the bridge and out on the other chain). Bridges
    *  write hashes with or without 0x and in either case, so each is stored every way. */
   const tracedTxids = useMemo(() => {
-    const ids = new Set(traced.map(f => f.txid))
+    // Only what is still on the graph: a removed address or hidden link takes its
+    // transactions off the trail colouring too
+    const onGraph = (from: string, to: string) => visible.has(from) && visible.has(to) && !hiddenLinks.has(pairKey(from, to))
+    const ids = new Set(traced.filter(f => onGraph(f.from, f.to)).map(f => f.txid))
     // Transactions you put on the graph yourself ('+ Graph', ticked in a link) are on the trail too
-    for (const id of itemizedIds) ids.add(id.split('|')[0])
+    for (const id of itemizedIds) {
+      const [txid, , from, to] = id.split('|')
+      if (!from || !to || onGraph(from, to)) ids.add(txid)
+    }
     for (const h of bridgeHops) {
       for (const raw of [h.fromHash, h.toHash]) {
         if (!raw) continue
@@ -1063,7 +1105,7 @@ function TraceWorkspace() {
       }
     }
     return ids
-  }, [traced, bridgeHops, itemizedIds])
+  }, [traced, bridgeHops, itemizedIds, visible, hiddenLinks])
 
   const legendTypes = useMemo(() => {
     const present = new Set(graphNodes.map(n => n.label?.type).filter(Boolean) as EntityType[])
@@ -1552,6 +1594,7 @@ function TraceWorkspace() {
             onGraphml={() => download(`${fileBase}.graphml`, toGraphml(graphNodes, graphEdges), 'application/xml')}
           />
           <AccountButton compact />
+          <AlertsBell />
           <SettingsButton />
         </div>
       </header>
@@ -1636,6 +1679,7 @@ function TraceWorkspace() {
               // A click shows the node's quick actions; the side panel follows along only if it's already on an address
               onNodeClick={a => { if (selection?.kind === 'address') openAddress(a) }}
               onNodeAction={nodeAction}
+              watched={watched}
               annotations={annotations}
               onAnnotations={setAnnotations}
               onEdgeClick={selectFlow}

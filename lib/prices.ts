@@ -5,7 +5,8 @@ export type PriceHistory = Record<string, Record<number, number>>
 const STABLE = /^(USDT|USDC|DAI|BUSD|FDUSD|PYUSD|TUSD|USDE)$/
 
 /** Which price series an asset uses */
-export const priceKey = (asset: string) => (asset === 'WETH' ? 'ETH' : STABLE.test(asset) ? 'USD' : asset)
+const WRAPPED: Record<string, string> = { WETH: 'ETH', WBTC: 'BTC', BTCB: 'BTC', WBNB: 'BNB', WPOL: 'POL', MATIC: 'POL' }
+export const priceKey = (asset: string) => WRAPPED[asset] ?? (STABLE.test(asset) ? 'USD' : asset)
 
 /** Closing price on the day of `ts` (or the nearest earlier day within a week) */
 export function priceOn(history: PriceHistory | null, asset: string, ts: number): number | undefined {

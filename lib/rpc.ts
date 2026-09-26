@@ -3,21 +3,33 @@ import 'server-only'
 // Minimal batched Ethereum JSON-RPC client. Used for ENS names and single-tx
 // lookups so they don't spend the Etherscan rate limit.
 
+import type { EvmChain } from './evm'
+
 export const RPC_URL = process.env.ETH_RPC_URL || 'https://ethereum-rpc.publicnode.com'
+
+/** Public nodes per network; each can be overridden (e.g. BASE_RPC_URL) */
+const RPC: Record<EvmChain, string> = {
+  eth: RPC_URL,
+  base: process.env.BASE_RPC_URL || 'https://base-rpc.publicnode.com',
+  arbitrum: process.env.ARBITRUM_RPC_URL || 'https://arbitrum-one-rpc.publicnode.com',
+  optimism: process.env.OPTIMISM_RPC_URL || 'https://optimism-rpc.publicnode.com',
+  bsc: process.env.BSC_RPC_URL || 'https://bsc-rpc.publicnode.com',
+  polygon: process.env.POLYGON_RPC_URL || 'https://polygon-bor-rpc.publicnode.com',
+}
 
 export interface RpcCall {
   method: string
   params: unknown[]
 }
 
-async function post(body: unknown): Promise<unknown> {
-  const res = await fetch(RPC_URL, {
+async function post(body: unknown, chain: EvmChain): Promise<unknown> {
+  const res = await fetch(RPC[chain], {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(10000),
   })
-  if (!res.ok) throw new Error(`Ethereum RPC returned ${res.status}`)
+  if (!res.ok) throw new Error(`The ${chain} node returned ${res.status}`)
   return res.json()
 }
 
@@ -27,12 +39,12 @@ async function post(body: unknown): Promise<unknown> {
  * A call that still fails comes back undefined; with `strict`, a node that can't be reached
  * (network error, HTTP error) throws instead, so it isn't mistaken for "no such transaction".
  */
-export async function rpcBatch<T = unknown>(calls: RpcCall[], strict = false): Promise<(T | undefined)[]> {
+export async function rpcBatch<T = unknown>(calls: RpcCall[], strict = false, chain: EvmChain = 'eth'): Promise<(T | undefined)[]> {
   if (!calls.length) return []
   const out: (T | undefined)[] = new Array(calls.length)
   const failed = new Set(calls.map((_, i) => i))
   try {
-    const json = await post(calls.map((c, id) => ({ jsonrpc: '2.0', id, method: c.method, params: c.params })))
+    const json = await post(calls.map((c, id) => ({ jsonrpc: '2.0', id, method: c.method, params: c.params })), chain)
     for (const r of Array.isArray(json) ? (json as { id: number; result?: T; error?: unknown }[]) : []) {
       if (r && !r.error && typeof r.id === 'number') {
         out[r.id] = r.result
@@ -44,10 +56,10 @@ export async function rpcBatch<T = unknown>(calls: RpcCall[], strict = false): P
   }
   for (const i of failed) {
     try {
-      const r = (await post({ jsonrpc: '2.0', id: i, method: calls[i].method, params: calls[i].params })) as { result?: T }
+      const r = (await post({ jsonrpc: '2.0', id: i, method: calls[i].method, params: calls[i].params }, chain)) as { result?: T }
       out[i] = r?.result
     } catch (e) {
-      if (strict) throw new Error(`Could not reach the Ethereum node (${e instanceof Error ? e.message : 'network error'}). Try again shortly.`)
+      if (strict) throw new Error(`Could not reach the ${chain} node (${e instanceof Error ? e.message : 'network error'}). Try again shortly.`)
       out[i] = undefined
     }
   }
